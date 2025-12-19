@@ -33,6 +33,7 @@ type App struct {
 	serverPath   string
 	logcatCmd    *exec.Cmd
 	logcatCancel context.CancelFunc
+	mu           sync.Mutex
 }
 
 type Device struct {
@@ -73,30 +74,31 @@ func (a *App) startup(ctx context.Context) {
 }
 
 func (a *App) setupBinaries() {
-	tempDir := os.TempDir()
+	tempDir := filepath.Join(os.TempDir(), "adb-gui-bin")
+	_ = os.MkdirAll(tempDir, 0755)
 
-	// Setup ADB
-	adbPath := filepath.Join(tempDir, "adb-bundled")
-	if runtime.GOOS == "windows" {
-		adbPath += ".exe"
+	extract := func(name string, data []byte) string {
+		path := filepath.Join(tempDir, name)
+		if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") && name != "scrcpy-server" {
+			path += ".exe"
+		}
+
+		// Only write if size differs or not exists to avoid "busy" errors
+		info, err := os.Stat(path)
+		if err != nil || info.Size() != int64(len(data)) {
+			err = os.WriteFile(path, data, 0755)
+			if err != nil {
+				fmt.Printf("Error extracting %s: %v\n", name, err)
+			}
+		}
+		return path
 	}
-	_ = os.WriteFile(adbPath, adbBinary, 0755)
-	a.adbPath = adbPath
 
-	// Setup Scrcpy
-	scrcpyPath := filepath.Join(tempDir, "scrcpy-bundled")
-	if runtime.GOOS == "windows" {
-		scrcpyPath += ".exe"
-	}
-	_ = os.WriteFile(scrcpyPath, scrcpyBinary, 0755)
-	a.scrcpyPath = scrcpyPath
+	a.adbPath = extract("adb", adbBinary)
+	a.scrcpyPath = extract("scrcpy", scrcpyBinary)
+	a.serverPath = extract("scrcpy-server", scrcpyServerBinary)
 
-	// Setup Scrcpy Server
-	serverPath := filepath.Join(tempDir, "scrcpy-server")
-	_ = os.WriteFile(serverPath, scrcpyServerBinary, 0644)
-	a.serverPath = serverPath
-
-	fmt.Printf("Binaries extracted to: %s\n", tempDir)
+	fmt.Printf("Binaries setup at: %s\n", tempDir)
 }
 
 // Greet returns a greeting for the given name
@@ -106,11 +108,16 @@ func (a *App) Greet(name string) string {
 
 // GetDevices returns a list of connected ADB devices
 func (a *App) GetDevices() ([]Device, error) {
-	cmd := exec.Command(a.adbPath, "devices", "-l")
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.adbPath, "devices", "-l")
 	output, err := cmd.Output()
 	if err != nil {
-		// If adb is not found or fails, return error
-		return nil, fmt.Errorf("failed to run adb: %w", err)
+		return nil, fmt.Errorf("failed to run adb devices: %w (output: %s)", err, string(output))
 	}
 
 	lines := strings.Split(string(output), "\n")
@@ -141,7 +148,10 @@ func (a *App) GetDevices() ([]Device, error) {
 
 // RunAdbCommand executes an arbitrary ADB command
 func (a *App) RunAdbCommand(args []string) (string, error) {
-	cmd := exec.Command(a.adbPath, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.adbPath, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("command failed: %w, output: %s", err, string(output))
@@ -149,19 +159,60 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 	return string(output), nil
 }
 
-// StartScrcpy starts scrcpy for the given device
-func (a *App) StartScrcpy(deviceId string) error {
+type ScrcpyConfig struct {
+	MaxSize       int  `json:"maxSize"`
+	BitRate       int  `json:"bitRate"`
+	MaxFps        int  `json:"maxFps"`
+	StayAwake     bool `json:"stayAwake"`
+	TurnScreenOff bool `json:"turnScreenOff"`
+	NoAudio       bool `json:"noAudio"`
+	AlwaysOnTop   bool `json:"alwaysOnTop"`
+}
+
+// StartScrcpy starts scrcpy for the given device with custom configuration
+func (a *App) StartScrcpy(deviceId string, config ScrcpyConfig) error {
 	if deviceId == "" {
 		return fmt.Errorf("no device specified")
 	}
 
-	cmd := exec.Command(a.scrcpyPath, "-s", deviceId)
+	args := []string{"-s", deviceId}
+	if config.MaxSize > 0 {
+		args = append(args, "--max-size", fmt.Sprintf("%d", config.MaxSize))
+	}
+	if config.BitRate > 0 {
+		args = append(args, "--video-bit-rate", fmt.Sprintf("%dM", config.BitRate))
+	}
+	if config.MaxFps > 0 {
+		args = append(args, "--max-fps", fmt.Sprintf("%d", config.MaxFps))
+	}
+	if config.StayAwake {
+		args = append(args, "--stay-awake")
+	}
+	if config.TurnScreenOff {
+		args = append(args, "--turn-screen-off")
+	}
+	if config.NoAudio {
+		args = append(args, "--no-audio")
+	}
+	if config.AlwaysOnTop {
+		args = append(args, "--always-on-top")
+	}
+
+	args = append(args, "--window-title", "ADB GUI - "+deviceId)
+
+	cmd := exec.Command(a.scrcpyPath, args...)
 
 	// Use the embedded server and adb
 	cmd.Env = append(os.Environ(),
 		"SCRCPY_SERVER_PATH="+a.serverPath,
 		"ADB="+a.adbPath,
 	)
+
+	// Pipe output to console for debugging
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	fmt.Printf("Starting scrcpy: %s %v\n", a.scrcpyPath, cmd.Args)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start scrcpy: %w", err)

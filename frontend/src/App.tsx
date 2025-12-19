@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown, List } from 'antd';
+import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown, List, Switch, Slider, InputNumber, Card, Row, Col } from 'antd';
 import { 
   MobileOutlined, 
   AppstoreOutlined, 
@@ -14,7 +14,8 @@ import {
   FileTextOutlined,
   PauseOutlined,
   PlayCircleOutlined,
-  DesktopOutlined
+  DesktopOutlined,
+  SettingOutlined
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
@@ -58,6 +59,17 @@ function App() {
   const [logFilter, setLogFilter] = useState('');
   const [selectedPackage, setSelectedPackage] = useState<string>('');
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  // Scrcpy state
+  const [scrcpyConfig, setScrcpyConfig] = useState<main.ScrcpyConfig>({
+    maxSize: 0,
+    bitRate: 8,
+    maxFps: 60,
+    stayAwake: true,
+    turnScreenOff: false,
+    noAudio: false,
+    alwaysOnTop: false
+  });
 
   const fetchDevices = async () => {
     setLoading(true);
@@ -210,7 +222,7 @@ function App() {
 
   const handleStartScrcpy = async (deviceId: string) => {
     try {
-      await StartScrcpy(deviceId);
+      await StartScrcpy(deviceId, scrcpyConfig);
       message.success('Starting Scrcpy...');
     } catch (err) {
       message.error('Failed to start Scrcpy: ' + String(err));
@@ -517,6 +529,106 @@ function App() {
             </div>
           </div>
         );
+      case '5':
+        return (
+          <div style={{ padding: 24, height: '100%', overflowY: 'auto' }}>
+            <h2 style={{ marginBottom: 24 }}>Scrcpy Settings</h2>
+            <Row gutter={[16, 16]}>
+              <Col span={24}>
+                <Card title="Device Selection" size="small">
+                  <Space>
+                    <Select 
+                      value={selectedDevice} 
+                      onChange={setSelectedDevice} 
+                      style={{ width: 300 }} 
+                      placeholder="Select Device"
+                    >
+                      {devices.map(d => (
+                        <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                      ))}
+                    </Select>
+                    <Button 
+                      type="primary" 
+                      icon={<DesktopOutlined />} 
+                      onClick={() => handleStartScrcpy(selectedDevice)}
+                      disabled={!selectedDevice}
+                    >
+                      Start Mirroring
+                    </Button>
+                  </Space>
+                </Card>
+              </Col>
+              
+              <Col span={12}>
+                <Card title="Video Quality" size="small">
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 8 }}>Max Size (0 = auto)</div>
+                    <InputNumber 
+                      min={0} 
+                      max={4096} 
+                      value={scrcpyConfig.maxSize} 
+                      onChange={v => setScrcpyConfig({...scrcpyConfig, maxSize: v || 0})}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 8 }}>Bit Rate (Mbps)</div>
+                    <Slider 
+                      min={1} 
+                      max={64} 
+                      value={scrcpyConfig.bitRate} 
+                      onChange={v => setScrcpyConfig({...scrcpyConfig, bitRate: v})}
+                    />
+                  </div>
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ marginBottom: 8 }}>Max FPS</div>
+                    <Slider 
+                      min={15} 
+                      max={144} 
+                      value={scrcpyConfig.maxFps} 
+                      onChange={v => setScrcpyConfig({...scrcpyConfig, maxFps: v})}
+                    />
+                  </div>
+                </Card>
+              </Col>
+
+              <Col span={12}>
+                <Card title="Options" size="small">
+                  <Space direction="vertical" style={{ width: '100%' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Stay Awake</span>
+                      <Switch 
+                        checked={scrcpyConfig.stayAwake} 
+                        onChange={v => setScrcpyConfig({...scrcpyConfig, stayAwake: v})}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Turn Screen Off</span>
+                      <Switch 
+                        checked={scrcpyConfig.turnScreenOff} 
+                        onChange={v => setScrcpyConfig({...scrcpyConfig, turnScreenOff: v})}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>No Audio</span>
+                      <Switch 
+                        checked={scrcpyConfig.noAudio} 
+                        onChange={v => setScrcpyConfig({...scrcpyConfig, noAudio: v})}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Always On Top</span>
+                      <Switch 
+                        checked={scrcpyConfig.alwaysOnTop} 
+                        onChange={v => setScrcpyConfig({...scrcpyConfig, alwaysOnTop: v})}
+                      />
+                    </div>
+                  </Space>
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        );
       default:
         return <div style={{ padding: 24 }}>Select an option from the menu</div>;
     }
@@ -525,23 +637,22 @@ function App() {
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Sider collapsible collapsed={collapsed} onCollapse={setCollapsed}>
-        <div className="logo" style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', textAlign: 'center', color: 'white', lineHeight: '32px', fontWeight: 'bold', borderRadius: 6 }}>
-          ADB GUI
+        <div className="logo" style={{ height: 32, margin: 16, background: 'rgba(255, 255, 255, 0.2)', borderRadius: 6, display: 'flex', justifyContent: 'center', alignItems: 'center', color: 'white', fontWeight: 'bold' }}>
+          {!collapsed && 'ADB GUI'}
         </div>
-        <Menu theme="dark" defaultSelectedKeys={['1']} mode="inline" selectedKeys={[selectedKey]} onClick={(e) => setSelectedKey(e.key)}>
-          <Menu.Item key="1" icon={<MobileOutlined />}>
-            Devices
-          </Menu.Item>
-          <Menu.Item key="2" icon={<AppstoreOutlined />}>
-            Apps
-          </Menu.Item>
-          <Menu.Item key="3" icon={<CodeOutlined />}>
-            Shell
-          </Menu.Item>
-          <Menu.Item key="4" icon={<FileTextOutlined />}>
-            Logcat
-          </Menu.Item>
-        </Menu>
+        <Menu
+          theme="dark"
+          selectedKeys={[selectedKey]}
+          mode="inline"
+          onClick={({ key }) => setSelectedKey(key)}
+          items={[
+            { key: '1', icon: <MobileOutlined />, label: 'Devices' },
+            { key: '2', icon: <AppstoreOutlined />, label: 'Apps' },
+            { key: '3', icon: <CodeOutlined />, label: 'Shell' },
+            { key: '4', icon: <FileTextOutlined />, label: 'Logcat' },
+            { key: '5', icon: <DesktopOutlined />, label: 'Scrcpy' },
+          ]}
+        />
       </Sider>
       <Layout className="site-layout">
         <Content style={{ margin: '0', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>

@@ -20,7 +20,7 @@ export function RunAdbCommand(arg1:Array<string>):Promise<string>;
 
 export function StartLogcat(arg1:string,arg2:string):Promise<void>;
 
-export function StartScrcpy(arg1:string):Promise<void>;
+export function StartScrcpy(arg1:string,arg2:main.ScrcpyConfig):Promise<void>;
 
 export function StopLogcat():Promise<void>;
 
