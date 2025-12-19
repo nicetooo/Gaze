@@ -16,13 +16,21 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed adb_bin/adb
+//go:embed bin/adb
 var adbBinary []byte
+
+//go:embed bin/scrcpy
+var scrcpyBinary []byte
+
+//go:embed bin/scrcpy-server
+var scrcpyServerBinary []byte
 
 // App struct
 type App struct {
 	ctx          context.Context
 	adbPath      string
+	scrcpyPath   string
+	serverPath   string
 	logcatCmd    *exec.Cmd
 	logcatCancel context.CancelFunc
 }
@@ -61,29 +69,34 @@ func (a *App) StopLogcat() {
 // so we can call the runtime methods
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	a.setupAdb()
+	a.setupBinaries()
 }
 
-func (a *App) setupAdb() {
-	// Create a temp file for adb
+func (a *App) setupBinaries() {
 	tempDir := os.TempDir()
-	adbPath := filepath.Join(tempDir, "adb-bundled")
 
-	// On Windows, append .exe
+	// Setup ADB
+	adbPath := filepath.Join(tempDir, "adb-bundled")
 	if runtime.GOOS == "windows" {
 		adbPath += ".exe"
 	}
-
-	// Write the embedded binary to disk
-	err := os.WriteFile(adbPath, adbBinary, 0755)
-	if err != nil {
-		fmt.Printf("Error extracting adb: %v\n", err)
-		// Fallback to system adb if extraction fails
-		a.adbPath = "adb"
-		return
-	}
+	_ = os.WriteFile(adbPath, adbBinary, 0755)
 	a.adbPath = adbPath
-	fmt.Printf("ADB extracted to: %s\n", a.adbPath)
+
+	// Setup Scrcpy
+	scrcpyPath := filepath.Join(tempDir, "scrcpy-bundled")
+	if runtime.GOOS == "windows" {
+		scrcpyPath += ".exe"
+	}
+	_ = os.WriteFile(scrcpyPath, scrcpyBinary, 0755)
+	a.scrcpyPath = scrcpyPath
+
+	// Setup Scrcpy Server
+	serverPath := filepath.Join(tempDir, "scrcpy-server")
+	_ = os.WriteFile(serverPath, scrcpyServerBinary, 0644)
+	a.serverPath = serverPath
+
+	fmt.Printf("Binaries extracted to: %s\n", tempDir)
 }
 
 // Greet returns a greeting for the given name
@@ -134,6 +147,27 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 		return string(output), fmt.Errorf("command failed: %w, output: %s", err, string(output))
 	}
 	return string(output), nil
+}
+
+// StartScrcpy starts scrcpy for the given device
+func (a *App) StartScrcpy(deviceId string) error {
+	if deviceId == "" {
+		return fmt.Errorf("no device specified")
+	}
+
+	cmd := exec.Command(a.scrcpyPath, "-s", deviceId)
+
+	// Use the embedded server and adb
+	cmd.Env = append(os.Environ(),
+		"SCRCPY_SERVER_PATH="+a.serverPath,
+		"ADB="+a.adbPath,
+	)
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("failed to start scrcpy: %w", err)
+	}
+
+	return nil
 }
 
 // StartLogcat starts the logcat stream for a device, optionally filtering by package name

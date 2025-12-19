@@ -38,6 +38,10 @@ export function StartLogcat(arg1, arg2) {
   return window['go']['main']['App']['StartLogcat'](arg1, arg2);
 }
 
+export function StartScrcpy(arg1) {
+  return window['go']['main']['App']['StartScrcpy'](arg1);
+}
+
 export function StopLogcat() {
   return window['go']['main']['App']['StopLogcat']();
 }

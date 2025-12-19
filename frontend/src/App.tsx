@@ -13,11 +13,12 @@ import {
   CloseCircleOutlined,
   FileTextOutlined,
   PauseOutlined,
-  PlayCircleOutlined
+  PlayCircleOutlined,
+  DesktopOutlined
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
-import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat } from '../wailsjs/go/main/App';
+import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { main } from '../wailsjs/go/models';
 // @ts-ignore
@@ -207,6 +208,15 @@ function App() {
       startLogging(selectedDevice, pkgName);
   };
 
+  const handleStartScrcpy = async (deviceId: string) => {
+    try {
+      await StartScrcpy(deviceId);
+      message.success('Starting Scrcpy...');
+    } catch (err) {
+      message.error('Failed to start Scrcpy: ' + String(err));
+    }
+  };
+
   const deviceColumns = [
     {
       title: 'Device ID',
@@ -248,6 +258,14 @@ function App() {
              setSelectedKey('4');
           }}>
             Logcat
+          </Button>
+          <Button 
+            icon={<DesktopOutlined />} 
+            size="small" 
+            onClick={() => handleStartScrcpy(record.id)}
+            title="Mirror Screen"
+          >
+            Mirror
           </Button>
         </Space>
       ),
