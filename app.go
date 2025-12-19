@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	_ "embed"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 //go:embed adb_bin/adb
@@ -16,8 +19,10 @@ var adbBinary []byte
 
 // App struct
 type App struct {
-	ctx     context.Context
-	adbPath string
+	ctx          context.Context
+	adbPath      string
+	logcatCmd    *exec.Cmd
+	logcatCancel context.CancelFunc
 }
 
 type Device struct {
@@ -26,9 +31,28 @@ type Device struct {
 	Model string `json:"model"`
 }
 
+type AppPackage struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`  // "system" or "user"
+	State string `json:"state"` // "enabled" or "disabled"
+}
+
 // NewApp creates a new App application struct
 func NewApp() *App {
 	return &App{}
+}
+
+// StopLogcat stops the logcat stream
+func (a *App) StopLogcat() {
+	if a.logcatCancel != nil {
+		a.logcatCancel()
+	}
+	if a.logcatCmd != nil && a.logcatCmd.Process != nil {
+		// Kill the process if it's still running
+		_ = a.logcatCmd.Process.Kill()
+	}
+	a.logcatCmd = nil
+	a.logcatCancel = nil
 }
 
 // startup is called when the app starts. The context is saved
@@ -110,10 +134,47 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 	return string(output), nil
 }
 
-type AppPackage struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`  // "system" or "user"
-	State string `json:"state"` // "enabled" or "disabled"
+// StartLogcat starts the logcat stream for a device
+func (a *App) StartLogcat(deviceId string) error {
+	if a.logcatCmd != nil {
+		return fmt.Errorf("logcat already running")
+	}
+
+	// Clear buffer first
+	exec.Command(a.adbPath, "-s", deviceId, "logcat", "-c").Run()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	a.logcatCancel = cancel
+
+	cmd := exec.CommandContext(ctx, a.adbPath, "-s", deviceId, "logcat", "-v", "time")
+	a.logcatCmd = cmd
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		cancel()
+		a.logcatCmd = nil
+		return fmt.Errorf("failed to get stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		cancel()
+		a.logcatCmd = nil
+		return fmt.Errorf("failed to start logcat: %w", err)
+	}
+
+	go func() {
+		reader := bufio.NewReader(stdout)
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			wailsRuntime.EventsEmit(a.ctx, "logcat-data", line)
+		}
+		// Cleanup is handled by StopLogcat or process exit
+	}()
+
+	return nil
 }
 
 // ListPackages returns a list of installed packages with their type and state

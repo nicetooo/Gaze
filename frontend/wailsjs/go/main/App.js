@@ -34,6 +34,14 @@ export function RunAdbCommand(arg1) {
   return window['go']['main']['App']['RunAdbCommand'](arg1);
 }
 
+export function StartLogcat(arg1) {
+  return window['go']['main']['App']['StartLogcat'](arg1);
+}
+
+export function StopLogcat() {
+  return window['go']['main']['App']['StopLogcat']();
+}
+
 export function UninstallApp(arg1, arg2) {
   return window['go']['main']['App']['UninstallApp'](arg1, arg2);
 }

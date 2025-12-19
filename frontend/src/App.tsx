@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown } from 'antd';
+import { useState, useEffect, useRef } from 'react';
+import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown, List } from 'antd';
 import { 
   MobileOutlined, 
   AppstoreOutlined, 
@@ -10,13 +10,20 @@ import {
   ClearOutlined,
   StopOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined
+  CloseCircleOutlined,
+  FileTextOutlined,
+  PauseOutlined,
+  PlayCircleOutlined
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
-import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp } from '../wailsjs/go/main/App';
+import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { main } from '../wailsjs/go/models';
+// @ts-ignore
+const EventsOn = (window as any).runtime.EventsOn;
+// @ts-ignore
+const EventsOff = (window as any).runtime.EventsOff;
 
 const { Content, Sider } = Layout;
 const { Option } = Select;
@@ -44,6 +51,12 @@ function App() {
   const [packageFilter, setPackageFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('all'); // all, system, user
 
+  // Logcat state
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isLogging, setIsLogging] = useState(false);
+  const [logFilter, setLogFilter] = useState('');
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
   const fetchDevices = async () => {
     setLoading(true);
     try {
@@ -61,6 +74,11 @@ function App() {
 
   useEffect(() => {
     fetchDevices();
+    
+    // Cleanup logcat on unmount
+    return () => {
+      StopLogcat();
+    };
   }, []);
 
   useEffect(() => {
@@ -68,6 +86,13 @@ function App() {
       fetchPackages();
     }
   }, [selectedKey, selectedDevice]);
+
+  // Auto-scroll logs
+  useEffect(() => {
+    if (isLogging && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [logs, isLogging]);
 
   const fetchPackages = async () => {
     if (!selectedDevice) return;
@@ -137,6 +162,36 @@ function App() {
     }
   };
 
+  const toggleLogcat = async () => {
+    if (isLogging) {
+      await StopLogcat();
+      setIsLogging(false);
+      EventsOff("logcat-data");
+    } else {
+      if (!selectedDevice) {
+        message.error("No device selected");
+        return;
+      }
+      setLogs([]); // Clear logs on start
+      try {
+        await StartLogcat(selectedDevice);
+        setIsLogging(true);
+        EventsOn("logcat-data", (data: string) => {
+          setLogs(prev => {
+             const newLogs = [...prev, data];
+             // Limit logs to avoid memory issues
+             if (newLogs.length > 1000) {
+               return newLogs.slice(newLogs.length - 1000);
+             }
+             return newLogs;
+          });
+        });
+      } catch (err) {
+        message.error("Failed to start logcat: " + String(err));
+      }
+    }
+  };
+
   const deviceColumns = [
     {
       title: 'Device ID',
@@ -172,6 +227,12 @@ function App() {
              setSelectedKey('2');
           }}>
             Apps
+          </Button>
+          <Button size="small" onClick={() => {
+             setSelectedDevice(record.id);
+             setSelectedKey('4');
+          }}>
+            Logcat
           </Button>
         </Space>
       ),
@@ -339,6 +400,61 @@ function App() {
             />
           </div>
         );
+      case '4':
+        const filteredLogs = logs.filter(l => l.toLowerCase().includes(logFilter.toLowerCase()));
+        return (
+          <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>Logcat</h2>
+              <Space>
+                <Select 
+                  value={selectedDevice} 
+                  onChange={setSelectedDevice} 
+                  style={{ width: 200 }} 
+                  placeholder="Select Device"
+                  disabled={isLogging}
+                >
+                  {devices.map(d => (
+                    <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                  ))}
+                </Select>
+                <Button 
+                  type={isLogging ? 'primary' : 'default'} 
+                  danger={isLogging}
+                  icon={isLogging ? <PauseOutlined /> : <PlayCircleOutlined />} 
+                  onClick={toggleLogcat}
+                >
+                  {isLogging ? 'Stop' : 'Start'}
+                </Button>
+                <Button icon={<ClearOutlined />} onClick={() => setLogs([])}>
+                  Clear
+                </Button>
+              </Space>
+            </div>
+            <Input 
+              placeholder="Filter logs..." 
+              value={logFilter}
+              onChange={e => setLogFilter(e.target.value)}
+              style={{ marginBottom: 16 }}
+            />
+            <div style={{ 
+              flex: 1, 
+              backgroundColor: '#1e1e1e', 
+              color: '#d4d4d4', 
+              fontFamily: 'monospace', 
+              fontSize: '12px',
+              padding: '8px', 
+              overflowY: 'auto',
+              borderRadius: '4px',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {filteredLogs.map((log, index) => (
+                <div key={index} style={{ borderBottom: '1px solid #333' }}>{log}</div>
+              ))}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        );
       default:
         return <div style={{ padding: 24 }}>Select an option from the menu</div>;
     }
@@ -358,7 +474,10 @@ function App() {
             Apps
           </Menu.Item>
           <Menu.Item key="3" icon={<CodeOutlined />}>
-            Shell / Command
+            Shell
+          </Menu.Item>
+          <Menu.Item key="4" icon={<FileTextOutlined />}>
+            Logcat
           </Menu.Item>
         </Menu>
       </Sider>
