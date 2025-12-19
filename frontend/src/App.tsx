@@ -163,6 +163,25 @@ function App() {
     }
   };
 
+  const startLogging = async (device: string, pkg: string) => {
+      setLogs([]);
+      try {
+        await StartLogcat(device, pkg);
+        setIsLogging(true);
+        EventsOn("logcat-data", (data: string) => {
+          setLogs(prev => {
+             const newLogs = [...prev, data];
+             if (newLogs.length > 1000) {
+               return newLogs.slice(newLogs.length - 1000);
+             }
+             return newLogs;
+          });
+        });
+      } catch (err) {
+        message.error("Failed to start logcat: " + String(err));
+      }
+  };
+
   const toggleLogcat = async () => {
     if (isLogging) {
       await StopLogcat();
@@ -173,24 +192,19 @@ function App() {
         message.error("No device selected");
         return;
       }
-      setLogs([]); // Clear logs on start
-      try {
-        await StartLogcat(selectedDevice, selectedPackage);
-        setIsLogging(true);
-        EventsOn("logcat-data", (data: string) => {
-          setLogs(prev => {
-             const newLogs = [...prev, data];
-             // Limit logs to avoid memory issues
-             if (newLogs.length > 1000) {
-               return newLogs.slice(newLogs.length - 1000);
-             }
-             return newLogs;
-          });
-        });
-      } catch (err) {
-        message.error("Failed to start logcat: " + String(err));
-      }
+      startLogging(selectedDevice, selectedPackage);
     }
+  };
+
+  const handleAppLogcat = async (pkgName: string) => {
+      if (isLogging) {
+          await StopLogcat();
+          EventsOff("logcat-data");
+          setIsLogging(false);
+      }
+      setSelectedPackage(pkgName);
+      setSelectedKey('4');
+      startLogging(selectedDevice, pkgName);
   };
 
   const deviceColumns = [
@@ -276,6 +290,15 @@ function App() {
         return (
           <Dropdown menu={{ items: [
             {
+              key: 'logcat',
+              icon: <FileTextOutlined />,
+              label: 'Logcat',
+              onClick: () => handleAppLogcat(record.name)
+            },
+            {
+              type: 'divider'
+            },
+            {
               key: 'stop',
               icon: <StopOutlined />,
               label: 'Force Stop',
@@ -314,6 +337,8 @@ function App() {
       },
     },
   ];
+
+
 
   const renderContent = () => {
     switch (selectedKey) {
