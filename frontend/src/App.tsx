@@ -55,6 +55,7 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [isLogging, setIsLogging] = useState(false);
   const [logFilter, setLogFilter] = useState('');
+  const [selectedPackage, setSelectedPackage] = useState<string>('');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   const fetchDevices = async () => {
@@ -82,7 +83,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedKey === '2' && selectedDevice) {
+    if ((selectedKey === '2' || selectedKey === '4') && selectedDevice) {
       fetchPackages();
     }
   }, [selectedKey, selectedDevice]);
@@ -174,7 +175,7 @@ function App() {
       }
       setLogs([]); // Clear logs on start
       try {
-        await StartLogcat(selectedDevice);
+        await StartLogcat(selectedDevice, selectedPackage);
         setIsLogging(true);
         EventsOn("logcat-data", (data: string) => {
           setLogs(prev => {
@@ -416,6 +417,22 @@ function App() {
                 >
                   {devices.map(d => (
                     <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                  ))}
+                </Select>
+                <Select
+                  showSearch
+                  value={selectedPackage}
+                  onChange={setSelectedPackage}
+                  style={{ width: 250 }}
+                  placeholder="All Apps (Optional)"
+                  disabled={isLogging}
+                  allowClear
+                  filterOption={(input, option) =>
+                    (option?.children as unknown as string).toLowerCase().indexOf(input.toLowerCase()) >= 0
+                  }
+                >
+                  {packages.map(p => (
+                    <Option key={p.name} value={p.name}>{p.name}</Option>
                   ))}
                 </Select>
                 <Button 

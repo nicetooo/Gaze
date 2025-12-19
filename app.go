@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
+	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -134,8 +136,8 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 	return string(output), nil
 }
 
-// StartLogcat starts the logcat stream for a device
-func (a *App) StartLogcat(deviceId string) error {
+// StartLogcat starts the logcat stream for a device, optionally filtering by package name
+func (a *App) StartLogcat(deviceId, packageName string) error {
 	if a.logcatCmd != nil {
 		return fmt.Errorf("logcat already running")
 	}
@@ -162,12 +164,76 @@ func (a *App) StartLogcat(deviceId string) error {
 		return fmt.Errorf("failed to start logcat: %w", err)
 	}
 
+	// PID management
+	var currentPid string
+	var pidMutex sync.RWMutex
+
+	// Poller goroutine to update PID if packageName is provided
+	if packageName != "" {
+		go func() {
+			ticker := time.NewTicker(2 * time.Second) // Check every 2 seconds
+			defer ticker.Stop()
+
+			// Function to check and update PID
+			checkPid := func() {
+				c := exec.Command(a.adbPath, "-s", deviceId, "shell", "pidof", packageName)
+				out, _ := c.Output() // Ignore error as it returns 1 if not found
+				pid := strings.TrimSpace(string(out))
+				// Handle multiple PIDs (take the first one)
+				parts := strings.Fields(pid)
+				if len(parts) > 0 {
+					pid = parts[0]
+				}
+
+				pidMutex.Lock()
+				if pid != currentPid { // Only emit if PID status changes
+					currentPid = pid
+					if pid != "" {
+						wailsRuntime.EventsEmit(a.ctx, "logcat-data", fmt.Sprintf("--- Monitoring process %s (PID: %s) ---", packageName, pid))
+					} else {
+						wailsRuntime.EventsEmit(a.ctx, "logcat-data", fmt.Sprintf("--- Waiting for process %s to start ---", packageName))
+					}
+				}
+				pidMutex.Unlock()
+			}
+
+			// Initial check
+			checkPid()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return // Stop polling when context is cancelled
+				case <-ticker.C:
+					checkPid()
+				}
+			}
+		}()
+	}
+
 	go func() {
 		reader := bufio.NewReader(stdout)
 		for {
 			line, err := reader.ReadString('\n')
 			if err != nil {
-				break
+				break // End of stream or error
+			}
+
+			// Filter logic
+			if packageName != "" {
+				pidMutex.RLock()
+				pid := currentPid
+				pidMutex.RUnlock()
+
+				if pid != "" {
+					// If we have a PID, strictly filter by it
+					if !strings.Contains(line, fmt.Sprintf("(%s)", pid)) && !strings.Contains(line, fmt.Sprintf(" %s ", pid)) {
+						continue // Skip lines not matching the PID
+					}
+				} else {
+					// If no PID is found yet, drop lines to avoid noise (waiting for app to start)
+					continue
+				}
 			}
 			wailsRuntime.EventsEmit(a.ctx, "logcat-data", line)
 		}

@@ -18,7 +18,7 @@ export function ListPackages(arg1:string):Promise<Array<main.AppPackage>>;
 
 export function RunAdbCommand(arg1:Array<string>):Promise<string>;
 
-export function StartLogcat(arg1:string):Promise<void>;
+export function StartLogcat(arg1:string,arg2:string):Promise<void>;
 
 export function StopLogcat():Promise<void>;
 
