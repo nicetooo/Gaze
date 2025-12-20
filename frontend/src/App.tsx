@@ -246,14 +246,7 @@ function App() {
     setFilesLoading(true);
     try {
       const res = await ListFiles(selectedDevice, path);
-      // Sort by time descending by default
-      const sorted = (res || []).sort((a: any, b: any) => {
-        if (a.modTime === 'N/A' && b.modTime === 'N/A') return 0;
-        if (a.modTime === 'N/A') return 1;
-        if (b.modTime === 'N/A') return -1;
-        return b.modTime.localeCompare(a.modTime);
-      });
-      setFileList(sorted);
+      setFileList(res || []);
       setCurrentPath(path);
     } catch (err) {
       message.error('Failed to list files: ' + String(err));
@@ -810,9 +803,9 @@ function App() {
             defaultSortOrder: 'descend' as const,
             sorter: (a: any, b: any) => {
               if (a.modTime === 'N/A' && b.modTime === 'N/A') return 0;
-              if (a.modTime === 'N/A') return 1;
-              if (b.modTime === 'N/A') return -1;
-              return b.modTime.localeCompare(a.modTime);
+              if (a.modTime === 'N/A') return -1;
+              if (b.modTime === 'N/A') return 1;
+              return a.modTime.localeCompare(b.modTime);
             },
           },
           {
