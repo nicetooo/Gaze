@@ -245,7 +245,8 @@ const FilesView: React.FC<FilesViewProps> = ({
             value={currentPath}
             onChange={(e) => setCurrentPath(e.target.value)}
             onPressEnter={() => fetchFiles(currentPath)}
-            style={{ flex: 1 }}
+            className="selectable"
+            style={{ flex: 1, userSelect: "text" }}
           />
         </div>
         <Space>
@@ -273,6 +274,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       </div>
 
       <div
+        className="selectable"
         style={{
           flex: 1,
           overflow: "hidden",
@@ -281,6 +283,7 @@ const FilesView: React.FC<FilesViewProps> = ({
           border: "1px solid #f0f0f0",
           display: "flex",
           flexDirection: "column",
+          userSelect: "text",
         }}
       >
         <Table

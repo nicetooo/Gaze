@@ -83,11 +83,13 @@ const ShellView: React.FC<ShellViewProps> = ({
         rows={15}
         value={shellOutput}
         readOnly
+        className="selectable"
         style={{
           fontFamily: "monospace",
           backgroundColor: "#fff",
           flex: 1,
           resize: "none",
+          userSelect: "text",
         }}
       />
     </div>

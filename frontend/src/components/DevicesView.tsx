@@ -151,6 +151,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
         </Button>
       </div>
       <div
+        className="selectable"
         style={{
           flex: 1,
           overflow: "hidden",
@@ -159,6 +160,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
           border: "1px solid #f0f0f0",
           display: "flex",
           flexDirection: "column",
+          userSelect: "text",
         }}
       >
         <Table

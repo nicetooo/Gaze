@@ -533,9 +533,11 @@ export default function LogcatView({
         <div
           ref={parentRef}
           onScroll={handleScroll}
+          className="selectable"
           style={{
             height: "100%",
             overflow: "auto",
+            userSelect: "text",
           }}
         >
           <div

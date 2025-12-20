@@ -1,5 +1,29 @@
 /* style.css */
-body {
+body, html, #app {
     margin: 0;
     padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Allow selection in inputs and textareas by default */
+input, textarea {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+
+/* Helper class for selectable areas */
+.selectable,
+.selectable * {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+}
+
+.ant-layout-sider, 
+.ant-menu, 
+.ant-layout-header,
+.ant-modal-header,
+.ant-tabs-nav {
+    user-select: none !important;
+    -webkit-user-select: none !important;
 }

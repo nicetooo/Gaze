@@ -376,6 +376,7 @@ const AppsView: React.FC<AppsViewProps> = ({
         </Radio.Group>
       </Space>
       <div
+        className="selectable"
         style={{
           flex: 1,
           overflow: "hidden",
@@ -384,6 +385,7 @@ const AppsView: React.FC<AppsViewProps> = ({
           border: "1px solid #f0f0f0",
           display: "flex",
           flexDirection: "column",
+          userSelect: "text",
         }}
       >
         <Table

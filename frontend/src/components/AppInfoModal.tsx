@@ -78,10 +78,12 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
       ) : (
         selectedAppInfo && (
           <div
+            className="selectable"
             style={{
               padding: "10px 0",
               opacity: infoLoading ? 0.6 : 1,
               transition: "opacity 0.3s",
+              userSelect: "text",
             }}
           >
             {infoLoading && (

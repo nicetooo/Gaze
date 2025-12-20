@@ -1,12 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  Layout,
-  Menu,
-  Button,
-  message,
-  notification,
-  Modal,
-} from "antd";
+import { Layout, Menu, Button, message, notification, Modal } from "antd";
 import LogcatView from "./components/LogcatView";
 import DeviceSelector from "./components/DeviceSelector";
 import DevicesView from "./components/DevicesView";
@@ -230,7 +223,7 @@ function App() {
     EventsOn("scrcpy-stopped", (deviceId: string) => {
       setIsMirroring(false);
       setMirrorStartTime(null);
-      // NOTE: We no longer clean up recording here. 
+      // NOTE: We no longer clean up recording here.
       // Recording has its own dedicated "scrcpy-record-stopped" event.
     });
 
@@ -658,9 +651,7 @@ function App() {
 
       if (!overrideConfig) {
         message.success(
-          shouldRecord
-            ? "Starting Recording & Mirror..."
-            : "Starting Mirror..."
+          shouldRecord ? "Starting Recording & Mirror..." : "Starting Mirror..."
         );
       }
     } catch (err) {
