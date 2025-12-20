@@ -9,3 +9,6 @@ var adbBinary []byte
 
 //go:embed bin/linux/scrcpy
 var scrcpyBinary []byte
+
+//go:embed bin/linux/aapt
+var aaptBinary []byte

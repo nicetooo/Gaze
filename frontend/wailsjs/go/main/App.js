@@ -34,8 +34,8 @@ export function InstallAPK(arg1, arg2) {
   return window['go']['main']['App']['InstallAPK'](arg1, arg2);
 }
 
-export function ListPackages(arg1) {
-  return window['go']['main']['App']['ListPackages'](arg1);
+export function ListPackages(arg1, arg2) {
+  return window['go']['main']['App']['ListPackages'](arg1, arg2);
 }
 
 export function RunAdbCommand(arg1) {

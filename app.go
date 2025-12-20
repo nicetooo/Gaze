@@ -1,10 +1,13 @@
 package main
 
 import (
+	"archive/zip"
 	"bufio"
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +27,7 @@ type App struct {
 	adbPath      string
 	scrcpyPath   string
 	serverPath   string
+	aaptPath     string
 	logcatCmd    *exec.Cmd
 	logcatCancel context.CancelFunc
 	mu           sync.Mutex
@@ -94,7 +98,392 @@ func (a *App) setupBinaries() {
 	a.scrcpyPath = extract("scrcpy", scrcpyBinary)
 	a.serverPath = extract("scrcpy-server", scrcpyServerBinary)
 
+	// Extract aapt if available (may be empty placeholder)
+	if len(aaptBinary) > 0 {
+		a.aaptPath = extract("aapt", aaptBinary)
+		fmt.Printf("AAPT setup at: %s\n", a.aaptPath)
+	} else {
+		fmt.Printf("Warning: aapt binary not embedded. App icons and names may not be available.\n")
+		fmt.Printf("Please run scripts/download_aapt.sh to download aapt binaries.\n")
+	}
+
 	fmt.Printf("Binaries setup at: %s\n", tempDir)
+}
+
+// getAppInfoWithAapt extracts app label and icon using aapt
+func (a *App) getAppInfoWithAapt(deviceId, packageName string) (label string, iconBase64 string, err error) {
+	if a.aaptPath == "" {
+		return "", "", fmt.Errorf("aapt not available (binary not embedded)")
+	}
+
+	// Check if aapt file actually exists and is not empty
+	if info, err := os.Stat(a.aaptPath); err != nil || info.Size() == 0 {
+		return "", "", fmt.Errorf("aapt not available (file missing or empty)")
+	}
+
+	// 1. Get APK path from device (no timeout)
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "pm", "path", packageName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get APK path: %w", err)
+	}
+
+	remotePath := strings.TrimSpace(string(output))
+	if remotePath == "" {
+		return "", "", fmt.Errorf("empty output from pm path for %s", packageName)
+	}
+
+	lines := strings.Split(remotePath, "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "package:") {
+		return "", "", fmt.Errorf("unexpected output from pm path: %s", remotePath)
+	}
+	remotePath = strings.TrimPrefix(lines[0], "package:")
+
+	// 2. Create temporary file for APK
+	tmpDir := filepath.Join(os.TempDir(), "adb-gui-apk")
+	_ = os.MkdirAll(tmpDir, 0755)
+	tmpAPK := filepath.Join(tmpDir, packageName+".apk")
+	defer os.Remove(tmpAPK) // Clean up
+
+	// 3. Pull APK to local (no timeout)
+	pullCmd := exec.Command(a.adbPath, "-s", deviceId, "pull", remotePath, tmpAPK)
+	pullOutput, err := pullCmd.CombinedOutput()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to pull APK: %w (output: %s)", err, string(pullOutput))
+	}
+
+	// Check if APK file was actually downloaded
+	if info, err := os.Stat(tmpAPK); err != nil || info.Size() == 0 {
+		return "", "", fmt.Errorf("APK file not downloaded or empty: %v", err)
+	}
+
+	// 4. Use aapt to dump badging (get label) - no timeout
+	aaptCmd := exec.Command(a.aaptPath, "dump", "badging", tmpAPK)
+	aaptOutput, err := aaptCmd.CombinedOutput()
+	if err != nil {
+		// Check if output is empty
+		if len(aaptOutput) == 0 {
+			return "", "", fmt.Errorf("aapt command failed with no output: %w", err)
+		}
+		return "", "", fmt.Errorf("failed to run aapt: %w, output: %s", err, string(aaptOutput))
+	}
+
+	// Check if output is empty
+	if len(aaptOutput) == 0 {
+		return "", "", fmt.Errorf("aapt command succeeded but output is empty")
+	}
+
+	// 5. Parse label from aapt output
+	// Format: application-label:'App Name'
+	outputStr := string(aaptOutput)
+
+	// Debug: print first few outputs to see format (only for debugging)
+	// Uncomment the following lines if you need to debug aapt output:
+	// if len(outputStr) > 0 && len(outputStr) < 500 {
+	// 	debugLen := 200
+	// 	if len(outputStr) < debugLen {
+	// 		debugLen = len(outputStr)
+	// 	}
+	// 	fmt.Printf("DEBUG aapt output for %s (first %d chars): %s\n", packageName, debugLen, outputStr[:debugLen])
+	// }
+
+	label = a.parseLabelFromAapt(outputStr)
+
+	// 6. Extract icon using aapt (don't fail if icon extraction fails)
+	iconBase64, err = a.extractIconWithAapt(tmpAPK)
+	if err != nil {
+		// Icon extraction is optional, return label even if icon fails
+		// Don't print warning here to avoid spam
+		iconBase64 = ""
+	}
+
+	return label, iconBase64, nil
+}
+
+// parseLabelFromAapt parses the application label from aapt dump badging output
+func (a *App) parseLabelFromAapt(output string) string {
+	// Look for application-label or application-label-zh-CN etc.
+	lines := strings.Split(output, "\n")
+
+	// First, try to find application-label: (default label)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "application-label:") {
+			// Format: application-label:'App Name' or application-label:App Name
+			label := strings.TrimPrefix(line, "application-label:")
+			label = strings.Trim(label, "'\"")
+			// Remove any trailing whitespace or special characters
+			label = strings.TrimSpace(label)
+			if label != "" {
+				return label
+			}
+		}
+	}
+
+	// Then, try to find localized labels (prefer English, then any other)
+	preferredLocales := []string{"en", "zh-CN", "zh", ""}
+	for _, locale := range preferredLocales {
+		prefix := "application-label"
+		if locale != "" {
+			prefix = fmt.Sprintf("application-label-%s", locale)
+		}
+
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, prefix+":") {
+				label := strings.TrimPrefix(line, prefix+":")
+				label = strings.Trim(label, "'\"")
+				label = strings.TrimSpace(label)
+				if label != "" {
+					return label
+				}
+			}
+		}
+	}
+
+	// Fallback: look for any application-label-* line
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "application-label-") && strings.Contains(line, ":") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 2 {
+				label := strings.Trim(parts[1], "'\"")
+				label = strings.TrimSpace(label)
+				if label != "" {
+					return label
+				}
+			}
+		}
+	}
+
+	return ""
+}
+
+// extractIconWithAapt extracts the app icon using aapt
+func (a *App) extractIconWithAapt(apkPath string) (string, error) {
+	// 1. List resources to find icon
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.aaptPath, "dump", "badging", apkPath)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to run aapt dump badging: %w, output: %s", err, string(output))
+	}
+
+	// 2. Find icon path from badging output
+	// Format: application-icon-120:'res/mipmap-hdpi/ic_launcher.png'
+	// aapt2 may use different format, try both
+	outputStr := string(output)
+	iconPath := a.parseIconPathFromAapt(outputStr)
+	if iconPath == "" {
+		// Try alternative parsing for aapt2 format
+		iconPath = a.parseIconPathFromAapt2(outputStr)
+	}
+	if iconPath == "" {
+		return "", fmt.Errorf("icon path not found in aapt output")
+	}
+
+	// 3. Extract icon file from APK
+	// APK is a zip file, so we can extract the icon directly
+	iconData, err := a.extractFileFromAPK(apkPath, iconPath)
+	if err != nil {
+		// Try alternative paths
+		altPaths := a.getAlternativeIconPaths(iconPath)
+		for _, altPath := range altPaths {
+			if data, err2 := a.extractFileFromAPK(apkPath, altPath); err2 == nil {
+				iconData = data
+				iconPath = altPath
+				err = nil
+				break
+			}
+		}
+		if err != nil {
+			return "", fmt.Errorf("failed to extract icon from APK: %w", err)
+		}
+	}
+
+	// 4. Convert to base64
+	// Determine image format from extension
+	var mimeType string
+	if strings.HasSuffix(iconPath, ".png") {
+		mimeType = "image/png"
+	} else if strings.HasSuffix(iconPath, ".jpg") || strings.HasSuffix(iconPath, ".jpeg") {
+		mimeType = "image/jpeg"
+	} else if strings.HasSuffix(iconPath, ".webp") {
+		mimeType = "image/webp"
+	} else {
+		mimeType = "image/png" // Default
+	}
+
+	base64Str := base64.StdEncoding.EncodeToString(iconData)
+	return fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str), nil
+}
+
+// parseIconPathFromAapt2 tries to parse icon path from aapt2 output (alternative format)
+func (a *App) parseIconPathFromAapt2(output string) string {
+	// aapt2 may output icon information differently
+	// Look for icon references in the output
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Try to find icon references like: icon='res/mipmap-mdpi/ic_launcher.png'
+		// or in XML format or other formats
+		if strings.Contains(line, "icon=") {
+			// Extract path after icon=
+			parts := strings.Split(line, "icon=")
+			if len(parts) >= 2 {
+				iconPath := strings.Trim(parts[1], "'\"")
+				iconPath = strings.TrimSpace(iconPath)
+				// Remove any trailing characters that might be part of the line
+				if idx := strings.IndexAny(iconPath, " \t\n"); idx > 0 {
+					iconPath = iconPath[:idx]
+				}
+				if iconPath != "" && (strings.HasSuffix(iconPath, ".png") ||
+					strings.HasSuffix(iconPath, ".jpg") ||
+					strings.HasSuffix(iconPath, ".jpeg") ||
+					strings.HasSuffix(iconPath, ".webp")) {
+					return iconPath
+				}
+			}
+		}
+		// Also try to find in package: line or other formats
+		if strings.Contains(line, "package:") && strings.Contains(line, "icon") {
+			// Try to extract icon from package line
+			if idx := strings.Index(line, "icon='"); idx > 0 {
+				start := idx + 6
+				if end := strings.Index(line[start:], "'"); end > 0 {
+					iconPath := line[start : start+end]
+					if iconPath != "" {
+						return iconPath
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// getAlternativeIconPaths returns alternative paths to try if the primary path fails
+func (a *App) getAlternativeIconPaths(originalPath string) []string {
+	var alternatives []string
+
+	// Try different density folders
+	densities := []string{"xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi", "ldpi"}
+	for _, density := range densities {
+		if strings.Contains(originalPath, "mipmap-") {
+			alt := strings.Replace(originalPath, "mipmap-", "mipmap-"+density+"-", 1)
+			alternatives = append(alternatives, alt)
+		}
+		if strings.Contains(originalPath, "drawable-") {
+			alt := strings.Replace(originalPath, "drawable-", "drawable-"+density+"-", 1)
+			alternatives = append(alternatives, alt)
+		}
+	}
+
+	// Try common icon names
+	iconNames := []string{"ic_launcher.png", "ic_launcher_foreground.png", "ic_launcher_round.png", "icon.png"}
+	baseDir := filepath.Dir(originalPath)
+	for _, iconName := range iconNames {
+		alternatives = append(alternatives, filepath.Join(baseDir, iconName))
+	}
+
+	return alternatives
+}
+
+// parseIconPathFromAapt parses the icon path from aapt dump badging output
+func (a *App) parseIconPathFromAapt(output string) string {
+	if output == "" {
+		return ""
+	}
+
+	lines := strings.Split(output, "\n")
+
+	// Look for application-icon-* entries (prefer higher resolution icons)
+	iconSizes := []string{"480", "320", "240", "160", "120", "80", "48"}
+	for _, size := range iconSizes {
+		prefix := fmt.Sprintf("application-icon-%s:", size)
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, prefix) {
+				iconPath := strings.TrimPrefix(line, prefix)
+				iconPath = strings.Trim(iconPath, "'\"")
+				iconPath = strings.TrimSpace(iconPath)
+				if iconPath != "" {
+					return iconPath
+				}
+			}
+		}
+	}
+
+	// Fallback: look for application-icon: (default icon)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "application-icon:") {
+			iconPath := strings.TrimPrefix(line, "application-icon:")
+			iconPath = strings.Trim(iconPath, "'\"")
+			iconPath = strings.TrimSpace(iconPath)
+			if iconPath != "" {
+				return iconPath
+			}
+		}
+	}
+
+	return ""
+}
+
+// extractFileFromAPK extracts a file from an APK (which is a zip file)
+func (a *App) extractFileFromAPK(apkPath, filePath string) ([]byte, error) {
+	r, err := zip.OpenReader(apkPath)
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	// Try exact path first
+	for _, f := range r.File {
+		if f.Name == filePath {
+			rc, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer rc.Close()
+			return io.ReadAll(rc)
+		}
+	}
+
+	// Try without leading "res/"
+	if strings.HasPrefix(filePath, "res/") {
+		filePath = strings.TrimPrefix(filePath, "res/")
+		for _, f := range r.File {
+			if f.Name == filePath || strings.HasSuffix(f.Name, filePath) {
+				rc, err := f.Open()
+				if err != nil {
+					return nil, err
+				}
+				defer rc.Close()
+				return io.ReadAll(rc)
+			}
+		}
+	}
+
+	// Try to find any file with similar name (for different densities)
+	fileName := filepath.Base(filePath)
+	for _, f := range r.File {
+		if strings.Contains(f.Name, fileName) && (strings.Contains(f.Name, "mipmap") || strings.Contains(f.Name, "drawable")) {
+			rc, err := f.Open()
+			if err != nil {
+				continue
+			}
+			data, err := io.ReadAll(rc)
+			rc.Close()
+			if err == nil {
+				return data, nil
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("file not found in APK: %s", filePath)
 }
 
 // Greet returns a greeting for the given name
@@ -356,9 +745,15 @@ func (a *App) StartLogcat(deviceId, packageName string) error {
 }
 
 // ListPackages returns a list of installed packages with their type and state
-func (a *App) ListPackages(deviceId string) ([]AppPackage, error) {
+// packageType: "user" for user apps only, "system" for system apps only, "all" for both
+func (a *App) ListPackages(deviceId string, packageType string) ([]AppPackage, error) {
 	if deviceId == "" {
 		return nil, fmt.Errorf("no device specified")
+	}
+
+	// Default to user apps if not specified
+	if packageType == "" {
+		packageType = "user"
 	}
 
 	// 1. Get list of disabled packages
@@ -403,42 +798,73 @@ func (a *App) ListPackages(deviceId string) ([]AppPackage, error) {
 		return nil
 	}
 
-	// Fetch system packages
-	if err := fetch("-s", "system"); err != nil {
-		return nil, fmt.Errorf("failed to list system packages: %w", err)
+	// Fetch packages based on packageType
+	if packageType == "all" {
+		// Fetch system packages
+		if err := fetch("-s", "system"); err != nil {
+			return nil, fmt.Errorf("failed to list system packages: %w", err)
+		}
+		// Fetch 3rd party packages
+		if err := fetch("-3", "user"); err != nil {
+			return nil, fmt.Errorf("failed to list user packages: %w", err)
+		}
+	} else if packageType == "system" {
+		// Fetch system packages only
+		if err := fetch("-s", "system"); err != nil {
+			return nil, fmt.Errorf("failed to list system packages: %w", err)
+		}
+	} else {
+		// Default: fetch user packages only
+		if err := fetch("-3", "user"); err != nil {
+			return nil, fmt.Errorf("failed to list user packages: %w", err)
+		}
 	}
 
-	// Fetch 3rd party packages
-	if err := fetch("-3", "user"); err != nil {
-		return nil, fmt.Errorf("failed to list user packages: %w", err)
-	}
-
-	// 2. Fetch labels in parallel for user packages (system packages usually don't have good labels via ADB)
+	// 2. Fetch labels and icons using aapt in parallel
+	// Use smaller concurrency for aapt operations as they involve downloading APKs
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 10) // Limit concurrency to 10
+	sem := make(chan struct{}, 3) // Limit concurrency to 3 (aapt operations download APKs, so they're heavy)
+
 	for i := range packages {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
+
+			// Acquire semaphore (no timeout)
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			pkg := &packages[idx]
-			// Try to get label using dumpsys or resolve-activity
-			// Method 1: resolve-activity (often contains the label)
-			cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "cmd", "package", "resolve-activity", "--brief", pkg.Name)
-			output, err := cmd.Output()
-			if err == nil {
-				lines := strings.Split(string(output), "\n")
-				for _, line := range lines {
-					if strings.Contains(line, "labelRes=") {
-						// Unfortunately resolving labelRes needs more work, but sometimes nonLocalizedLabel is there
+
+			// Try to get label and icon using aapt if available
+			// Only process user apps (no system apps)
+			if a.aaptPath != "" && pkg.Type == "user" {
+				label, icon, err := a.getAppInfoWithAapt(deviceId, pkg.Name)
+				if err != nil {
+					// Print error for debugging (first few errors only)
+					if idx < 5 {
+						fmt.Printf("Warning: Failed to get app info with aapt for %s: %v\n", pkg.Name, err)
+					}
+				} else {
+					if label != "" {
+						pkg.Label = label
+					}
+					if icon != "" {
+						pkg.Icon = icon
 					}
 				}
 			}
 
-			// Improved Label Extraction Logic
+			// Fallback: Try to get label using dumpsys or resolve-activity if aapt didn't work
 			if pkg.Label == "" {
+				// Try resolve-activity as fallback (though it usually doesn't provide readable labels)
+				cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "cmd", "package", "resolve-activity", "--brief", pkg.Name)
+				_, err := cmd.Output()
+				// Note: resolve-activity output is not easily parseable for labels
+				// We'll skip parsing it and use the brand map fallback below
+				_ = err // Suppress unused error warning
+
+				// Improved Label Extraction Logic
 				// 1. Try to extract from package name using a smarter brand map
 				brandMap := map[string]string{
 					"com.ss.android.ugc.tiktok.lite": "TikTok Lite",

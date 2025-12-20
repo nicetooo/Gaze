@@ -9,3 +9,6 @@ var adbBinary []byte
 
 //go:embed bin/windows/scrcpy.exe
 var scrcpyBinary []byte
+
+//go:embed bin/windows/aapt.exe
+var aaptBinary []byte

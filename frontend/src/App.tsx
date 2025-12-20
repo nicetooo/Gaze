@@ -54,7 +54,7 @@ function App() {
   const [packages, setPackages] = useState<main.AppPackage[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [packageFilter, setPackageFilter] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all'); // all, system, user
+  const [typeFilter, setTypeFilter] = useState('user'); // all, system, user - default to user
 
   // Logcat state
   const [logs, setLogs] = useState<string[]>([]);
@@ -137,16 +137,30 @@ function App() {
 
   useEffect(() => {
     if ((selectedKey === '2' || selectedKey === '4') && selectedDevice) {
-      fetchPackages();
+      // Only fetch user packages initially
+      fetchPackages('user');
     }
   }, [selectedKey, selectedDevice]);
 
-  const fetchPackages = async () => {
+  const fetchPackages = async (packageType?: string) => {
     if (!selectedDevice) return;
+    const typeToFetch = packageType || typeFilter;
     setAppsLoading(true);
     try {
-      const res = await ListPackages(selectedDevice);
-      setPackages(res || []);
+      const res = await ListPackages(selectedDevice, typeToFetch);
+      if (typeToFetch === 'all') {
+        // Replace all packages when fetching all
+        setPackages(res || []);
+      } else if (typeToFetch === 'system') {
+        // Merge system packages with existing user packages
+        setPackages(prev => {
+          const userPackages = prev.filter(p => p.type === 'user');
+          return [...userPackages, ...(res || [])];
+        });
+      } else {
+        // user - replace all with user packages only
+        setPackages(res || []);
+      }
     } catch (err) {
       message.error('Failed to list packages: ' + String(err));
     } finally {
@@ -415,20 +429,37 @@ function App() {
               color: '#fff',
               boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}>
-              <img 
-                src={`https://play-lh.googleusercontent.com/i-p/get-icon?id=${record.name}&w=72`}
-                style={{ 
-                  width: '100%', 
-                  height: '100%', 
-                  objectFit: 'cover',
-                  position: 'absolute',
-                  zIndex: 2 
-                }}
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.opacity = '0';
-                }}
-                alt=""
-              />
+              {record.icon ? (
+                <img 
+                  src={record.icon}
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover',
+                    position: 'absolute',
+                    zIndex: 2 
+                  }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.opacity = '0';
+                  }}
+                  alt=""
+                />
+              ) : (
+                <img 
+                  src={`https://play-lh.googleusercontent.com/i-p/get-icon?id=${record.name}&w=72`}
+                  style={{ 
+                    width: '100%', 
+                    height: '100%', 
+                    objectFit: 'cover',
+                    position: 'absolute',
+                    zIndex: 2 
+                  }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.opacity = '0';
+                  }}
+                  alt=""
+                />
+              )}
               <span style={{ position: 'relative', zIndex: 1 }}>{firstLetter}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
@@ -585,7 +616,7 @@ function App() {
                     </Option>
                   ))}
                 </Select>
-                <Button icon={<ReloadOutlined />} onClick={fetchPackages} loading={appsLoading}>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchPackages(typeFilter)} loading={appsLoading}>
                   Refresh
                 </Button>
               </Space>
@@ -597,7 +628,17 @@ function App() {
                 onChange={e => setPackageFilter(e.target.value)}
                 style={{ width: 300 }}
               />
-              <Radio.Group value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <Radio.Group value={typeFilter} onChange={e => {
+                const newType = e.target.value;
+                setTypeFilter(newType);
+                // Fetch packages when type changes
+                if (newType === 'all' || newType === 'system') {
+                  fetchPackages(newType);
+                } else {
+                  // user - just filter existing packages
+                  fetchPackages('user');
+                }
+              }}>
                 <Radio.Button value="all">All</Radio.Button>
                 <Radio.Button value="user">User</Radio.Button>
                 <Radio.Button value="system">System</Radio.Button>
