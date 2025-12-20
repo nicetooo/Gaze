@@ -1,5 +1,5 @@
-import { useRef, useEffect } from 'react';
-import { Button, Input, Select, Space } from 'antd';
+import { useRef, useEffect, useState, useMemo } from 'react';
+import { Button, Input, Select, Space, Checkbox } from 'antd';
 import { PauseOutlined, PlayCircleOutlined, ClearOutlined, DownOutlined } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
 // @ts-ignore
@@ -49,9 +49,26 @@ export default function LogcatView({
 }: LogcatViewProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const scrollingRef = useRef(false);
+  const [levelFilter, setLevelFilter] = useState<string[]>([]);
+
+  const getLogLevel = (text: string) => {
+    if (text.includes(' E/') || text.includes(' F/') || text.startsWith('E/')) return 'E';
+    if (text.includes(' W/') || text.startsWith('W/')) return 'W';
+    if (text.includes(' I/') || text.startsWith('I/')) return 'I';
+    if (text.includes(' D/') || text.startsWith('D/')) return 'D';
+    return 'V';
+  };
+
+  const filteredLogs = useMemo(() => {
+    if (levelFilter.length === 0) return logs;
+    return logs.filter(log => {
+      const level = getLogLevel(log);
+      return levelFilter.includes(level);
+    });
+  }, [logs, levelFilter]);
 
   const virtualizer = useVirtualizer({
-    count: logs.length,
+    count: filteredLogs.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 24,
     overscan: 10,
@@ -59,12 +76,12 @@ export default function LogcatView({
 
   // 自动滚动逻辑
   useEffect(() => {
-    if (autoScroll && logs.length > 0 && !scrollingRef.current) {
-      virtualizer.scrollToIndex(logs.length - 1, {
+    if (autoScroll && filteredLogs.length > 0 && !scrollingRef.current) {
+      virtualizer.scrollToIndex(filteredLogs.length - 1, {
         align: 'end',
       });
     }
-  }, [logs.length, autoScroll, virtualizer]);
+  }, [filteredLogs.length, autoScroll, virtualizer]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     // 如果正在进行点击后的自动平滑滚动，不处理滚动事件，防止干扰 autoScroll 状态
@@ -88,7 +105,7 @@ export default function LogcatView({
     scrollingRef.current = true;
     setAutoScroll(true);
     
-    virtualizer.scrollToIndex(logs.length - 1, {
+    virtualizer.scrollToIndex(filteredLogs.length - 1, {
       align: 'end',
       behavior: 'smooth',
     });
@@ -99,17 +116,19 @@ export default function LogcatView({
     }, 1000); // 增加锁定时长以确保平滑滚动执行完毕
   };
 
-  const getLogColor = (text: string) => {
-    // Standard ADB format matches like " D/", " I/", " W/", " E/" or starting with them
-    if (text.includes(' E/') || text.includes(' F/') || text.startsWith('E/')) return '#f14c4c'; // Error / Fatal
-    if (text.includes(' W/') || text.startsWith('W/')) return '#cca700'; // Warning
-    if (text.includes(' I/') || text.startsWith('I/')) return '#3794ff'; // Info
-    if (text.includes(' D/') || text.startsWith('D/')) return '#4ec9b0'; // Debug
-    return '#d4d4d4'; // Verbose / Default
+  const getLogColor = (level: string) => {
+    switch (level) {
+      case 'E': return '#f14c4c';
+      case 'W': return '#cca700';
+      case 'I': return '#3794ff';
+      case 'D': return '#4ec9b0';
+      default: return '#d4d4d4';
+    }
   };
 
   const renderLogLine = (text: string) => {
-    const color = getLogColor(text);
+    const level = getLogLevel(text);
+    const color = getLogColor(level);
     
     if (!logFilter) {
       return <span style={{ color }}>{text}</span>;
@@ -179,12 +198,25 @@ export default function LogcatView({
         </Space>
       </div>
       
-      <Input 
-        placeholder="Filter logs..." 
-        value={logFilter}
-        onChange={e => setLogFilter(e.target.value)}
-        style={{ marginBottom: 12, flexShrink: 0 }}
-      />
+      <div style={{ marginBottom: 12, display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
+        <Input 
+          placeholder="Filter logs by text..." 
+          value={logFilter}
+          onChange={e => setLogFilter(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <Checkbox.Group 
+          options={[
+            { label: <span style={{ color: getLogColor('E') }}>Error</span>, value: 'E' },
+            { label: <span style={{ color: getLogColor('W') }}>Warn</span>, value: 'W' },
+            { label: <span style={{ color: getLogColor('I') }}>Info</span>, value: 'I' },
+            { label: <span style={{ color: getLogColor('D') }}>Debug</span>, value: 'D' },
+            { label: <span style={{ color: getLogColor('V') }}>Verbose</span>, value: 'V' },
+          ]}
+          value={levelFilter}
+          onChange={(vals) => setLevelFilter(vals as string[])}
+        />
+      </div>
 
       <div style={{ flex: 1, position: 'relative', minHeight: 0, backgroundColor: '#1e1e1e', borderRadius: '4px', overflow: 'hidden' }}>
         <div
@@ -223,13 +255,13 @@ export default function LogcatView({
                   wordBreak: 'break-all',
                 }}
               >
-                {renderLogLine(logs[virtualItem.index])}
+                {renderLogLine(filteredLogs[virtualItem.index])}
               </div>
             ))}
           </div>
         </div>
         
-        {!autoScroll && logs.length > 0 && (
+        {!autoScroll && filteredLogs.length > 0 && (
           <Button
             type="primary"
             shape="circle"
