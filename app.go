@@ -16,14 +16,7 @@ import (
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
-//go:embed bin/adb
-var adbBinary []byte
-
-//go:embed bin/scrcpy
-var scrcpyBinary []byte
-
-//go:embed bin/scrcpy-server
-var scrcpyServerBinary []byte
+// Binaries are embedded in platform-specific files (bin_*.go) and bin_common.go
 
 // App struct
 type App struct {

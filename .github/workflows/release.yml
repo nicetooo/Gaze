@@ -1,0 +1,111 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            platform: darwin
+            arch: universal
+            output: adbGUI.app
+          - os: windows-latest
+            platform: windows
+            arch: amd64
+            output: adbGUI.exe
+          - os: ubuntu-latest
+            platform: linux
+            arch: amd64
+            output: adbGUI
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+
+      - name: Download Binaries (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          mkdir -p bin/darwin
+          # Note: In a real scenario, you'd download these from official sources
+          # For now, we assume they are already in the repo or handled manually
+          # To automate: curl -L ...
+
+      - name: Download Binaries (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          mkdir -p bin/windows
+          # Example for ADB
+          curl -L -o platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-windows.zip
+          unzip -j platform-tools.zip platform-tools/adb.exe -d bin/windows/
+          # Example for Scrcpy (v2.3.1)
+          curl -L -o scrcpy.zip https://github.com/Genymobile/scrcpy/releases/download/v2.3.1/scrcpy-win64-v2.3.1.zip
+          unzip -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy.exe -d bin/windows/
+          unzip -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy-server -d bin/
+
+      - name: Download Binaries (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          mkdir -p bin/linux
+          # Example for ADB
+          curl -L -o platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
+          unzip -j platform-tools.zip platform-tools/adb -d bin/linux/
+          # Scrcpy on Linux is usually installed via package manager, 
+          # but for embedding we need the binary. 
+
+      - name: Build Wails App
+        run: |
+          wails build -platform ${{ matrix.platform }}/${{ matrix.arch }} -clean
+
+      - name: Package Artifacts (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          cd build/bin
+          zip -r ../../adbGUI-macOS.zip adbGUI.app
+
+      - name: Package Artifacts (Windows)
+        if: matrix.platform == 'windows'
+        run: |
+          cd build/bin
+          powershell Compress-Archive -Path adbGUI.exe -DestinationPath ../../adbGUI-Windows.zip
+
+      - name: Package Artifacts (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          cd build/bin
+          tar -czvf ../../adbGUI-Linux.tar.gz adbGUI
+
+      - name: Upload Release Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            adbGUI-macOS.zip
+            adbGUI-Windows.zip
+            adbGUI-Linux.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

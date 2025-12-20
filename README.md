@@ -78,6 +78,12 @@ wails build
 ```
 The compiled application will be available in `build/bin`.
 
+### Release
+This project uses GitHub Actions to automate multi-platform builds. To create a new release:
+1. Tag your commit: `git tag v1.0.0`
+2. Push the tag: `git push origin v1.0.0`
+The GitHub Action will automatically build for macOS, Windows, and Linux, and upload the artifacts to the Release page.
+
 ---
 
 ## 📄 License
