@@ -8,11 +8,15 @@ export function DisableApp(arg1:string,arg2:string):Promise<string>;
 
 export function EnableApp(arg1:string,arg2:string):Promise<string>;
 
+export function ExportAPK(arg1:string,arg2:string):Promise<string>;
+
 export function ForceStopApp(arg1:string,arg2:string):Promise<string>;
 
 export function GetDevices():Promise<Array<main.Device>>;
 
 export function Greet(arg1:string):Promise<string>;
+
+export function InstallAPK(arg1:string,arg2:string):Promise<string>;
 
 export function ListPackages(arg1:string):Promise<Array<main.AppPackage>>;
 

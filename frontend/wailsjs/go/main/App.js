@@ -14,6 +14,10 @@ export function EnableApp(arg1, arg2) {
   return window['go']['main']['App']['EnableApp'](arg1, arg2);
 }
 
+export function ExportAPK(arg1, arg2) {
+  return window['go']['main']['App']['ExportAPK'](arg1, arg2);
+}
+
 export function ForceStopApp(arg1, arg2) {
   return window['go']['main']['App']['ForceStopApp'](arg1, arg2);
 }
@@ -24,6 +28,10 @@ export function GetDevices() {
 
 export function Greet(arg1) {
   return window['go']['main']['App']['Greet'](arg1);
+}
+
+export function InstallAPK(arg1, arg2) {
+  return window['go']['main']['App']['InstallAPK'](arg1, arg2);
 }
 
 export function ListPackages(arg1) {

@@ -478,3 +478,70 @@ func (a *App) DisableApp(deviceId, packageName string) (string, error) {
 	}
 	return string(output), nil
 }
+
+// InstallAPK installs an APK to the specified device
+func (a *App) InstallAPK(deviceId string, path string) (string, error) {
+	if deviceId == "" {
+		return "", fmt.Errorf("no device selected")
+	}
+
+	fmt.Printf("Installing APK %s to device %s\n", path, deviceId)
+
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "install", "-r", path)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("failed to install APK: %w\nOutput: %s", err, string(output))
+	}
+
+	return string(output), nil
+}
+
+// ExportAPK extracts an installed APK from the device to the local machine
+func (a *App) ExportAPK(deviceId string, packageName string) (string, error) {
+	if deviceId == "" {
+		return "", fmt.Errorf("no device specified")
+	}
+
+	// 1. Get the remote path of the APK
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "pm", "path", packageName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get APK path: %w", err)
+	}
+
+	remotePath := strings.TrimSpace(string(output))
+	// Output is usually in format "package:/data/app/.../base.apk"
+	lines := strings.Split(remotePath, "\n")
+	if len(lines) == 0 || !strings.HasPrefix(lines[0], "package:") {
+		return "", fmt.Errorf("unexpected output from pm path: %s", remotePath)
+	}
+	remotePath = strings.TrimPrefix(lines[0], "package:")
+
+	// 2. Open Save File Dialog
+	fileName := packageName + ".apk"
+	homeDir, _ := os.UserHomeDir()
+	savePath, err := wailsRuntime.SaveFileDialog(a.ctx, wailsRuntime.SaveDialogOptions{
+		DefaultFilename: fileName,
+		Title:           "Export APK",
+		Filters: []wailsRuntime.FileFilter{
+			{DisplayName: "Android Package (*.apk)", Pattern: "*.apk"},
+		},
+		DefaultDirectory: homeDir,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to open save dialog: %w", err)
+	}
+	if savePath == "" {
+		return "", nil // User cancelled
+	}
+
+	// 3. Pull the file
+	pullCmd := exec.Command(a.adbPath, "-s", deviceId, "pull", remotePath, savePath)
+	pullOutput, err := pullCmd.CombinedOutput()
+	if err != nil {
+		return string(pullOutput), fmt.Errorf("failed to pull APK: %w (output: %s)", err, string(pullOutput))
+	}
+
+	return savePath, nil
+}

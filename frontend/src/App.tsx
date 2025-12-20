@@ -15,11 +15,12 @@ import {
   PauseOutlined,
   PlayCircleOutlined,
   DesktopOutlined,
-  SettingOutlined
+  SettingOutlined,
+  DownloadOutlined
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
-import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy } from '../wailsjs/go/main/App';
+import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy, InstallAPK, ExportAPK } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { main } from '../wailsjs/go/models';
 // @ts-ignore
@@ -87,11 +88,47 @@ function App() {
     }
   };
 
+  const selectedDeviceRef = useRef(selectedDevice);
+  const lastDropTime = useRef(0);
+
+  useEffect(() => {
+    selectedDeviceRef.current = selectedDevice;
+  }, [selectedDevice]);
+
   useEffect(() => {
     fetchDevices();
+
+    const handleFileDrop = (...args: any[]) => {
+      // Wails v2 can fire with (x, y, paths) OR just (paths) depending on platform/version
+      let actualPaths: string[] = [];
+      if (args.length === 1 && Array.isArray(args[0])) {
+        actualPaths = args[0];
+      } else if (args.length >= 3 && Array.isArray(args[2])) {
+        actualPaths = args[2];
+      }
+
+      if (actualPaths && actualPaths.length > 0) {
+        const now = Date.now();
+        if (now - lastDropTime.current < 500) return;
+        lastDropTime.current = now;
+
+        const apkFiles = actualPaths.filter(p => typeof p === 'string' && p.toLowerCase().endsWith('.apk'));
+        if (apkFiles.length > 0) {
+          const currentDevice = selectedDeviceRef.current;
+          if (!currentDevice) {
+            message.error("Please select a device first");
+            return;
+          }
+          handleInstallAPKs(currentDevice, apkFiles);
+        }
+      }
+    };
+
+    // Use only ONE listener to start with, or keep both with the debounce
+    EventsOn("wails:file-drop", handleFileDrop);
     
-    // Cleanup logcat on unmount
     return () => {
+      EventsOff("wails:file-drop");
       StopLogcat();
     };
   }, []);
@@ -230,6 +267,51 @@ function App() {
     }
   };
 
+  const handleInstallAPKs = async (deviceId: string, paths: string[]) => {
+    if (!deviceId) {
+      message.error("Please select a device first");
+      return;
+    }
+
+    // Immediately switch to Apps tab and ensure correct device is selected
+    setSelectedKey('2');
+    if (selectedDevice !== deviceId) {
+        setSelectedDevice(deviceId);
+    }
+
+    for (const path of paths) {
+      const fileName = path.split(/[\\/]/).pop();
+      const hideMessage = message.loading(`Installing ${fileName}...`, 0);
+      try {
+        await InstallAPK(deviceId, path);
+        message.success(`Installed ${fileName} successfully`);
+        
+        // Refresh the list if we are on the correct device
+        if (selectedDevice === deviceId) {
+            fetchPackages();
+        }
+      } catch (err) {
+        message.error(`Failed to install ${fileName}: ${String(err)}`);
+      } finally {
+        hideMessage();
+      }
+    }
+  };
+
+  const handleExportAPK = async (packageName: string) => {
+    const hideMessage = message.loading(`Exporting ${packageName}...`, 0);
+    try {
+      const res = await ExportAPK(selectedDevice, packageName);
+      if (res) {
+        message.success(`Exported to ${res}`);
+      }
+    } catch (err) {
+      message.error('Export failed: ' + String(err));
+    } finally {
+      hideMessage();
+    }
+  };
+
   const deviceColumns = [
     {
       title: 'Device ID',
@@ -331,6 +413,12 @@ function App() {
               icon: <FileTextOutlined />,
               label: 'Logcat',
               onClick: () => handleAppLogcat(record.name)
+            },
+            {
+              key: 'export',
+              icon: <DownloadOutlined />,
+              label: 'Export APK',
+              onClick: () => handleExportAPK(record.name)
             },
             {
               type: 'divider'
