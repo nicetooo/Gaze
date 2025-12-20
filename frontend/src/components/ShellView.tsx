@@ -1,6 +1,7 @@
 import React from "react";
 import { Button, Space, Input } from "antd";
 import { ClearOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 import DeviceSelector from "./DeviceSelector";
 
 interface Device {
@@ -35,6 +36,7 @@ const ShellView: React.FC<ShellViewProps> = ({
   setShellOutput,
   handleShellCommand,
 }) => {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -54,7 +56,7 @@ const ShellView: React.FC<ShellViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>ADB Shell</h2>
+        <h2 style={{ margin: 0 }}>{t("shell.title")}</h2>
         <Space>
           <DeviceSelector
             devices={devices}
@@ -64,19 +66,19 @@ const ShellView: React.FC<ShellViewProps> = ({
             loading={loading}
           />
           <Button icon={<ClearOutlined />} onClick={() => setShellOutput("")}>
-            Clear
+            {t("common.clear") || "Clear"}
           </Button>
         </Space>
       </div>
       <Space.Compact style={{ width: "100%", marginBottom: 16 }}>
         <Input
-          placeholder="Enter ADB command (e.g. shell ls -l)"
+          placeholder={t("shell.placeholder")}
           value={shellCmd}
           onChange={(e) => setShellCmd(e.target.value)}
           onPressEnter={handleShellCommand}
         />
         <Button type="primary" onClick={handleShellCommand}>
-          Run
+          {t("shell.run")}
         </Button>
       </Space.Compact>
       <Input.TextArea

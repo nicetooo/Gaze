@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, Button, Row, Col, Card, Tabs, Input } from "antd";
 import { ReloadOutlined, AppstoreOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 // @ts-ignore
 import { main } from "../../wailsjs/go/models";
 
@@ -29,6 +30,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
   setActivitySearch,
   handleStartActivity,
 }) => {
+  const { t } = useTranslation();
   return (
     <Modal
       title={
@@ -40,7 +42,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
             paddingRight: 32,
           }}
         >
-          <span>App Information</span>
+          <span>{t("app_info.title")}</span>
           {selectedAppInfo && (
             <Button
               size="small"
@@ -48,7 +50,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
               onClick={() => handleFetchAppInfo(selectedAppInfo.name, true)}
               disabled={infoLoading}
             >
-              Refresh
+              {t("common.refresh")}
             </Button>
           )}
         </div>
@@ -57,7 +59,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
       onCancel={onCancel}
       footer={[
         <Button key="close" onClick={onCancel}>
-          Close
+          {t("common.close")}
         </Button>,
       ]}
       width={600}
@@ -69,10 +71,10 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
             style={{ fontSize: 32, color: "#1890ff", marginBottom: 16 }}
           />
           <div style={{ fontSize: 16, color: "#666" }}>
-            Fetching detailed app information...
+            {t("app_info.fetching")}
           </div>
           <div style={{ fontSize: 12, color: "#999", marginTop: 8 }}>
-            This may take a few seconds as we extract data from the APK
+            {t("app_info.fetching_desc")}
           </div>
         </div>
       ) : (
@@ -113,13 +115,13 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                     color: "#1890ff",
                     fontWeight: "bold",
                   }}
-                >
-                  Refreshing App Info...
+                  >
+                    {t("app_info.refreshing")}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
+                    {t("app_info.refreshing_desc")}
+                  </div>
                 </div>
-                <div style={{ fontSize: 12, color: "#666", marginTop: 4 }}>
-                  Extracting data from APK, please wait
-                </div>
-              </div>
             )}
             <div
               style={{
@@ -171,25 +173,25 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
 
             <Row gutter={[16, 16]}>
               <Col span={12}>
-                <Card size="small" title="Version Info">
+                <Card size="small" title={t("app_info.version_info")}>
                   <p>
-                    <strong>Version Name:</strong>{" "}
+                    <strong>{t("app_info.version_name")}:</strong>{" "}
                     {selectedAppInfo.versionName || "N/A"}
                   </p>
                   <p>
-                    <strong>Version Code:</strong>{" "}
+                    <strong>{t("app_info.version_code")}:</strong>{" "}
                     {selectedAppInfo.versionCode || "N/A"}
                   </p>
                 </Card>
               </Col>
               <Col span={12}>
-                <Card size="small" title="SDK Info">
+                <Card size="small" title={t("app_info.sdk_info")}>
                   <p>
-                    <strong>Min SDK:</strong>{" "}
+                    <strong>{t("app_info.min_sdk")}:</strong>{" "}
                     {selectedAppInfo.minSdkVersion || "N/A"}
                   </p>
                   <p>
-                    <strong>Target SDK:</strong>{" "}
+                    <strong>{t("app_info.target_sdk")}:</strong>{" "}
                     {selectedAppInfo.targetSdkVersion || "N/A"}
                   </p>
                 </Card>
@@ -202,7 +204,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                   items={[
                     {
                       key: "permissions",
-                      label: `Permissions (${
+                      label: `${t("app_info.permissions")} (${
                         selectedAppInfo.permissions?.length || 0
                       })`,
                       children: (
@@ -216,9 +218,9 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                                 alignItems: "center",
                               }}
                             >
-                              <span>Permissions</span>
+                              <span>{t("app_info.permissions")}</span>
                               <Input
-                                placeholder="Search permissions..."
+                                placeholder={t("app_info.search_permissions")}
                                 size="small"
                                 style={{ width: 200 }}
                                 allowClear
@@ -260,7 +262,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                                   padding: "20px 0",
                                 }}
                               >
-                                No permissions listed
+                                {t("app_info.no_permissions")}
                               </p>
                             )}
                           </div>
@@ -269,7 +271,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                     },
                     {
                       key: "activities",
-                      label: `Activities (${
+                      label: `${t("app_info.activities")} (${
                         selectedAppInfo.activities?.length || 0
                       })`,
                       children: (
@@ -283,9 +285,9 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                                 alignItems: "center",
                               }}
                             >
-                              <span>Activities</span>
+                              <span>{t("app_info.activities")}</span>
                               <Input
-                                placeholder="Search activities..."
+                                placeholder={t("app_info.search_activities")}
                                 size="small"
                                 style={{ width: 200 }}
                                 allowClear
@@ -348,7 +350,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                                         icon={<PlayCircleOutlined />}
                                         onClick={() => handleStartActivity(a)}
                                       >
-                                        Launch
+                                        {t("app_info.launch")}
                                       </Button>
                                     )}
                                   </div>
@@ -362,7 +364,7 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
                                   padding: "20px 0",
                                 }}
                               >
-                                No activities listed
+                                {t("app_info.no_activities")}
                               </p>
                             )}
                           </div>

@@ -1,5 +1,6 @@
 import React from "react";
 import { Button, Space, Tag, Card, Switch, Tooltip, Slider, Select } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   StopOutlined,
   DesktopOutlined,
@@ -63,6 +64,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
   handleStartMidSessionRecord,
   handleStopMidSessionRecord,
 }) => {
+  const { t } = useTranslation();
   return (
     <div
       style={{
@@ -83,8 +85,8 @@ const MirrorView: React.FC<MirrorViewProps> = ({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h2 style={{ margin: 0 }}>Mirror Screen</h2>
-          <Tag color="blue">Powered by Scrcpy</Tag>
+          <h2 style={{ margin: 0 }}>{t("mirror.title")}</h2>
+          <Tag color="blue">{t("mirror.powered_by")}</Tag>
         </div>
         <Space>
           <DeviceSelector
@@ -104,7 +106,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               disabled={!selectedDevice}
               style={{ height: "40px", borderRadius: "8px" }}
             >
-              Stop Mirroring
+              {t("mirror.stop")}
             </Button>
           ) : (
             <Button
@@ -115,7 +117,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               disabled={!selectedDevice}
               style={{ height: "40px", borderRadius: "8px" }}
             >
-              Start Mirroring
+              {t("mirror.start")}
             </Button>
           )}
         </Space>
@@ -141,7 +143,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
             </span>
           </div>
           <div style={{ fontSize: "12px", color: "#1890ff" }}>
-            Active mirror session
+            {t("mirror.active_session")}
           </div>
         </div>
       )}
@@ -168,7 +170,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <DownloadOutlined />
-                  Recording
+                  {t("mirror.recording")}
                 </Space>
               }
               size="small"
@@ -194,14 +196,14 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                         shouldRecord || isRecording ? "bold" : "normal",
                     }}
                   >
-                    Record Screen
+                    {t("mirror.record_screen")}
                   </span>
                   <div style={{ fontSize: "11px", color: "#888" }}>
                     {isRecording
-                      ? "Recording in progress..."
+                      ? t("mirror.recording_in_progress")
                       : shouldRecord
-                      ? "Save dialog will show up"
-                      : "Independent of other settings"}
+                      ? t("mirror.save_dialog_desc")
+                      : t("mirror.independent_desc")}
                   </div>
                 </Space>
                 <Switch
@@ -246,7 +248,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                       icon={<div className="record-dot" />}
                       style={{ margin: 0 }}
                     >
-                      RECORD
+                      {t("mirror.recording").toUpperCase()}
                     </Tag>
                     <span
                       style={{
@@ -267,7 +269,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                         marginTop: 4,
                       }}
                     >
-                      File: {scrcpyConfig.recordPath.split(/[\\/]/).pop()}
+                      {t("files.title")}: {scrcpyConfig.recordPath.split(/[\\/]/).pop()}
                     </div>
                   )}
                 </div>
@@ -279,7 +281,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <PlayCircleOutlined />
-                  Video Settings
+                  {t("mirror.video_settings")}
                 </Space>
               }
               size="small"
@@ -292,7 +294,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                     justifyContent: "space-between",
                   }}
                 >
-                  <span>Max Resolution</span>
+                  <span>{t("mirror.max_res")}</span>
                   <Tag>{scrcpyConfig.maxSize || "Auto"}</Tag>
                 </div>
                 <Slider
@@ -319,7 +321,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                     justifyContent: "space-between",
                   }}
                 >
-                  <span>Bit Rate (Mbps)</span>
+                  <span>{t("mirror.bitrate")}</span>
                   <Tag>{scrcpyConfig.bitRate}M</Tag>
                 </div>
                 <Slider
@@ -339,7 +341,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                     justifyContent: "space-between",
                   }}
                 >
-                  <span>Max FPS</span>
+                  <span>{t("mirror.max_fps")}</span>
                   <Tag>{scrcpyConfig.maxFps}</Tag>
                 </div>
                 <Slider
@@ -359,7 +361,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   alignItems: "center",
                 }}
               >
-                <span>Video Codec</span>
+                <span>{t("mirror.video_codec")}</span>
                 <Select
                   size="small"
                   value={scrcpyConfig.videoCodec}
@@ -380,14 +382,14 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <FileTextOutlined />
-                  Audio Settings
+                  {t("mirror.audio_settings")}
                 </Space>
               }
               size="small"
             >
               <Space direction="vertical" style={{ width: "100%" }}>
                 <div className="setting-item">
-                  <span>Disable Audio</span>
+                  <span>{t("mirror.disable_audio")}</span>
                   <Switch
                     size="small"
                     checked={scrcpyConfig.noAudio}
@@ -397,7 +399,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <span>Audio Codec</span>
+                  <span>{t("mirror.audio_codec")}</span>
                   <Select
                     size="small"
                     disabled={scrcpyConfig.noAudio}
@@ -431,14 +433,14 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <SettingOutlined />
-                  Window Options
+                  {t("mirror.window_options")}
                 </Space>
               }
               size="small"
             >
               <Space direction="vertical" style={{ width: "100%" }}>
                 <div className="setting-item">
-                  <span>Always On Top</span>
+                  <span>{t("mirror.always_on_top")}</span>
                   <Switch
                     size="small"
                     checked={scrcpyConfig.alwaysOnTop}
@@ -451,7 +453,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <span>Fullscreen</span>
+                  <span>{t("mirror.fullscreen")}</span>
                   <Switch
                     size="small"
                     checked={scrcpyConfig.fullscreen}
@@ -464,7 +466,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <span>Borderless</span>
+                  <span>{t("mirror.borderless")}</span>
                   <Switch
                     size="small"
                     checked={scrcpyConfig.windowBorderless}
@@ -484,15 +486,15 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <MobileOutlined />
-                  Control & Interaction
+                  {t("mirror.control_interaction")}
                 </Space>
               }
               size="small"
             >
               <Space direction="vertical" style={{ width: "100%" }}>
                 <div className="setting-item">
-                  <Tooltip title="Prevent device from sleeping">
-                    <span>Stay Awake</span>
+                  <Tooltip title={t("mirror.stay_awake_desc")}>
+                    <span>{t("mirror.stay_awake")}</span>
                   </Tooltip>
                   <Switch
                     size="small"
@@ -503,8 +505,8 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <Tooltip title="Disable keyboard/mouse control">
-                    <span>Read Only</span>
+                  <Tooltip title={t("mirror.read_only_desc")}>
+                    <span>{t("mirror.read_only")}</span>
                   </Tooltip>
                   <Switch
                     size="small"
@@ -515,7 +517,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <span>Show Touches</span>
+                  <span>{t("mirror.show_touches")}</span>
                   <Switch
                     size="small"
                     checked={scrcpyConfig.showTouches}
@@ -535,15 +537,15 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               title={
                 <Space>
                   <StopOutlined />
-                  Power Management
+                  {t("mirror.power_management")}
                 </Space>
               }
               size="small"
             >
               <Space direction="vertical" style={{ width: "100%" }}>
                 <div className="setting-item">
-                  <Tooltip title="Turn off device screen while mirroring">
-                    <span>Turn Screen Off</span>
+                  <Tooltip title={t("mirror.turn_screen_off_desc")}>
+                    <span>{t("mirror.turn_screen_off")}</span>
                   </Tooltip>
                   <Switch
                     size="small"
@@ -557,8 +559,8 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   />
                 </div>
                 <div className="setting-item">
-                  <Tooltip title="Power off device when closing mirror">
-                    <span>Power Off On Close</span>
+                  <Tooltip title={t("mirror.power_off_on_close_desc")}>
+                    <span>{t("mirror.power_off_on_close")}</span>
                   </Tooltip>
                   <Switch
                     size="small"

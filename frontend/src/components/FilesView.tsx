@@ -10,6 +10,7 @@ import {
   Dropdown,
   Modal,
 } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   ReloadOutlined,
   FolderOutlined,
@@ -200,9 +201,10 @@ const FilesView: React.FC<FilesViewProps> = ({
   clipboard,
   handleFileAction,
 }) => {
+  const { t } = useTranslation();
   const fileColumns = [
     {
-      title: "Name",
+      title: t("files.name"),
       key: "name",
       sorter: (a: any, b: any) => a.name.localeCompare(b.name),
       render: (_: any, record: any) => (
@@ -220,7 +222,7 @@ const FilesView: React.FC<FilesViewProps> = ({
       ),
     },
     {
-      title: "Size",
+      title: t("files.size"),
       dataIndex: "size",
       key: "size",
       width: 100,
@@ -233,7 +235,7 @@ const FilesView: React.FC<FilesViewProps> = ({
           : (size / 1024).toFixed(2) + " KB",
     },
     {
-      title: "Time",
+      title: t("files.time"),
       dataIndex: "modTime",
       key: "modTime",
       width: 180,
@@ -246,13 +248,13 @@ const FilesView: React.FC<FilesViewProps> = ({
       },
     },
     {
-      title: "Action",
+      title: t("files.action"),
       key: "action",
       width: 180,
       render: (_: any, record: any) => (
         <Space>
           {!record.isDir && (
-            <Tooltip title="Download">
+            <Tooltip title={t("common.download")}>
               <Button
                 size="small"
                 icon={<VerticalAlignBottomOutlined />}
@@ -260,14 +262,14 @@ const FilesView: React.FC<FilesViewProps> = ({
               />
             </Tooltip>
           )}
-          <Tooltip title="Copy">
+          <Tooltip title={t("common.copy")}>
             <Button
               size="small"
               icon={<CopyOutlined />}
               onClick={() => handleFileAction("copy", record)}
             />
           </Tooltip>
-          <Tooltip title="Cut">
+          <Tooltip title={t("common.cut")}>
             <Button
               size="small"
               icon={<ScissorOutlined />}
@@ -279,23 +281,25 @@ const FilesView: React.FC<FilesViewProps> = ({
               items: [
                 {
                   key: "open",
-                  label: "Open on Host",
+                  label: t("files.open_on_host"),
                   disabled: record.isDir,
                   onClick: () => handleFileAction("open", record),
                 },
                 {
                   key: "rename",
-                  label: "Rename",
+                  label: t("files.rename"),
                   onClick: () => handleFileAction("rename", record),
                 },
                 {
                   key: "delete",
-                  label: "Delete",
+                  label: t("files.delete"),
                   danger: true,
                   onClick: () => {
                     Modal.confirm({
-                      title: "Delete File",
-                      content: `Are you sure you want to delete ${record.name}?`,
+                      title: t("files.delete_confirm_title"),
+                      content: t("files.delete_confirm_content", {
+                        name: record.name,
+                      }),
                       onOk: () => handleFileAction("delete", record),
                     });
                   },
@@ -333,7 +337,7 @@ const FilesView: React.FC<FilesViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>Files</h2>
+        <h2 style={{ margin: 0 }}>{t("files.title")}</h2>
         <DeviceSelector
           devices={devices}
           selectedDevice={selectedDevice}
@@ -378,13 +382,13 @@ const FilesView: React.FC<FilesViewProps> = ({
             checked={showHiddenFiles}
             onChange={(e: any) => setShowHiddenFiles(e.target.checked)}
           >
-            Show Hidden
+            {t("files.show_hidden")}
           </Checkbox>
           <Button
             icon={<FolderAddOutlined />}
             onClick={() => handleFileAction("mkdir", null)}
           >
-            New Folder
+            {t("files.new_folder")}
           </Button>
           <Button
             icon={<SnippetsOutlined />}
@@ -392,8 +396,11 @@ const FilesView: React.FC<FilesViewProps> = ({
             onClick={() => handleFileAction("paste", null)}
             type={clipboard ? "primary" : "default"}
           >
-            Paste{" "}
-            {clipboard && `(${clipboard.type === "copy" ? "Copy" : "Cut"})`}
+            {t("files.paste")}{" "}
+            {clipboard &&
+              `(${
+                clipboard.type === "copy" ? t("common.copy") : t("common.cut")
+              })`}
           </Button>
         </Space>
       </div>

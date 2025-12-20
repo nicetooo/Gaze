@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from "react";
 import { Button, Input, Select, Space, Checkbox } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   PauseOutlined,
   PlayCircleOutlined,
@@ -55,6 +56,7 @@ export default function LogcatView({
   autoScroll,
   setAutoScroll,
 }: LogcatViewProps) {
+  const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const scrollingRef = useRef(false);
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
@@ -318,7 +320,7 @@ export default function LogcatView({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>Logcat</h2>
+        <h2 style={{ margin: 0 }}>{t("logcat.title")}</h2>
         <Space>
           <DeviceSelector
             devices={devices}
@@ -332,7 +334,7 @@ export default function LogcatView({
             value={selectedPackage}
             onChange={setSelectedPackage}
             style={{ width: 220 }}
-            placeholder="All Apps (Optional)"
+            placeholder={t("logcat.apps_placeholder")}
             disabled={isLogging}
             allowClear
             filterOption={(input, option) =>
@@ -353,10 +355,10 @@ export default function LogcatView({
             icon={isLogging ? <PauseOutlined /> : <PlayCircleOutlined />}
             onClick={toggleLogcat}
           >
-            {isLogging ? "Stop" : "Start"}
+            {isLogging ? t("logcat.stop") : t("logcat.start")}
           </Button>
           <Button icon={<ClearOutlined />} onClick={() => setLogs([])}>
-            Clear
+            {t("logcat.clear")}
           </Button>
         </Space>
       </div>
@@ -373,7 +375,7 @@ export default function LogcatView({
         <div style={{ flex: 1, position: "relative" }}>
           <Input
             placeholder={
-              useRegex ? "Filter logs by regex..." : "Filter logs by text..."
+              useRegex ? t("logcat.filter_regex") : t("logcat.filter_text")
             }
             value={logFilter}
             onChange={(e) => setLogFilter(e.target.value)}
@@ -423,7 +425,7 @@ export default function LogcatView({
                       fontWeight: "bold",
                     }}
                     onClick={() => setMatchCase(!matchCase)}
-                    title="Match Case (Aa)"
+                    title={t("logcat.match_case") || "Match Case (Aa)"}
                   >
                     Aa
                   </Button>
@@ -442,7 +444,7 @@ export default function LogcatView({
                       fontWeight: "bold",
                     }}
                     onClick={() => setMatchWholeWord(!matchWholeWord)}
-                    title="Match Whole Word (W)"
+                    title={t("logcat.match_whole_word") || "Match Whole Word (W)"}
                   >
                     W
                   </Button>
@@ -461,7 +463,7 @@ export default function LogcatView({
                       fontWeight: "bold",
                     }}
                     onClick={() => setUseRegex(!useRegex)}
-                    title="Use Regular Expression (.*)"
+                    title={t("logcat.use_regex") || "Use Regular Expression (.*)"}
                   >
                     .*
                   </Button>
@@ -486,7 +488,7 @@ export default function LogcatView({
               }}
             >
               {filterInfo.invalid
-                ? "Invalid Regex Syntax"
+                ? t("logcat.invalid_regex")
                 : `Pattern: /${filterInfo.pattern}/${matchCase ? "" : "i"}`}
             </div>
           )}
@@ -494,23 +496,23 @@ export default function LogcatView({
         <Checkbox.Group
           options={[
             {
-              label: <span style={{ color: getLogColor("E") }}>Error</span>,
+              label: <span style={{ color: getLogColor("E") }}>{t("logcat.level.error")}</span>,
               value: "E",
             },
             {
-              label: <span style={{ color: getLogColor("W") }}>Warn</span>,
+              label: <span style={{ color: getLogColor("W") }}>{t("logcat.level.warn")}</span>,
               value: "W",
             },
             {
-              label: <span style={{ color: getLogColor("I") }}>Info</span>,
+              label: <span style={{ color: getLogColor("I") }}>{t("logcat.level.info")}</span>,
               value: "I",
             },
             {
-              label: <span style={{ color: getLogColor("D") }}>Debug</span>,
+              label: <span style={{ color: getLogColor("D") }}>{t("logcat.level.debug")}</span>,
               value: "D",
             },
             {
-              label: <span style={{ color: getLogColor("V") }}>Verbose</span>,
+              label: <span style={{ color: getLogColor("V") }}>{t("logcat.level.verbose")}</span>,
               value: "V",
             },
           ]}

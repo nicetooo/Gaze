@@ -1,5 +1,14 @@
 import { useState, useEffect, useRef } from "react";
-import { Layout, Menu, Button, message, notification, Modal } from "antd";
+import {
+  Layout,
+  Menu,
+  Button,
+  message,
+  notification,
+  Modal,
+  Dropdown,
+} from "antd";
+import { useTranslation } from "react-i18next";
 import LogcatView from "./components/LogcatView";
 import DeviceSelector from "./components/DeviceSelector";
 import DevicesView from "./components/DevicesView";
@@ -20,6 +29,7 @@ import {
   GithubOutlined,
   BugOutlined,
   InfoCircleOutlined,
+  TranslationOutlined,
 } from "@ant-design/icons";
 import "./App.css";
 // @ts-ignore
@@ -76,6 +86,7 @@ interface Device {
 }
 
 function App() {
+  const { t, i18n } = useTranslation();
   const [selectedKey, setSelectedKey] = useState("1");
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
@@ -182,7 +193,7 @@ function App() {
         }
       }
     } catch (err) {
-      message.error("Failed to fetch devices: " + String(err));
+      message.error(t("app.fetch_devices_failed") + ": " + String(err));
     } finally {
       setLoading(false);
     }
@@ -195,7 +206,7 @@ function App() {
       const res = await GetDeviceInfo(deviceId);
       setSelectedDeviceInfo(res);
     } catch (err) {
-      message.error("Failed to fetch device info: " + String(err));
+      message.error(t("app.fetch_device_info_failed") + ": " + String(err));
     } finally {
       setDeviceInfoLoading(false);
     }
@@ -231,7 +242,7 @@ function App() {
         if (apkFiles.length > 0) {
           const currentDevice = selectedDeviceRef.current;
           if (!currentDevice) {
-            message.error("Please select a device first");
+            message.error(t("app.select_device"));
             return;
           }
           handleInstallAPKs(currentDevice, apkFiles);
@@ -277,8 +288,8 @@ function App() {
 
       // Show notification with action to open folder
       notification.success({
-        message: "Recording Saved",
-        description: "The screen recording has been saved successfully.",
+        message: t("app.recording_saved"),
+        description: t("app.recording_saved_desc"),
         btn: (
           <Button
             type="primary"
@@ -290,7 +301,7 @@ function App() {
               notification.destroy();
             }}
           >
-            Show in Folder
+            {t("app.show_in_folder")}
           </Button>
         ),
         key: "scrcpy-record-saved",
@@ -362,7 +373,7 @@ function App() {
         setPackages(res || []);
       }
     } catch (err) {
-      message.error("Failed to list packages: " + String(err));
+      message.error(t("app.list_packages_failed") + ": " + String(err));
     } finally {
       setAppsLoading(false);
     }
@@ -406,7 +417,7 @@ function App() {
         })
       );
     } catch (err) {
-      message.error("Failed to fetch app info: " + String(err));
+      message.error(t("app.fetch_app_info_failed") + ": " + String(err));
     } finally {
       setInfoLoading(false);
     }
@@ -420,7 +431,7 @@ function App() {
       setFileList(res || []);
       setCurrentPath(path);
     } catch (err) {
-      message.error("Failed to list files: " + String(err));
+      message.error(t("app.list_files_failed") + ": " + String(err));
     } finally {
       setFilesLoading(false);
     }
@@ -435,7 +446,7 @@ function App() {
           message.loading({
             content: (
               <span>
-                Opening {file.name}...
+                {t("app.launching", { name: file.name })}
                 <Button
                   type="link"
                   size="small"
@@ -444,7 +455,7 @@ function App() {
                     message.destroy(openKey);
                   }}
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               </span>
             ),
@@ -456,9 +467,9 @@ function App() {
             message.destroy(openKey);
           } catch (err) {
             if (String(err).includes("cancelled")) {
-              message.info("Open cancelled", 2);
+              message.info(t("app.open_cancelled"), 2);
             } else {
-              message.error("Failed to open file: " + String(err), 3);
+              message.error(t("app.open_failed") + ": " + String(err), 3);
             }
             message.destroy(openKey);
           }
@@ -468,24 +479,24 @@ function App() {
           try {
             const savePath = await DownloadFile(selectedDevice, file.path);
             if (savePath) {
-              message.success(`Downloaded to ${savePath}`);
+              message.success(t("app.export_success", { path: savePath }));
             }
           } catch (err) {
-            message.error("Download failed: " + String(err));
+            message.error(t("app.export_failed") + ": " + String(err));
           }
           break;
         case "delete":
           await DeleteFile(selectedDevice, file.path);
-          message.success("Deleted " + file.name);
+          message.success(t("app.delete_success", { name: file.name }));
           fetchFiles(currentPath);
           break;
         case "copy":
           setClipboard({ path: file.path, type: "copy" });
-          message.info("Copied " + file.name);
+          message.info(t("app.copy_success", { name: file.name }));
           break;
         case "cut":
           setClipboard({ path: file.path, type: "cut" });
-          message.info("Cut " + file.name);
+          message.info(t("app.cut_success", { name: file.name }));
           break;
         case "paste":
           if (!clipboard) return;
@@ -495,10 +506,14 @@ function App() {
             clipboard.path.split("/").pop();
           if (clipboard.type === "copy") {
             await CopyFile(selectedDevice, clipboard.path, dest);
-            message.success("Pasted " + clipboard.path.split("/").pop());
+            message.success(
+              t("app.paste_success", { name: clipboard.path.split("/").pop() })
+            );
           } else {
             await MoveFile(selectedDevice, clipboard.path, dest);
-            message.success("Moved " + clipboard.path.split("/").pop());
+            message.success(
+              t("app.move_success", { name: clipboard.path.split("/").pop() })
+            );
             setClipboard(null);
           }
           fetchFiles(currentPath);
@@ -506,13 +521,13 @@ function App() {
         case "rename":
           let newName = file.name;
           Modal.confirm({
-            title: "Rename",
+            title: t("common.rename"),
             autoFocusButton: null,
             content: (
               <FocusInput
                 defaultValue={file.name}
                 onChange={(e: any) => (newName = e.target.value)}
-                placeholder="Enter new name"
+                placeholder={t("common.enter_new_name")}
                 selectAll={true}
               />
             ),
@@ -524,10 +539,10 @@ function App() {
                     : currentPath + "/";
                   const newPath = parentPath + newName;
                   await MoveFile(selectedDevice, file.path, newPath);
-                  message.success("Renamed to " + newName);
+                  message.success(t("app.rename_success", { name: newName }));
                   fetchFiles(currentPath);
                 } catch (err) {
-                  message.error("Rename failed: " + String(err));
+                  message.error(t("app.rename_failed") + ": " + String(err));
                   throw err; // Keep modal open
                 }
               }
@@ -537,12 +552,12 @@ function App() {
         case "mkdir":
           let folderName = "";
           Modal.confirm({
-            title: "New Directory",
+            title: t("common.new_directory"),
             autoFocusButton: null,
             content: (
               <FocusInput
                 onChange={(e: any) => (folderName = e.target.value)}
-                placeholder="Folder name"
+                placeholder={t("common.folder_name")}
               />
             ),
             onOk: async () => {
@@ -553,10 +568,10 @@ function App() {
                     : currentPath + "/";
                   const newPath = parentPath + folderName;
                   await Mkdir(selectedDevice, newPath);
-                  message.success("Created directory " + folderName);
+                  message.success(t("app.mkdir_success", { name: folderName }));
                   fetchFiles(currentPath);
                 } catch (err) {
-                  message.error("Create directory failed: " + String(err));
+                  message.error(t("app.mkdir_failed") + ": " + String(err));
                   throw err; // Keep modal open
                 }
               }
@@ -580,54 +595,54 @@ function App() {
     console.log(`Uninstalling ${packageName} from device ${selectedDevice}`);
     try {
       await UninstallApp(selectedDevice, packageName);
-      message.success(`Uninstalled ${packageName}`);
+      message.success(t("app.uninstall_success", { name: packageName }));
       fetchPackages(typeFilter, selectedDevice);
     } catch (err) {
       console.error("Uninstall error:", err);
-      message.error("Failed to uninstall: " + String(err));
+      message.error(t("app.uninstall_failed") + ": " + String(err));
     }
   };
 
   const handleClearData = async (packageName: string) => {
     try {
       await ClearAppData(selectedDevice, packageName);
-      message.success(`Cleared data for ${packageName}`);
+      message.success(t("app.clear_data_success", { name: packageName }));
     } catch (err) {
-      message.error("Failed to clear data: " + String(err));
+      message.error(t("app.clear_data_failed") + ": " + String(err));
     }
   };
 
   const handleForceStop = async (packageName: string) => {
     try {
       await ForceStopApp(selectedDevice, packageName);
-      message.success(`Force stopped ${packageName}`);
+      message.success(t("app.force_stop_success", { name: packageName }));
     } catch (err) {
-      message.error("Failed to force stop: " + String(err));
+      message.error(t("app.force_stop_failed") + ": " + String(err));
     }
   };
 
   const handleStartApp = async (packageName: string) => {
-    const hide = message.loading(`Launching ${packageName}...`, 0);
+    const hide = message.loading(t("app.launching", { name: packageName }), 0);
     try {
       // Force stop first as requested
       await ForceStopApp(selectedDevice, packageName);
       // Then start
       await StartApp(selectedDevice, packageName);
-      message.success(`Started ${packageName}`);
+      message.success(t("app.start_app_success", { name: packageName }));
     } catch (err) {
-      message.error("Failed to start app: " + String(err));
+      message.error(t("app.start_app_failed") + ": " + String(err));
     } finally {
       hide();
     }
   };
 
   const handleStartActivity = async (activityName: string) => {
-    const hide = message.loading(`Launching activity ${activityName}...`, 0);
+    const hide = message.loading(t("app.launching", { name: activityName }), 0);
     try {
       await StartActivity(selectedDevice, activityName);
-      message.success(`Started activity successfully`);
+      message.success(t("app.start_activity_success"));
     } catch (err) {
-      message.error("Failed to start activity: " + String(err));
+      message.error(t("app.start_activity_failed") + ": " + String(err));
     } finally {
       hide();
     }
@@ -640,14 +655,14 @@ function App() {
     try {
       if (currentState === "enabled") {
         await DisableApp(selectedDevice, packageName);
-        message.success(`Disabled ${packageName}`);
+        message.success(t("app.disabled_success", { name: packageName }));
       } else {
         await EnableApp(selectedDevice, packageName);
-        message.success(`Enabled ${packageName}`);
+        message.success(t("app.enabled_success", { name: packageName }));
       }
       fetchPackages(typeFilter, selectedDevice);
     } catch (err) {
-      message.error("Failed to change app state: " + String(err));
+      message.error(t("app.change_state_failed") + ": " + String(err));
     }
   };
 
@@ -658,7 +673,7 @@ function App() {
       const res = await RunAdbCommand(args);
       setShellOutput(res);
     } catch (err) {
-      message.error("Command failed");
+      message.error(t("app.command_failed"));
       setShellOutput(String(err));
     }
   };
@@ -678,7 +693,7 @@ function App() {
         });
       });
     } catch (err) {
-      message.error("Failed to start logcat: " + String(err));
+      message.error(t("app.start_logcat_failed") + ": " + String(err));
     }
   };
 
@@ -689,7 +704,7 @@ function App() {
       EventsOff("logcat-data");
     } else {
       if (!selectedDevice) {
-        message.error("No device selected");
+        message.error(t("app.no_device_selected"));
         return;
       }
       startLogging(selectedDevice, selectedPackage);
@@ -729,11 +744,13 @@ function App() {
 
       if (!overrideConfig) {
         message.success(
-          shouldRecord ? "Starting Recording & Mirror..." : "Starting Mirror..."
+          shouldRecord
+            ? t("app.scrcpy_started_record")
+            : t("app.scrcpy_started_mirror")
         );
       }
     } catch (err) {
-      message.error("Failed to start Scrcpy: " + String(err));
+      message.error(t("app.scrcpy_failed") + ": " + String(err));
     }
   };
 
@@ -743,9 +760,9 @@ function App() {
         await StopRecording(deviceId);
       }
       await StopScrcpy(deviceId);
-      message.success("Mirror stopped");
+      message.success(t("app.scrcpy_stopped"));
     } catch (err) {
-      message.error("Failed to stop Mirror: " + String(err));
+      message.error(t("app.scrcpy_stop_failed") + ": " + String(err));
     }
   };
 
@@ -762,11 +779,11 @@ function App() {
       await StartRecording(selectedDevice, config);
       // setShouldRecord(true); // Should already be true from switch
       setIsRecording(true);
-      message.success("Recording started");
+      message.success(t("app.record_started"));
     } catch (err) {
       setIsRecording(false);
       setShouldRecord(false);
-      message.error("Failed to start recording: " + String(err));
+      message.error(t("app.record_failed") + ": " + String(err));
     }
   };
 
@@ -777,7 +794,7 @@ function App() {
       setShouldRecord(false);
       await StopRecording(selectedDevice);
     } catch (err) {
-      message.error("Failed to stop recording: " + String(err));
+      message.error(t("app.record_stop_failed") + ": " + String(err));
     }
   };
 
@@ -791,7 +808,7 @@ function App() {
 
   const handleInstallAPKs = async (deviceId: string, paths: string[]) => {
     if (!deviceId) {
-      message.error("Please select a device first");
+      message.error(t("app.select_device"));
       return;
     }
 
@@ -803,17 +820,22 @@ function App() {
 
     for (const path of paths) {
       const fileName = path.split(/[\\/]/).pop();
-      const hideMessage = message.loading(`Installing ${fileName}...`, 0);
+      const hideMessage = message.loading(
+        t("app.installing", { name: fileName }),
+        0
+      );
       try {
         await InstallAPK(deviceId, path);
-        message.success(`Installed ${fileName} successfully`);
+        message.success(t("app.install_success", { name: fileName }));
 
         // Refresh the list if we are on the correct device
         if (selectedDevice === deviceId) {
           fetchPackages(typeFilter, selectedDevice);
         }
       } catch (err) {
-        message.error(`Failed to install ${fileName}: ${String(err)}`);
+        message.error(
+          t("app.install_failed", { name: fileName }) + ": " + String(err)
+        );
       } finally {
         hideMessage();
       }
@@ -821,14 +843,17 @@ function App() {
   };
 
   const handleExportAPK = async (packageName: string) => {
-    const hideMessage = message.loading(`Exporting ${packageName}...`, 0);
+    const hideMessage = message.loading(
+      t("app.exporting", { name: packageName }),
+      0
+    );
     try {
       const res = await ExportAPK(selectedDevice, packageName);
       if (res) {
-        message.success(`Exported to ${res}`);
+        message.success(t("app.export_success", { path: res }));
       }
     } catch (err) {
-      message.error("Export failed: " + String(err));
+      message.error(t("app.export_failed") + ": " + String(err));
     } finally {
       hideMessage();
     }
@@ -954,9 +979,7 @@ function App() {
           />
         );
       default:
-        return (
-          <div style={{ padding: 24 }}>Select an option from the menu</div>
-        );
+        return <div style={{ padding: 24 }}>{t("app.select_option")}</div>;
     }
   };
 
@@ -985,12 +1008,24 @@ function App() {
               mode="inline"
               onClick={({ key }) => setSelectedKey(key)}
               items={[
-                { key: "1", icon: <MobileOutlined />, label: "Devices" },
-                { key: "2", icon: <AppstoreOutlined />, label: "Apps" },
-                { key: "6", icon: <FolderOutlined />, label: "Files" },
-                { key: "3", icon: <CodeOutlined />, label: "Shell" },
-                { key: "4", icon: <FileTextOutlined />, label: "Logcat" },
-                { key: "5", icon: <DesktopOutlined />, label: "Mirror" },
+                {
+                  key: "1",
+                  icon: <MobileOutlined />,
+                  label: t("menu.devices"),
+                },
+                { key: "2", icon: <AppstoreOutlined />, label: t("menu.apps") },
+                { key: "6", icon: <FolderOutlined />, label: t("menu.files") },
+                { key: "3", icon: <CodeOutlined />, label: t("menu.shell") },
+                {
+                  key: "4",
+                  icon: <FileTextOutlined />,
+                  label: t("menu.logcat"),
+                },
+                {
+                  key: "5",
+                  icon: <DesktopOutlined />,
+                  label: t("menu.mirror"),
+                },
               ]}
             />
           </div>
@@ -1001,8 +1036,41 @@ function App() {
               display: "flex",
               justifyContent: "center",
               gap: "8px",
+              flexWrap: "wrap",
             }}
           >
+            <Dropdown
+              menu={{
+                items: [
+                  {
+                    key: "en",
+                    label: "English",
+                    onClick: () => i18n.changeLanguage("en"),
+                  },
+                  {
+                    key: "zh",
+                    label: "简体中文",
+                    onClick: () => i18n.changeLanguage("zh"),
+                  },
+                ],
+                selectedKeys: [i18n.language],
+              }}
+              placement="topCenter"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={
+                  <TranslationOutlined
+                    style={{
+                      fontSize: "16px",
+                      color: "rgba(255,255,255,0.45)",
+                    }}
+                  />
+                }
+                title={t("app.change_language")}
+              />
+            </Dropdown>
             <Button
               type="text"
               size="small"
@@ -1012,7 +1080,7 @@ function App() {
                 />
               }
               onClick={() => setAboutVisible(true)}
-              title="About"
+              title={t("app.about")}
             />
             <Button
               type="text"
@@ -1026,7 +1094,7 @@ function App() {
                 BrowserOpenURL &&
                 BrowserOpenURL("https://github.com/nicetooo/adbGUI")
               }
-              title="GitHub Repository"
+              title={t("app.github")}
             />
             <Button
               type="text"
@@ -1057,7 +1125,7 @@ function App() {
                   `https://github.com/nicetooo/adbGUI/issues/new?body=${body}`
                 );
               }}
-              title="Feedback & Issues"
+              title={t("app.feedback")}
             />
           </div>
         </div>

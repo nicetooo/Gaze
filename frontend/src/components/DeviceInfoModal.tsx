@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Modal, Button, Descriptions, Card, Tabs, Table, Tag, Input } from "antd";
 import { InfoCircleOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { useTranslation } from "react-i18next";
 // @ts-ignore
 import { main } from "../../wailsjs/go/models";
 
@@ -19,18 +20,19 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
   loading,
   onRefresh,
 }) => {
+  const { t } = useTranslation();
   const [searchText, setSearchText] = useState("");
 
   const propColumns = [
     {
-      title: "Property",
+      title: t("device_info.prop"),
       dataIndex: "key",
       key: "key",
       width: "40%",
       render: (text: string) => <code style={{ fontSize: "11px" }}>{text}</code>,
     },
     {
-      title: "Value",
+      title: t("device_info.value"),
       dataIndex: "value",
       key: "value",
       render: (text: string) => <span style={{ fontSize: "12px" }}>{text}</span>,
@@ -56,7 +58,7 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingRight: "32px" }}>
           <span>
             <InfoCircleOutlined style={{ marginRight: 8, color: "#1890ff" }} />
-            Device Information
+            {t("device_info.title")}
           </span>
           <Button 
             size="small" 
@@ -64,7 +66,7 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
             onClick={onRefresh}
             disabled={loading}
           >
-            Refresh
+            {t("common.refresh")}
           </Button>
         </div>
       }
@@ -72,7 +74,7 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
       onCancel={onCancel}
       footer={[
         <Button key="close" onClick={onCancel}>
-          Close
+          {t("common.close")}
         </Button>,
       ]}
       width={700}
@@ -81,35 +83,35 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
       {loading && !deviceInfo ? (
         <div style={{ padding: "60px 0", textAlign: "center" }}>
           <ReloadOutlined spin style={{ fontSize: 32, color: "#1890ff", marginBottom: 16 }} />
-          <div>Fetching device information...</div>
+          <div>{t("device_info.fetching")}</div>
         </div>
       ) : (
         deviceInfo && (
           <div className="selectable" style={{ userSelect: "text" }}>
             <Tabs defaultActiveKey="basic">
-              <Tabs.TabPane tab="Basic Info" key="basic">
+              <Tabs.TabPane tab={t("device_info.tabs.basic")} key="basic">
                 <Card size="small" bordered={false}>
                   <Descriptions bordered column={1} size="small">
-                    <Descriptions.Item label="Model">{deviceInfo.model || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Brand">{deviceInfo.brand || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Manufacturer">{deviceInfo.manufacturer || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Android Version">
+                    <Descriptions.Item label={t("device_info.model")}>{deviceInfo.model || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.brand")}>{deviceInfo.brand || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.manufacturer")}>{deviceInfo.manufacturer || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.android_ver")}>
                       <Tag color="blue">{deviceInfo.androidVer || "N/A"}</Tag>
                       (SDK {deviceInfo.sdk || "N/A"})
                     </Descriptions.Item>
-                    <Descriptions.Item label="Serial Number">{deviceInfo.serial || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="CPU Architecture">{deviceInfo.abi || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Hardware">{deviceInfo.cpu || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Memory">{deviceInfo.memory || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Resolution">{deviceInfo.resolution || "N/A"}</Descriptions.Item>
-                    <Descriptions.Item label="Density">{deviceInfo.density || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.serial")}>{deviceInfo.serial || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.cpu")}>{deviceInfo.abi || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.hardware")}>{deviceInfo.cpu || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.memory")}>{deviceInfo.memory || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.resolution")}>{deviceInfo.resolution || "N/A"}</Descriptions.Item>
+                    <Descriptions.Item label={t("device_info.density")}>{deviceInfo.density || "N/A"}</Descriptions.Item>
                   </Descriptions>
                 </Card>
               </Tabs.TabPane>
-              <Tabs.TabPane tab="All Properties" key="props">
+              <Tabs.TabPane tab={t("device_info.tabs.all_props")} key="props">
                 <div style={{ marginBottom: 16 }}>
                   <Input
-                    placeholder="Search properties (key or value)..."
+                    placeholder={t("device_info.search_props")}
                     prefix={<SearchOutlined />}
                     value={searchText}
                     onChange={e => setSearchText(e.target.value)}

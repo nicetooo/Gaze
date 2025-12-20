@@ -1,5 +1,6 @@
 import React from "react";
 import { Table, Button, Tag, Space, Tooltip } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   ReloadOutlined,
   CodeOutlined,
@@ -40,48 +41,49 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   handleStartScrcpy,
   handleFetchDeviceInfo,
 }) => {
+  const { t } = useTranslation();
   const deviceColumns = [
     {
-      title: "Device ID",
+      title: t("devices.id"),
       dataIndex: "id",
       key: "id",
     },
     {
-      title: "Brand",
+      title: t("devices.brand"),
       dataIndex: "brand",
       key: "brand",
       render: (brand: string) => (brand ? brand.toUpperCase() : "-"),
     },
     {
-      title: "Model",
+      title: t("devices.model"),
       dataIndex: "model",
       key: "model",
     },
     {
-      title: "State",
+      title: t("devices.state"),
       dataIndex: "state",
       key: "state",
       width: 130,
       render: (state: string) => (
         <Tag color={state === "device" ? "green" : "red"}>
-          {state.toUpperCase()}
+          {state === "device" ? t("devices.online") : t("devices.offline")}
         </Tag>
       ),
     },
     {
-      title: "Action",
+      title: t("devices.action"),
       key: "action",
       width: 280,
       render: (_: any, record: Device) => (
         <Space size="small">
-          <Tooltip title="Device Info">
+          <Tooltip title={t("device_info.title")}>
             <Button
               size="small"
               icon={<InfoCircleOutlined />}
               onClick={() => handleFetchDeviceInfo(record.id)}
             />
           </Tooltip>
-          <Tooltip title="Shell">
+          <Tooltip title={t("menu.shell")}>
             <Button
               size="small"
               icon={<CodeOutlined />}
@@ -91,7 +93,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
               }}
             />
           </Tooltip>
-          <Tooltip title="Apps">
+          <Tooltip title={t("menu.apps")}>
             <Button
               size="small"
               icon={<AppstoreOutlined />}
@@ -101,7 +103,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
               }}
             />
           </Tooltip>
-          <Tooltip title="Logcat">
+          <Tooltip title={t("menu.logcat")}>
             <Button
               size="small"
               icon={<FileTextOutlined />}
@@ -111,7 +113,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
               }}
             />
           </Tooltip>
-          <Tooltip title="Files">
+          <Tooltip title={t("menu.files")}>
             <Button
               size="small"
               icon={<FolderOutlined />}
@@ -122,7 +124,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
               }}
             />
           </Tooltip>
-          <Tooltip title="Mirror Screen">
+          <Tooltip title={t("devices.mirror_screen")}>
             <Button
               icon={<DesktopOutlined />}
               size="small"
@@ -153,13 +155,13 @@ const DevicesView: React.FC<DevicesViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>Connected Devices</h2>
+        <h2 style={{ margin: 0 }}>{t("devices.title")}</h2>
         <Button
           icon={<ReloadOutlined />}
           onClick={fetchDevices}
           loading={loading}
         >
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
       <div

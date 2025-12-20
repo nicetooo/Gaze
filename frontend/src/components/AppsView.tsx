@@ -1,5 +1,6 @@
 import React from "react";
 import { Table, Button, Tag, Space, Tooltip, Input, Radio, Dropdown, Modal } from "antd";
+import { useTranslation } from "react-i18next";
 import {
   ReloadOutlined,
   PlayCircleOutlined,
@@ -72,6 +73,7 @@ const AppsView: React.FC<AppsViewProps> = ({
   handleClearData,
   handleUninstall,
 }) => {
+  const { t } = useTranslation();
   const filteredPackages = packages.filter((p) => {
     const matchesName = p.name
       .toLowerCase()
@@ -82,7 +84,7 @@ const AppsView: React.FC<AppsViewProps> = ({
 
   const appColumns = [
     {
-      title: "App",
+      title: t("apps.title"),
       key: "app",
       render: (_: any, record: main.AppPackage) => {
         const firstLetter = (record.label || record.name)
@@ -191,63 +193,63 @@ const AppsView: React.FC<AppsViewProps> = ({
       },
     },
     {
-      title: "Type",
+      title: t("apps.type"),
       dataIndex: "type",
       key: "type",
       width: 100,
       render: (type: string) => (
         <Tag color={type === "system" ? "orange" : "blue"}>
-          {type === "system" ? "System" : "User"}
+          {type === "system" ? t("apps.system") : t("apps.user")}
         </Tag>
       ),
     },
     {
-      title: "State",
+      title: t("apps.state"),
       dataIndex: "state",
       key: "state",
       width: 100,
       render: (state: string) => (
         <Tag color={state === "enabled" ? "green" : "red"}>
-          {state.toUpperCase()}
+          {state === "enabled" ? t("apps.enable").toUpperCase() : t("apps.disable").toUpperCase()}
         </Tag>
       ),
     },
     {
-      title: "Action",
+      title: t("apps.action"),
       key: "action",
       width: 280,
       render: (_: any, record: main.AppPackage) => {
         return (
           <Space size={4}>
-            <Tooltip title="Launch App">
+            <Tooltip title={t("apps.launch_app")}>
               <Button
                 size="small"
                 icon={<PlayCircleOutlined />}
                 onClick={() => handleStartApp(record.name)}
               />
             </Tooltip>
-            <Tooltip title="Logcat">
+            <Tooltip title={t("menu.logcat")}>
               <Button
                 size="small"
                 icon={<FileTextOutlined />}
                 onClick={() => handleAppLogcat(record.name)}
               />
             </Tooltip>
-            <Tooltip title="Explore Files">
+            <Tooltip title={t("apps.explore_files")}>
               <Button
                 size="small"
                 icon={<FolderOpenOutlined />}
                 onClick={() => handleExploreAppFiles(record.name)}
               />
             </Tooltip>
-            <Tooltip title="Export APK">
+            <Tooltip title={t("app.export_success", { path: "" }).split(" ")[0]}>
               <Button
                 size="small"
                 icon={<DownloadOutlined />}
                 onClick={() => handleExportAPK(record.name)}
               />
             </Tooltip>
-            <Tooltip title="App Info">
+            <Tooltip title={t("app_info.title")}>
               <Button
                 size="small"
                 icon={<InfoCircleOutlined />}
@@ -260,7 +262,7 @@ const AppsView: React.FC<AppsViewProps> = ({
                   {
                     key: "stop",
                     icon: <StopOutlined />,
-                    label: "Force Stop",
+                    label: t("apps.force_stop"),
                     onClick: () => handleForceStop(record.name),
                   },
                   {
@@ -271,7 +273,7 @@ const AppsView: React.FC<AppsViewProps> = ({
                       ) : (
                         <CheckCircleOutlined />
                       ),
-                    label: record.state === "enabled" ? "Disable" : "Enable",
+                    label: record.state === "enabled" ? t("apps.disable") : t("apps.enable"),
                     onClick: () => handleToggleState(record.name, record.state),
                   },
                   {
@@ -280,15 +282,15 @@ const AppsView: React.FC<AppsViewProps> = ({
                   {
                     key: "clear",
                     icon: <ClearOutlined />,
-                    label: "Clear Data",
+                    label: t("apps.clear_data"),
                     danger: true,
                     onClick: () => {
                       Modal.confirm({
-                        title: "Clear App Data",
-                        content: `Are you sure you want to clear all data for ${record.name}? This cannot be undone.`,
-                        okText: "Clear",
+                        title: t("apps.clear_data_confirm_title"),
+                        content: t("apps.clear_data_confirm_content", { name: record.name }),
+                        okText: t("apps.clear_data"),
                         okType: "danger",
-                        cancelText: "Cancel",
+                        cancelText: t("common.cancel"),
                         onOk: () => handleClearData(record.name),
                       });
                     },
@@ -296,15 +298,15 @@ const AppsView: React.FC<AppsViewProps> = ({
                   {
                     key: "uninstall",
                     icon: <DeleteOutlined />,
-                    label: "Uninstall",
+                    label: t("apps.uninstall"),
                     danger: true,
                     onClick: () => {
                       Modal.confirm({
-                        title: "Uninstall App",
-                        content: `Are you sure you want to uninstall ${record.name}?`,
-                        okText: "Uninstall",
+                        title: t("apps.uninstall_confirm_title"),
+                        content: t("apps.uninstall_confirm_content", { name: record.name }),
+                        okText: t("apps.uninstall"),
                         okType: "danger",
-                        cancelText: "Cancel",
+                        cancelText: t("common.cancel"),
                         onOk: () => handleUninstall(record.name),
                       });
                     },
@@ -340,7 +342,7 @@ const AppsView: React.FC<AppsViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>Installed Apps</h2>
+        <h2 style={{ margin: 0 }}>{t("apps.title")}</h2>
         <DeviceSelector
           devices={devices}
           selectedDevice={selectedDevice}
@@ -351,7 +353,7 @@ const AppsView: React.FC<AppsViewProps> = ({
       </div>
       <Space style={{ marginBottom: 12, flexShrink: 0 }}>
         <Input
-          placeholder="Filter packages..."
+          placeholder={t("apps.filter_placeholder")}
           value={packageFilter}
           onChange={(e) => setPackageFilter(e.target.value)}
           style={{ width: 300 }}
@@ -370,9 +372,9 @@ const AppsView: React.FC<AppsViewProps> = ({
             }
           }}
         >
-          <Radio.Button value="all">All</Radio.Button>
-          <Radio.Button value="user">User</Radio.Button>
-          <Radio.Button value="system">System</Radio.Button>
+          <Radio.Button value="all">{t("apps.all")}</Radio.Button>
+          <Radio.Button value="user">{t("apps.user")}</Radio.Button>
+          <Radio.Button value="system">{t("apps.system")}</Radio.Button>
         </Radio.Group>
       </Space>
       <div

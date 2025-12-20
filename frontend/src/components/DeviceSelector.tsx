@@ -1,6 +1,7 @@
 import React from 'react';
 import { Select, Button, Space, Tooltip, Divider } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 const { Option } = Select;
 
@@ -27,12 +28,13 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
   loading = false,
   style = {}
 }) => {
+  const { t } = useTranslation();
   return (
     <Select
       value={selectedDevice || undefined}
       onChange={onDeviceChange}
       style={{ width: 220, ...style }}
-      placeholder="Select Device"
+      placeholder={t("device_selector.placeholder")}
       dropdownRender={(menu) => (
         <>
           {menu}
@@ -45,7 +47,7 @@ const DeviceSelector: React.FC<DeviceSelectorProps> = ({
               loading={loading}
               style={{ width: '100%', textAlign: 'left' }}
             >
-              Refresh Devices
+              {t("device_selector.refresh")}
             </Button>
           </div>
         </>
