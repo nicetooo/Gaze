@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -1253,20 +1254,23 @@ func (a *App) ExportAPK(deviceId string, packageName string) (string, error) {
 }
 
 // ListFiles returns a list of files in the specified directory on the device
-func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
+func (a *App) ListFiles(deviceId, pathStr string) ([]FileInfo, error) {
 	if deviceId == "" {
 		return nil, fmt.Errorf("no device specified")
 	}
 
-	// Clean the path and ensure it's absolute
-	path = filepath.ToSlash(path)
-	if path == "" || path == "." {
-		path = "/"
+	// Ensure path uses forward slashes and is cleaned
+	pathStr = path.Clean("/" + pathStr)
+
+	// Use a trailing slash for non-root paths to force listing directory contents
+	// instead of the directory/link itself.
+	cmdPath := pathStr
+	if cmdPath != "/" {
+		cmdPath += "/"
 	}
 
 	// Use ls -la and CombinedOutput to capture both stdout and stderr
-	// We quote the path to handle spaces correctly in adb shell
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ls", "-la", "\""+path+"\"")
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ls", "-la", "\""+cmdPath+"\"")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w (output: %s)", err, string(output))
@@ -1288,7 +1292,6 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 
 		mode := parts[0]
 		isDir := strings.HasPrefix(mode, "d")
-		isLink := strings.HasPrefix(mode, "l")
 
 		var name string
 		var size int64
@@ -1304,50 +1307,37 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 		}
 
 		if arrowIdx > 0 {
-			// Symlink case: [mode] ... [date] [time] [name] -> [target]
+			// Symlink case: name is the part before the arrow
 			name = parts[arrowIdx-1]
-			// Look backwards from name to find date and time
 			if arrowIdx >= 3 {
 				modTime = parts[arrowIdx-3] + " " + parts[arrowIdx-2]
 			}
 			isDir = true
 		} else {
-			// Regular file/dir case: [mode] ... [size] [date] [time] [name]
+			// Regular case: name is the last part
 			name = parts[len(parts)-1]
 			if len(parts) >= 3 {
-				// Try to find if parts[len-3] and parts[len-2] look like date and time
-				t1 := parts[len(parts)-3]
-				t2 := parts[len(parts)-2]
-				modTime = t1 + " " + t2
+				modTime = parts[len(parts)-3] + " " + parts[len(parts)-2]
 			}
 		}
 
-		// Cleanup: If modTime contains only '?' or doesn't look like a date, set to N/A
+		// Cleanup: Handle '?' placeholders from system
 		if strings.Contains(modTime, "?") || len(modTime) < 5 {
 			modTime = "N/A"
 		}
 
-		// Cleanup name: handle cases where name might be parsed as '?'
-		if name == "?" {
-			// Try to find the last non-question mark part
-			for i := len(parts) - 1; i >= 0; i-- {
-				if parts[i] != "?" && parts[i] != "->" {
-					name = parts[i]
-					break
-				}
-			}
+		// CRITICAL: Extract base name. If name is "/sdcard", this makes it "sdcard"
+		name = path.Base(name)
+
+		// Skip current dir, parent dir, or entries that match the directory itself
+		if name == "." || name == ".." || name == "" || name == "?" || name == path.Base(pathStr) {
+			continue
 		}
 
-		// Final name cleanup: if it's a path, get the base
-		if strings.Contains(name, "/") && !isLink {
-			name = filepath.Base(name)
-		}
-
-		// Find size (the first numeric field that isn't the links count at index 1)
+		// Find size
 		foundSize := false
 		for i := 1; i < len(parts); i++ {
 			if !foundSize {
-				// Don't treat permissions or single digit link counts as size
 				if len(parts[i]) > 1 && parts[i][0] >= '0' && parts[i][0] <= '9' {
 					if n, err := fmt.Sscanf(parts[i], "%d", &size); n > 0 && err == nil {
 						foundSize = true
@@ -1357,12 +1347,8 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 			}
 		}
 
-		if name == "." || name == ".." || name == "" {
-			continue
-		}
-
-		// Build full path safely using forward slashes for Android
-		fullPath := strings.TrimSuffix(path, "/") + "/" + name
+		// Safely build the full path using path.Join
+		fullPath := path.Join(pathStr, name)
 
 		files = append(files, FileInfo{
 			Name:    name,
