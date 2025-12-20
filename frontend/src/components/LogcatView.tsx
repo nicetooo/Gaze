@@ -2,6 +2,7 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { Button, Input, Select, Space, Checkbox } from 'antd';
 import { PauseOutlined, PlayCircleOutlined, ClearOutlined, DownOutlined } from '@ant-design/icons';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import DeviceSelector from './DeviceSelector';
 // @ts-ignore
 import { main } from '../../wailsjs/go/models';
 
@@ -18,6 +19,7 @@ interface LogcatViewProps {
   devices: Device[];
   selectedDevice: string;
   setSelectedDevice: (device: string) => void;
+  fetchDevices?: () => void;
   packages: main.AppPackage[];
   selectedPackage: string;
   setSelectedPackage: (pkg: string) => void;
@@ -35,6 +37,7 @@ export default function LogcatView({
   devices,
   selectedDevice,
   setSelectedDevice,
+  fetchDevices,
   packages,
   selectedPackage,
   setSelectedPackage,
@@ -258,19 +261,13 @@ export default function LogcatView({
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
         <h2 style={{ margin: 0 }}>Logcat</h2>
         <Space>
-          <Select 
-            value={selectedDevice} 
-            onChange={setSelectedDevice} 
-            style={{ width: 180 }} 
-            placeholder="Select Device"
-            disabled={isLogging}
-          >
-            {devices.map(d => (
-              <Option key={d.id} value={d.id}>
-                {d.brand ? `${d.brand} ${d.model}` : (d.model || d.id)}
-              </Option>
-            ))}
-          </Select>
+          <DeviceSelector
+            devices={devices}
+            selectedDevice={selectedDevice}
+            onDeviceChange={setSelectedDevice}
+            onRefresh={fetchDevices || (() => {})}
+            loading={false}
+          />
           <Select
             showSearch
             value={selectedPackage}
