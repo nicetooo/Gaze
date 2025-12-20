@@ -36,7 +36,9 @@
     "vibecoding": "本应用是纯粹的 vibecoding 产物。",
     "author": "作者",
     "license": "许可证",
-    "made_with": "为 Android 开发者和高级用户精心打造 ❤️"
+    "made_with": "为 Android 开发者和高级用户精心打造 ❤️",
+    "github": "GitHub 仓库",
+    "mit_license": "MIT 许可证"
   },
   "app": {
     "select_device": "请先选择一个设备",
@@ -135,7 +137,8 @@
     "clear_data_confirm_content": "您确定要清除 {{name}} 的所有数据吗？此操作无法撤销。",
     "uninstall": "卸载",
     "uninstall_confirm_title": "卸载应用",
-    "uninstall_confirm_content": "您确定要卸载 {{name}} 吗？"
+    "uninstall_confirm_content": "您确定要卸载 {{name}} 吗？",
+    "export": "导出 APK"
   },
   "device_info": {
     "title": "设备信息",

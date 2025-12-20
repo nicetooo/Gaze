@@ -522,6 +522,8 @@ function App() {
           let newName = file.name;
           Modal.confirm({
             title: t("common.rename"),
+            okText: t("common.ok"),
+            cancelText: t("common.cancel"),
             autoFocusButton: null,
             content: (
               <FocusInput
@@ -553,6 +555,8 @@ function App() {
           let folderName = "";
           Modal.confirm({
             title: t("common.new_directory"),
+            okText: t("common.ok"),
+            cancelText: t("common.cancel"),
             autoFocusButton: null,
             content: (
               <FocusInput
@@ -580,7 +584,7 @@ function App() {
           break;
       }
     } catch (err) {
-      message.error("File action failed: " + String(err));
+      message.error(t("app.command_failed") + ": " + String(err));
     }
   };
 
@@ -1051,6 +1055,11 @@ function App() {
                     key: "zh",
                     label: "简体中文",
                     onClick: () => i18n.changeLanguage("zh"),
+                  },
+                  {
+                    key: "zh-TW",
+                    label: "繁體中文 (台灣)",
+                    onClick: () => i18n.changeLanguage("zh-TW"),
                   },
                   {
                     key: "ja",

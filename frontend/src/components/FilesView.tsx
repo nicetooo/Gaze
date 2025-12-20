@@ -297,6 +297,9 @@ const FilesView: React.FC<FilesViewProps> = ({
                   onClick: () => {
                     Modal.confirm({
                       title: t("files.delete_confirm_title"),
+                      okText: t("common.delete"),
+                      okType: "danger",
+                      cancelText: t("common.cancel"),
                       content: t("files.delete_confirm_content", {
                         name: record.name,
                       }),

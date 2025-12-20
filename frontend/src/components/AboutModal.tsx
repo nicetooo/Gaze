@@ -65,7 +65,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ visible, onCancel }) => {
         </div>
         
         <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <Text strong>GitHub:</Text>
+          <Text strong>{t("about.github")}:</Text>
           <Button 
             type="link" 
             size="small" 
@@ -78,7 +78,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ visible, onCancel }) => {
 
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <Text strong>{t("about.license")}:</Text>
-          <Text>MIT License</Text>
+          <Text>{t("about.mit_license")}</Text>
         </div>
       </div>
 

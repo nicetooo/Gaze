@@ -567,7 +567,7 @@ func (a *App) parseLabelFromAapt(output string) string {
 	}
 
 	// Then, try to find localized labels (prefer English, then any other)
-	preferredLocales := []string{"en", "zh-CN", "zh", ""}
+	preferredLocales := []string{"en", "zh-TW", "zh-CN", "zh", ""}
 	for _, locale := range preferredLocales {
 		prefix := "application-label"
 		if locale != "" {

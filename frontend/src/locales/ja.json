@@ -36,7 +36,9 @@
     "vibecoding": "このアプリケーションは純粋な vibecoding の産物です。",
     "author": "作成者",
     "license": "ライセンス",
-    "made_with": "Android 開発者とパワーユーザーのために ❤️ を込めて作成"
+    "made_with": "Android 開発者とパワーユーザーのために ❤️ を込めて作成",
+    "github": "GitHub リポジトリ",
+    "mit_license": "MIT ライセンス"
   },
   "app": {
     "select_device": "まずデバイスを選択してください",
@@ -135,7 +137,8 @@
     "clear_data_confirm_content": "{{name}} のすべてのデータを消去してもよろしいですか？この操作は取り消せません。",
     "uninstall": "アンインストール",
     "uninstall_confirm_title": "アプリのアンインストール",
-    "uninstall_confirm_content": "{{name}} をアンインストールしてもよろしいですか？"
+    "uninstall_confirm_content": "{{name}} をアンインストールしてもよろしいですか？",
+    "export": "APKをエクスポート"
   },
   "device_info": {
     "title": "デバイス情報",

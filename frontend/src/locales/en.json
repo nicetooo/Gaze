@@ -36,7 +36,9 @@
     "vibecoding": "This application is a product of pure vibecoding.",
     "author": "Author",
     "license": "License",
-    "made_with": "Made with ❤️ for Android Developers & Power Users"
+    "made_with": "Made with ❤️ for Android Developers & Power Users",
+    "github": "GitHub Repository",
+    "mit_license": "MIT License"
   },
   "app": {
     "select_device": "Please select a device first",
@@ -135,7 +137,8 @@
     "clear_data_confirm_content": "Are you sure you want to clear all data for {{name}}? This cannot be undone.",
     "uninstall": "Uninstall",
     "uninstall_confirm_title": "Uninstall App",
-    "uninstall_confirm_content": "Are you sure you want to uninstall {{name}}?"
+    "uninstall_confirm_content": "Are you sure you want to uninstall {{name}}?",
+    "export": "Export APK"
   },
   "device_info": {
     "title": "Device Information",

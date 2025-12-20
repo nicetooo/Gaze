@@ -242,7 +242,7 @@ const AppsView: React.FC<AppsViewProps> = ({
                 onClick={() => handleExploreAppFiles(record.name)}
               />
             </Tooltip>
-            <Tooltip title={t("app.export_success", { path: "" }).split(" ")[0]}>
+            <Tooltip title={t("apps.export")}>
               <Button
                 size="small"
                 icon={<DownloadOutlined />}
