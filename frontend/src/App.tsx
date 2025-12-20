@@ -957,7 +957,14 @@ function App() {
     switch (selectedKey) {
       case "1":
         return (
-          <div style={{ padding: 24 }}>
+          <div
+            style={{
+              padding: 24,
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
             <div
               style={{
                 marginBottom: 16,
@@ -975,12 +982,28 @@ function App() {
                 Refresh
               </Button>
             </div>
-            <Table
-              columns={deviceColumns}
-              dataSource={devices}
-              rowKey="id"
-              loading={loading}
-            />
+            <div
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                backgroundColor: "#fff",
+                borderRadius: "4px",
+                border: "1px solid #f0f0f0",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Table
+                columns={deviceColumns}
+                dataSource={devices}
+                rowKey="id"
+                loading={loading}
+                pagination={false}
+                size="small"
+                scroll={{ y: "calc(100vh - 130px)" }}
+                style={{ flex: 1 }}
+              />
+            </div>
           </div>
         );
       case "6":
@@ -1191,6 +1214,8 @@ function App() {
                 backgroundColor: "#fff",
                 borderRadius: "4px",
                 border: "1px solid #f0f0f0",
+                display: "flex",
+                flexDirection: "column",
               }}
             >
               <Table
@@ -1200,10 +1225,11 @@ function App() {
                 loading={filesLoading}
                 pagination={false}
                 size="small"
-                scroll={{ y: "calc(100vh - 180px)" }}
+                scroll={{ y: "calc(100vh - 170px)" }}
                 onRow={(record) => ({
                   onDoubleClick: () => record.isDir && fetchFiles(record.path),
                 })}
+                style={{ flex: 1 }}
               />
             </div>
           </div>
@@ -1283,14 +1309,28 @@ function App() {
                 <Radio.Button value="system">System</Radio.Button>
               </Radio.Group>
             </Space>
-            <Table
-              columns={appColumns}
-              dataSource={filteredPackages}
-              rowKey="name"
-              loading={appsLoading}
-              pagination={{ pageSize: 10 }}
-              size="small"
-            />
+            <div
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                backgroundColor: "#fff",
+                borderRadius: "4px",
+                border: "1px solid #f0f0f0",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <Table
+                columns={appColumns}
+                dataSource={filteredPackages}
+                rowKey="name"
+                loading={appsLoading}
+                pagination={false}
+                size="small"
+                scroll={{ y: "calc(100vh - 190px)" }}
+                style={{ flex: 1 }}
+              />
+            </div>
           </div>
         );
       case "3":
