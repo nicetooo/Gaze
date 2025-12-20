@@ -30,12 +30,12 @@ jobs:
           - os: windows-latest
             platform: windows
             arch: amd64
-            name: amd64
+            name: x86_64
             output: adbGUI.exe
           - os: ubuntu-22.04
             platform: linux
             arch: amd64
-            name: amd64
+            name: x86_64
             output: adbGUI
 
     runs-on: ${{ matrix.os }}
