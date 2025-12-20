@@ -99,6 +99,38 @@ export default function LogcatView({
     }, 1000); // 增加锁定时长以确保平滑滚动执行完毕
   };
 
+  const getLogColor = (text: string) => {
+    // Standard ADB format matches like " D/", " I/", " W/", " E/" or starting with them
+    if (text.includes(' E/') || text.includes(' F/') || text.startsWith('E/')) return '#f14c4c'; // Error / Fatal
+    if (text.includes(' W/') || text.startsWith('W/')) return '#cca700'; // Warning
+    if (text.includes(' I/') || text.startsWith('I/')) return '#3794ff'; // Info
+    if (text.includes(' D/') || text.startsWith('D/')) return '#4ec9b0'; // Debug
+    return '#d4d4d4'; // Verbose / Default
+  };
+
+  const renderLogLine = (text: string) => {
+    const color = getLogColor(text);
+    
+    if (!logFilter) {
+      return <span style={{ color }}>{text}</span>;
+    }
+
+    const parts = text.split(new RegExp(`(${logFilter})`, 'gi'));
+    return (
+      <span style={{ color }}>
+        {parts.map((part, i) => 
+          part.toLowerCase() === logFilter.toLowerCase() ? (
+            <mark key={i} style={{ backgroundColor: '#ffcc00', color: '#000', borderRadius: '2px', padding: '0 1px' }}>
+              {part}
+            </mark>
+          ) : (
+            <span key={i}>{part}</span>
+          )
+        )}
+      </span>
+    );
+  };
+
   return (
     <div style={{ padding: '16px 24px', flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
@@ -191,7 +223,7 @@ export default function LogcatView({
                   wordBreak: 'break-all',
                 }}
               >
-                {logs[virtualItem.index]}
+                {renderLogLine(logs[virtualItem.index])}
               </div>
             ))}
           </div>
