@@ -101,8 +101,7 @@ jobs:
         if: matrix.platform == 'windows'
         run: |
           cd build/bin
-          # Use zip for consistency in bash shell
-          zip ../../adbGUI-Windows-${{ matrix.arch }}.zip adbGUI.exe
+          7z a ../../adbGUI-Windows-${{ matrix.arch }}.zip adbGUI.exe
 
       - name: Package Artifacts (Linux)
         if: matrix.platform == 'linux'
