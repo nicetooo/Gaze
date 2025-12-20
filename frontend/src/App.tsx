@@ -17,11 +17,12 @@ import {
   PlayCircleOutlined,
   DesktopOutlined,
   SettingOutlined,
-  DownloadOutlined
+  DownloadOutlined,
+  InfoCircleOutlined
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
-import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, StartApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy, InstallAPK, ExportAPK } from '../wailsjs/go/main/App';
+import { GetDevices, RunAdbCommand, ListPackages, GetAppInfo, UninstallApp, ClearAppData, ForceStopApp, StartApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy, InstallAPK, ExportAPK } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { main } from '../wailsjs/go/models';
 // @ts-ignore
@@ -55,6 +56,10 @@ function App() {
   const [appsLoading, setAppsLoading] = useState(false);
   const [packageFilter, setPackageFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('user'); // all, system, user - default to user
+  const [selectedAppInfo, setSelectedAppInfo] = useState<main.AppPackage | null>(null);
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
+  const [infoLoading, setInfoLoading] = useState(false);
+  const [permissionSearch, setPermissionSearch] = useState('');
 
   // Logcat state
   const [logs, setLogs] = useState<string[]>([]);
@@ -80,8 +85,18 @@ function App() {
     try {
       const res = await GetDevices();
       setDevices(res || []);
-      if (res && res.length > 0 && !selectedDevice) {
-        setSelectedDevice(res[0].id);
+      if (res && res.length > 0) {
+        const deviceId = res[0].id;
+        if (!selectedDevice) {
+          setSelectedDevice(deviceId);
+        }
+        // Automatically fetch user packages when device is connected
+        if (deviceId) {
+          // Use setTimeout to avoid blocking the UI update
+          setTimeout(() => {
+            fetchPackages('user', deviceId);
+          }, 100);
+        }
       }
     } catch (err) {
       message.error('Failed to fetch devices: ' + String(err));
@@ -136,18 +151,20 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if ((selectedKey === '2' || selectedKey === '4') && selectedDevice) {
-      // Only fetch user packages initially
-      fetchPackages('user');
+    // When switching to apps or logcat tab, if packages are not loaded yet, fetch them
+    if ((selectedKey === '2' || selectedKey === '4') && selectedDevice && packages.length === 0) {
+      // Only fetch if packages list is empty (not already loaded)
+      fetchPackages('user', selectedDevice);
     }
   }, [selectedKey, selectedDevice]);
 
-  const fetchPackages = async (packageType?: string) => {
-    if (!selectedDevice) return;
+  const fetchPackages = async (packageType?: string, deviceId?: string) => {
+    const targetDevice = deviceId || selectedDevice;
+    if (!targetDevice) return;
     const typeToFetch = packageType || typeFilter;
     setAppsLoading(true);
     try {
-      const res = await ListPackages(selectedDevice, typeToFetch);
+      const res = await ListPackages(targetDevice, typeToFetch);
       if (typeToFetch === 'all') {
         // Replace all packages when fetching all
         setPackages(res || []);
@@ -168,12 +185,50 @@ function App() {
     }
   };
 
+  const handleFetchAppInfo = async (packageName: string, force: boolean = false) => {
+    if (!selectedDevice) return;
+    
+    // If not forcing, show what we already have in the packages list
+    if (!force) {
+      setSelectedAppInfo(packages.find(p => p.name === packageName) || null);
+    }
+    
+    setPermissionSearch(''); // Reset search when opening info
+    setInfoModalVisible(true);
+    setInfoLoading(true);
+    try {
+      const res = await GetAppInfo(selectedDevice, packageName, force);
+      setSelectedAppInfo(res);
+      // Update the app in the packages list if we got new data
+      // Only merge fields that are not empty to avoid overwriting existing type/state
+      setPackages(prev => prev.map(p => {
+        if (p.name === packageName) {
+          return {
+            ...p,
+            label: res.label || p.label,
+            icon: res.icon || p.icon,
+            versionName: res.versionName || p.versionName,
+            versionCode: res.versionCode || p.versionCode,
+            minSdkVersion: res.minSdkVersion || p.minSdkVersion,
+            targetSdkVersion: res.targetSdkVersion || p.targetSdkVersion,
+            permissions: res.permissions || p.permissions,
+          };
+        }
+        return p;
+      }));
+    } catch (err) {
+      message.error('Failed to fetch app info: ' + String(err));
+    } finally {
+      setInfoLoading(false);
+    }
+  };
+
   const handleUninstall = async (packageName: string) => {
     console.log(`Uninstalling ${packageName} from device ${selectedDevice}`);
     try {
       await UninstallApp(selectedDevice, packageName);
       message.success(`Uninstalled ${packageName}`);
-      fetchPackages();
+      fetchPackages(typeFilter, selectedDevice);
     } catch (err) {
       console.error('Uninstall error:', err);
       message.error('Failed to uninstall: ' + String(err));
@@ -222,7 +277,7 @@ function App() {
         await EnableApp(selectedDevice, packageName);
         message.success(`Enabled ${packageName}`);
       }
-      fetchPackages();
+      fetchPackages(typeFilter, selectedDevice);
     } catch (err) {
       message.error('Failed to change app state: ' + String(err));
     }
@@ -314,7 +369,7 @@ function App() {
         
         // Refresh the list if we are on the correct device
         if (selectedDevice === deviceId) {
-            fetchPackages();
+            fetchPackages(typeFilter, selectedDevice);
         }
       } catch (err) {
         message.error(`Failed to install ${fileName}: ${String(err)}`);
@@ -500,6 +555,12 @@ function App() {
         return (
           <Dropdown menu={{ items: [
             {
+              key: 'info',
+              icon: <InfoCircleOutlined />,
+              label: 'App Info',
+              onClick: () => handleFetchAppInfo(record.name)
+            },
+            {
               key: 'logcat',
               icon: <FileTextOutlined />,
               label: 'Logcat',
@@ -616,7 +677,7 @@ function App() {
                     </Option>
                   ))}
                 </Select>
-                <Button icon={<ReloadOutlined />} onClick={() => fetchPackages(typeFilter)} loading={appsLoading}>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchPackages(typeFilter, selectedDevice)} loading={appsLoading}>
                   Refresh
                 </Button>
               </Space>
@@ -633,10 +694,10 @@ function App() {
                 setTypeFilter(newType);
                 // Fetch packages when type changes
                 if (newType === 'all' || newType === 'system') {
-                  fetchPackages(newType);
+                  fetchPackages(newType, selectedDevice);
                 } else {
                   // user - just filter existing packages
-                  fetchPackages('user');
+                  fetchPackages('user', selectedDevice);
                 }
               }}>
                 <Radio.Button value="all">All</Radio.Button>
@@ -824,6 +885,123 @@ function App() {
           {renderContent()}
         </Content>
       </Layout>
+      
+      <Modal
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingRight: 32 }}>
+            <span>App Information</span>
+            {selectedAppInfo && (
+              <Button 
+                size="small" 
+                icon={<ReloadOutlined spin={infoLoading} />} 
+                onClick={() => handleFetchAppInfo(selectedAppInfo.name, true)}
+                disabled={infoLoading}
+              >
+                Refresh
+              </Button>
+            )}
+          </div>
+        }
+        open={infoModalVisible}
+        onCancel={() => setInfoModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setInfoModalVisible(false)}>
+            Close
+          </Button>
+        ]}
+        width={600}
+      >
+        {infoLoading && !selectedAppInfo?.versionName ? (
+          <div style={{ padding: '60px 0', textAlign: 'center' }}>
+            <ReloadOutlined spin style={{ fontSize: 32, color: '#1890ff', marginBottom: 16 }} />
+            <div style={{ fontSize: 16, color: '#666' }}>Fetching detailed app information...</div>
+            <div style={{ fontSize: 12, color: '#999', marginTop: 8 }}>This may take a few seconds as we extract data from the APK</div>
+          </div>
+        ) : selectedAppInfo && (
+          <div style={{ padding: '10px 0', opacity: infoLoading ? 0.6 : 1, transition: 'opacity 0.3s' }}>
+            {infoLoading && (
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.5)' }}>
+                <ReloadOutlined spin style={{ fontSize: 24, color: '#1890ff' }} />
+              </div>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 24 }}>
+              <div style={{ 
+                width: 64, 
+                height: 64, 
+                borderRadius: 12, 
+                backgroundColor: '#f0f0f0',
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                overflow: 'hidden',
+                flexShrink: 0,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+              }}>
+                {selectedAppInfo.icon ? (
+                  <img src={selectedAppInfo.icon} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="" />
+                ) : (
+                  <AppstoreOutlined style={{ fontSize: 32, color: '#bfbfbf' }} />
+                )}
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 20 }}>{selectedAppInfo.label || selectedAppInfo.name}</h3>
+                <code style={{ fontSize: 12, color: '#888' }}>{selectedAppInfo.name}</code>
+              </div>
+            </div>
+
+            <Row gutter={[16, 16]}>
+              <Col span={12}>
+                <Card size="small" title="Version Info">
+                  <p><strong>Version Name:</strong> {selectedAppInfo.versionName || 'N/A'}</p>
+                  <p><strong>Version Code:</strong> {selectedAppInfo.versionCode || 'N/A'}</p>
+                </Card>
+              </Col>
+              <Col span={12}>
+                <Card size="small" title="SDK Info">
+                  <p><strong>Min SDK:</strong> {selectedAppInfo.minSdkVersion || 'N/A'}</p>
+                  <p><strong>Target SDK:</strong> {selectedAppInfo.targetSdkVersion || 'N/A'}</p>
+                </Card>
+              </Col>
+              <Col span={24}>
+                <Card 
+                  size="small" 
+                  title={
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>Permissions</span>
+                      <Input 
+                        placeholder="Search permissions..." 
+                        size="small" 
+                        style={{ width: 200 }} 
+                        allowClear
+                        value={permissionSearch}
+                        onChange={e => setPermissionSearch(e.target.value)}
+                      />
+                    </div>
+                  }
+                >
+                  <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {selectedAppInfo.permissions && selectedAppInfo.permissions.length > 0 ? (
+                      selectedAppInfo.permissions
+                        .filter(p => p.toLowerCase().includes(permissionSearch.toLowerCase()))
+                        .map((p, i) => (
+                          <div key={i} style={{ fontSize: 12, padding: '4px 8px', borderBottom: '1px solid #f0f0f0' }}>
+                            {p.replace('android.permission.', '')}
+                          </div>
+                        ))
+                    ) : (
+                      <p style={{ color: '#bfbfbf', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>No permissions listed</p>
+                    )}
+                    {selectedAppInfo.permissions && selectedAppInfo.permissions.length > 0 && 
+                     selectedAppInfo.permissions.filter(p => p.toLowerCase().includes(permissionSearch.toLowerCase())).length === 0 && (
+                      <p style={{ color: '#bfbfbf', fontStyle: 'italic', textAlign: 'center', padding: '20px 0' }}>No permissions match your search</p>
+                    )}
+                  </div>
+                </Card>
+              </Col>
+            </Row>
+          </div>
+        )}
+      </Modal>
     </Layout>
   );
 }

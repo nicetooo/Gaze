@@ -22,6 +22,10 @@ export function ForceStopApp(arg1, arg2) {
   return window['go']['main']['App']['ForceStopApp'](arg1, arg2);
 }
 
+export function GetAppInfo(arg1, arg2, arg3) {
+  return window['go']['main']['App']['GetAppInfo'](arg1, arg2, arg3);
+}
+
 export function GetDevices() {
   return window['go']['main']['App']['GetDevices']();
 }

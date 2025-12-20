@@ -6,6 +6,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -30,7 +31,15 @@ type App struct {
 	aaptPath     string
 	logcatCmd    *exec.Cmd
 	logcatCancel context.CancelFunc
-	mu           sync.Mutex
+
+	// Generic mutex for shared state
+	mu sync.Mutex
+
+	// aaptCache caches app label & icon so each package is processed at most once.
+	// Keyed by package name.
+	aaptCache   map[string]AppPackage
+	aaptCacheMu sync.RWMutex
+	cachePath   string
 }
 
 type Device struct {
@@ -41,16 +50,23 @@ type Device struct {
 }
 
 type AppPackage struct {
-	Name  string `json:"name"`
-	Label string `json:"label"` // Application label/name
-	Icon  string `json:"icon"`  // Base64 encoded icon
-	Type  string `json:"type"`  // "system" or "user"
-	State string `json:"state"` // "enabled" or "disabled"
+	Name             string   `json:"name"`
+	Label            string   `json:"label"` // Application label/name
+	Icon             string   `json:"icon"`  // Base64 encoded icon
+	Type             string   `json:"type"`  // "system" or "user"
+	State            string   `json:"state"` // "enabled" or "disabled"
+	VersionName      string   `json:"versionName"`
+	VersionCode      string   `json:"versionCode"`
+	MinSdkVersion    string   `json:"minSdkVersion"`
+	TargetSdkVersion string   `json:"targetSdkVersion"`
+	Permissions      []string `json:"permissions"`
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		aaptCache: make(map[string]AppPackage),
+	}
 }
 
 // StopLogcat stops the logcat stream
@@ -71,6 +87,48 @@ func (a *App) StopLogcat() {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.setupBinaries()
+	a.initPersistentCache()
+}
+
+func (a *App) initPersistentCache() {
+	// Use application config directory for persistent cache
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = os.TempDir()
+	}
+	appConfigDir := filepath.Join(configDir, "adbGUI")
+	_ = os.MkdirAll(appConfigDir, 0755)
+	a.cachePath = filepath.Join(appConfigDir, "aapt_cache.json")
+
+	a.loadCache()
+}
+
+func (a *App) loadCache() {
+	a.aaptCacheMu.Lock()
+	defer a.aaptCacheMu.Unlock()
+
+	data, err := os.ReadFile(a.cachePath)
+	if err != nil {
+		return // File doesn't exist yet or is unreadable
+	}
+
+	_ = json.Unmarshal(data, &a.aaptCache)
+}
+
+func (a *App) saveCache() {
+	a.aaptCacheMu.RLock()
+	data, err := json.Marshal(a.aaptCache)
+	a.aaptCacheMu.RUnlock()
+
+	if err != nil {
+		fmt.Printf("Error marshaling cache: %v\n", err)
+		return
+	}
+
+	err = os.WriteFile(a.cachePath, data, 0644)
+	if err != nil {
+		fmt.Printf("Error saving cache to %s: %v\n", a.cachePath, err)
+	}
 }
 
 func (a *App) setupBinaries() {
@@ -110,32 +168,53 @@ func (a *App) setupBinaries() {
 	fmt.Printf("Binaries setup at: %s\n", tempDir)
 }
 
-// getAppInfoWithAapt extracts app label and icon using aapt
-func (a *App) getAppInfoWithAapt(deviceId, packageName string) (label string, iconBase64 string, err error) {
+// GetAppInfo returns detailed information for a specific package
+func (a *App) GetAppInfo(deviceId, packageName string, force bool) (AppPackage, error) {
+	return a.getAppInfoWithAapt(deviceId, packageName, force)
+}
+
+// getAppInfoWithAapt extracts app label, icon and other metadata using aapt
+func (a *App) getAppInfoWithAapt(deviceId, packageName string, force bool) (AppPackage, error) {
+	// 0. Check cache first to ensure we only process each package once
+	if !force {
+		a.aaptCacheMu.RLock()
+		if cached, ok := a.aaptCache[packageName]; ok {
+			// If we have more than just basic info (e.g., VersionName), return it
+			if cached.VersionName != "" || cached.Label != "" {
+				a.aaptCacheMu.RUnlock()
+				return cached, nil
+			}
+		}
+		a.aaptCacheMu.RUnlock()
+	}
+
+	var pkg AppPackage
+	pkg.Name = packageName
+
 	if a.aaptPath == "" {
-		return "", "", fmt.Errorf("aapt not available (binary not embedded)")
+		return pkg, fmt.Errorf("aapt not available (binary not embedded)")
 	}
 
 	// Check if aapt file actually exists and is not empty
 	if info, err := os.Stat(a.aaptPath); err != nil || info.Size() == 0 {
-		return "", "", fmt.Errorf("aapt not available (file missing or empty)")
+		return pkg, fmt.Errorf("aapt not available (file missing or empty)")
 	}
 
 	// 1. Get APK path from device (no timeout)
 	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "pm", "path", packageName)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to get APK path: %w", err)
+		return pkg, fmt.Errorf("failed to get APK path: %w", err)
 	}
 
 	remotePath := strings.TrimSpace(string(output))
 	if remotePath == "" {
-		return "", "", fmt.Errorf("empty output from pm path for %s", packageName)
+		return pkg, fmt.Errorf("empty output from pm path for %s", packageName)
 	}
 
 	lines := strings.Split(remotePath, "\n")
 	if len(lines) == 0 || !strings.HasPrefix(lines[0], "package:") {
-		return "", "", fmt.Errorf("unexpected output from pm path: %s", remotePath)
+		return pkg, fmt.Errorf("unexpected output from pm path: %s", remotePath)
 	}
 	remotePath = strings.TrimPrefix(lines[0], "package:")
 
@@ -149,55 +228,103 @@ func (a *App) getAppInfoWithAapt(deviceId, packageName string) (label string, ic
 	pullCmd := exec.Command(a.adbPath, "-s", deviceId, "pull", remotePath, tmpAPK)
 	pullOutput, err := pullCmd.CombinedOutput()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to pull APK: %w (output: %s)", err, string(pullOutput))
+		return pkg, fmt.Errorf("failed to pull APK: %w (output: %s)", err, string(pullOutput))
 	}
 
 	// Check if APK file was actually downloaded
 	if info, err := os.Stat(tmpAPK); err != nil || info.Size() == 0 {
-		return "", "", fmt.Errorf("APK file not downloaded or empty: %v", err)
+		return pkg, fmt.Errorf("APK file not downloaded or empty: %v", err)
 	}
 
-	// 4. Use aapt to dump badging (get label) - no timeout
+	// 4. Use aapt to dump badging (get metadata) - no timeout
 	aaptCmd := exec.Command(a.aaptPath, "dump", "badging", tmpAPK)
 	aaptOutput, err := aaptCmd.CombinedOutput()
 	if err != nil {
-		// Check if output is empty
 		if len(aaptOutput) == 0 {
-			return "", "", fmt.Errorf("aapt command failed with no output: %w", err)
+			return pkg, fmt.Errorf("aapt command failed with no output: %w", err)
 		}
-		return "", "", fmt.Errorf("failed to run aapt: %w, output: %s", err, string(aaptOutput))
+		return pkg, fmt.Errorf("failed to run aapt: %w, output: %s", err, string(aaptOutput))
 	}
 
-	// Check if output is empty
 	if len(aaptOutput) == 0 {
-		return "", "", fmt.Errorf("aapt command succeeded but output is empty")
+		return pkg, fmt.Errorf("aapt command succeeded but output is empty")
 	}
 
-	// 5. Parse label from aapt output
-	// Format: application-label:'App Name'
+	// 5. Parse information from aapt output
 	outputStr := string(aaptOutput)
+	pkg.Label = a.parseLabelFromAapt(outputStr)
+	pkg.VersionName, pkg.VersionCode = a.parseVersionFromAapt(outputStr)
+	pkg.MinSdkVersion = a.parseSdkVersionFromAapt(outputStr, "sdkVersion:")
+	pkg.TargetSdkVersion = a.parseSdkVersionFromAapt(outputStr, "targetSdkVersion:")
+	pkg.Permissions = a.parsePermissionsFromAapt(outputStr)
 
-	// Debug: print first few outputs to see format (only for debugging)
-	// Uncomment the following lines if you need to debug aapt output:
-	// if len(outputStr) > 0 && len(outputStr) < 500 {
-	// 	debugLen := 200
-	// 	if len(outputStr) < debugLen {
-	// 		debugLen = len(outputStr)
-	// 	}
-	// 	fmt.Printf("DEBUG aapt output for %s (first %d chars): %s\n", packageName, debugLen, outputStr[:debugLen])
-	// }
-
-	label = a.parseLabelFromAapt(outputStr)
+	// Debug logging
+	fmt.Printf("DEBUG: Extracted for %s: Label='%s', Version='%s'\n", packageName, pkg.Label, pkg.VersionName)
 
 	// 6. Extract icon using aapt (don't fail if icon extraction fails)
-	iconBase64, err = a.extractIconWithAapt(tmpAPK)
-	if err != nil {
-		// Icon extraction is optional, return label even if icon fails
-		// Don't print warning here to avoid spam
-		iconBase64 = ""
+	icon, err := a.extractIconWithAapt(tmpAPK)
+	if err == nil {
+		pkg.Icon = icon
 	}
 
-	return label, iconBase64, nil
+	// 7. Store in cache
+	a.aaptCacheMu.Lock()
+	a.aaptCache[packageName] = pkg
+	a.aaptCacheMu.Unlock()
+
+	// Save to persistent storage
+	go a.saveCache()
+
+	return pkg, nil
+}
+
+// parseVersionFromAapt parses versionName and versionCode from aapt output
+func (a *App) parseVersionFromAapt(output string) (versionName, versionCode string) {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "package:") {
+			// package: name='com.example' versionCode='123' versionName='1.2.3' ...
+			parts := strings.Fields(line)
+			for _, part := range parts {
+				if strings.HasPrefix(part, "versionCode=") {
+					versionCode = strings.Trim(strings.TrimPrefix(part, "versionCode="), "'\"")
+				}
+				if strings.HasPrefix(part, "versionName=") {
+					versionName = strings.Trim(strings.TrimPrefix(part, "versionName="), "'\"")
+				}
+			}
+			return
+		}
+	}
+	return
+}
+
+// parseSdkVersionFromAapt parses sdkVersion or targetSdkVersion
+func (a *App) parseSdkVersionFromAapt(output, prefix string) string {
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, prefix) {
+			val := strings.TrimPrefix(line, prefix)
+			return strings.Trim(val, "'\"")
+		}
+	}
+	return ""
+}
+
+// parsePermissionsFromAapt parses uses-permission from aapt output
+func (a *App) parsePermissionsFromAapt(output string) []string {
+	var permissions []string
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "uses-permission: name=") {
+			perm := strings.TrimPrefix(line, "uses-permission: name=")
+			perm = strings.Trim(perm, "'\"")
+			permissions = append(permissions, perm)
+		}
+	}
+	return permissions
 }
 
 // parseLabelFromAapt parses the application label from aapt dump badging output
@@ -245,12 +372,31 @@ func (a *App) parseLabelFromAapt(output string) string {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.Contains(line, "application-label-") && strings.Contains(line, ":") {
-			parts := strings.Split(line, ":")
-			if len(parts) >= 2 {
-				label := strings.Trim(parts[1], "'\"")
+			idx := strings.Index(line, ":")
+			if idx > 0 && idx < len(line)-1 {
+				label := line[idx+1:]
+				label = strings.Trim(label, "'\"")
 				label = strings.TrimSpace(label)
 				if label != "" {
 					return label
+				}
+			}
+		}
+	}
+
+	// NEW Fallback: look for application: label='...'
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "application:") && strings.Contains(line, "label='") {
+			idx := strings.Index(line, "label='")
+			if idx > 0 {
+				start := idx + 7
+				end := strings.Index(line[start:], "'")
+				if end > 0 {
+					label := line[start : start+end]
+					if label != "" {
+						return label
+					}
 				}
 			}
 		}
@@ -425,6 +571,24 @@ func (a *App) parseIconPathFromAapt(output string) string {
 			iconPath = strings.TrimSpace(iconPath)
 			if iconPath != "" {
 				return iconPath
+			}
+		}
+	}
+
+	// NEW Fallback: look for application: ... icon='...'
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "application:") && strings.Contains(line, "icon='") {
+			idx := strings.Index(line, "icon='")
+			if idx > 0 {
+				start := idx + 6
+				end := strings.Index(line[start:], "'")
+				if end > 0 {
+					iconPath := line[start : start+end]
+					if iconPath != "" {
+						return iconPath
+					}
+				}
 			}
 		}
 	}
@@ -820,50 +984,49 @@ func (a *App) ListPackages(deviceId string, packageType string) ([]AppPackage, e
 		}
 	}
 
-	// 2. Fetch labels and icons using aapt in parallel
-	// Use smaller concurrency for aapt operations as they involve downloading APKs
+	// 2. Fetch labels and icons from cache in parallel (no longer calls aapt automatically)
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 3) // Limit concurrency to 3 (aapt operations download APKs, so they're heavy)
+	sem := make(chan struct{}, 10) // Higher concurrency for memory-only operations
 
 	for i := range packages {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
 
-			// Acquire semaphore (no timeout)
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
 			pkg := &packages[idx]
 
-			// Try to get label and icon using aapt if available
-			// Only process user apps (no system apps)
-			if a.aaptPath != "" && pkg.Type == "user" {
-				label, icon, err := a.getAppInfoWithAapt(deviceId, pkg.Name)
-				if err != nil {
-					// Print error for debugging (first few errors only)
-					if idx < 5 {
-						fmt.Printf("Warning: Failed to get app info with aapt for %s: %v\n", pkg.Name, err)
-					}
-				} else {
-					if label != "" {
-						pkg.Label = label
-					}
-					if icon != "" {
-						pkg.Icon = icon
-					}
+			// Load from cache if available
+			a.aaptCacheMu.RLock()
+			if cached, ok := a.aaptCache[pkg.Name]; ok {
+				if cached.Label != "" {
+					pkg.Label = cached.Label
+				}
+				if cached.Icon != "" {
+					pkg.Icon = cached.Icon
+				}
+				if cached.VersionName != "" {
+					pkg.VersionName = cached.VersionName
+				}
+				if cached.VersionCode != "" {
+					pkg.VersionCode = cached.VersionCode
+				}
+				if cached.MinSdkVersion != "" {
+					pkg.MinSdkVersion = cached.MinSdkVersion
+				}
+				if cached.TargetSdkVersion != "" {
+					pkg.TargetSdkVersion = cached.TargetSdkVersion
+				}
+				if len(cached.Permissions) > 0 {
+					pkg.Permissions = cached.Permissions
 				}
 			}
+			a.aaptCacheMu.RUnlock()
 
-			// Fallback: Try to get label using dumpsys or resolve-activity if aapt didn't work
+			// Fallback: Try to get label using brand map if cache didn't work
 			if pkg.Label == "" {
-				// Try resolve-activity as fallback (though it usually doesn't provide readable labels)
-				cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "cmd", "package", "resolve-activity", "--brief", pkg.Name)
-				_, err := cmd.Output()
-				// Note: resolve-activity output is not easily parseable for labels
-				// We'll skip parsing it and use the brand map fallback below
-				_ = err // Suppress unused error warning
-
 				// Improved Label Extraction Logic
 				// 1. Try to extract from package name using a smarter brand map
 				brandMap := map[string]string{

@@ -6,6 +6,11 @@ export namespace main {
 	    icon: string;
 	    type: string;
 	    state: string;
+	    versionName: string;
+	    versionCode: string;
+	    minSdkVersion: string;
+	    targetSdkVersion: string;
+	    permissions: string[];
 	
 	    static createFrom(source: any = {}) {
 	        return new AppPackage(source);
@@ -18,6 +23,11 @@ export namespace main {
 	        this.icon = source["icon"];
 	        this.type = source["type"];
 	        this.state = source["state"];
+	        this.versionName = source["versionName"];
+	        this.versionCode = source["versionCode"];
+	        this.minSdkVersion = source["minSdkVersion"];
+	        this.targetSdkVersion = source["targetSdkVersion"];
+	        this.permissions = source["permissions"];
 	    }
 	}
 	export class Device {
