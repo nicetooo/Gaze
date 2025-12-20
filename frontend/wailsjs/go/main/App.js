@@ -42,6 +42,10 @@ export function RunAdbCommand(arg1) {
   return window['go']['main']['App']['RunAdbCommand'](arg1);
 }
 
+export function StartApp(arg1, arg2) {
+  return window['go']['main']['App']['StartApp'](arg1, arg2);
+}
+
 export function StartLogcat(arg1, arg2) {
   return window['go']['main']['App']['StartLogcat'](arg1, arg2);
 }

@@ -471,6 +471,20 @@ func (a *App) ForceStopApp(deviceId, packageName string) (string, error) {
 	return string(output), nil
 }
 
+// StartApp launches the application using monkey command
+func (a *App) StartApp(deviceId, packageName string) (string, error) {
+	if deviceId == "" {
+		return "", fmt.Errorf("no device specified")
+	}
+	// Launch the main activity using monkey
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "monkey", "-p", packageName, "-c", "android.intent.category.LAUNCHER", "1")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("failed to start app: %w", err)
+	}
+	return string(output), nil
+}
+
 // EnableApp enables the application
 func (a *App) EnableApp(deviceId, packageName string) (string, error) {
 	if deviceId == "" {

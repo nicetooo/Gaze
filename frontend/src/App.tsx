@@ -21,7 +21,7 @@ import {
 } from '@ant-design/icons';
 import './App.css';
 // @ts-ignore
-import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy, InstallAPK, ExportAPK } from '../wailsjs/go/main/App';
+import { GetDevices, RunAdbCommand, ListPackages, UninstallApp, ClearAppData, ForceStopApp, StartApp, EnableApp, DisableApp, StartLogcat, StopLogcat, StartScrcpy, InstallAPK, ExportAPK } from '../wailsjs/go/main/App';
 // @ts-ignore
 import { main } from '../wailsjs/go/models';
 // @ts-ignore
@@ -181,6 +181,21 @@ function App() {
       message.success(`Force stopped ${packageName}`);
     } catch (err) {
       message.error('Failed to force stop: ' + String(err));
+    }
+  };
+
+  const handleStartApp = async (packageName: string) => {
+    const hide = message.loading(`Launching ${packageName}...`, 0);
+    try {
+      // Force stop first as requested
+      await ForceStopApp(selectedDevice, packageName);
+      // Then start
+      await StartApp(selectedDevice, packageName);
+      message.success(`Started ${packageName}`);
+    } catch (err) {
+      message.error('Failed to start app: ' + String(err));
+    } finally {
+      hide();
     }
   };
 
@@ -415,16 +430,16 @@ function App() {
               type: 'divider'
             },
             {
+              key: 'start',
+              icon: <PlayCircleOutlined />,
+              label: 'Launch App',
+              onClick: () => handleStartApp(record.name)
+            },
+            {
               key: 'stop',
               icon: <StopOutlined />,
               label: 'Force Stop',
               onClick: () => handleForceStop(record.name)
-            },
-            {
-              key: 'clear',
-              icon: <ClearOutlined />,
-              label: 'Clear Data',
-              onClick: () => handleClearData(record.name)
             },
             {
               key: 'state',
@@ -434,6 +449,22 @@ function App() {
             },
             {
               type: 'divider'
+            },
+            {
+              key: 'clear',
+              icon: <ClearOutlined />,
+              label: 'Clear Data',
+              danger: true,
+              onClick: () => {
+                 Modal.confirm({
+                   title: 'Clear App Data',
+                   content: `Are you sure you want to clear all data for ${record.name}? This cannot be undone.`,
+                   okText: 'Clear',
+                   okType: 'danger',
+                   cancelText: 'Cancel',
+                   onOk: () => handleClearData(record.name),
+                 });
+              }
             },
             {
               key: 'uninstall',
