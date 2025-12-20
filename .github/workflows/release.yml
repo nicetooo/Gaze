@@ -24,17 +24,9 @@ jobs:
             platform: windows
             arch: amd64
             output: adbGUI.exe
-          - os: windows-latest
-            platform: windows
-            arch: arm64
-            output: adbGUI.exe
           - os: ubuntu-22.04
             platform: linux
             arch: amd64
-            output: adbGUI
-          - os: ubuntu-22.04
-            platform: linux
-            arch: arm64
             output: adbGUI
 
     runs-on: ${{ matrix.os }}
@@ -64,9 +56,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev libwebkit2gtk-4.1-dev pkg-config build-essential
-          if [ "${{ matrix.arch }}" = "arm64" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          fi
 
       - name: Download Binaries (macOS)
         if: matrix.platform == 'darwin'
