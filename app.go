@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -1259,22 +1260,22 @@ func (a *App) ListFiles(deviceId, pathStr string) ([]FileInfo, error) {
 		return nil, fmt.Errorf("no device specified")
 	}
 
-	// Ensure path uses forward slashes and is cleaned
 	pathStr = path.Clean("/" + pathStr)
-
-	// Use a trailing slash for non-root paths to force listing directory contents
-	// instead of the directory/link itself.
 	cmdPath := pathStr
 	if cmdPath != "/" {
 		cmdPath += "/"
 	}
 
-	// Use ls -la and CombinedOutput to capture both stdout and stderr
 	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ls", "-la", "\""+cmdPath+"\"")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w (output: %s)", err, string(output))
 	}
+
+	// Regex to match typical Android ls date/time formats
+	// 1. YYYY-MM-DD HH:MM (Modern Toybox)
+	// 2. MMM DD HH:MM or MMM DD  YYYY (Older formats)
+	dateTimeRegex := regexp.MustCompile(`(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})|([A-Z][a-z]{2}\s+\d{1,2}\s+(\d{2}:\d{2}|\d{4}))`)
 
 	lines := strings.Split(string(output), "\n")
 	var files []FileInfo
@@ -1285,78 +1286,66 @@ func (a *App) ListFiles(deviceId, pathStr string) ([]FileInfo, error) {
 			continue
 		}
 
-		parts := strings.Fields(line)
-		if len(parts) < 7 {
+		// Find the date-time anchor in the line
+		loc := dateTimeRegex.FindStringIndex(line)
+		if loc == nil {
 			continue
 		}
 
-		mode := parts[0]
+		modTime := line[loc[0]:loc[1]]
+
+		// Everything after the date-time is the name (+ maybe link target)
+		afterDateTime := strings.TrimSpace(line[loc[1]:])
+
+		// Everything before the date-time is permissions, user, size, etc.
+		beforeDateTime := strings.TrimSpace(line[:loc[0]])
+		beforeParts := strings.Fields(beforeDateTime)
+
+		if len(beforeParts) < 1 {
+			continue
+		}
+
+		mode := beforeParts[0]
 		isDir := strings.HasPrefix(mode, "d")
+		isLink := strings.HasPrefix(mode, "l")
 
-		var name string
+		// Size is usually the last field before date-time
 		var size int64
-		var modTime string
-
-		// Find the arrow for symlinks
-		arrowIdx := -1
-		for i, p := range parts {
-			if p == "->" {
-				arrowIdx = i
-				break
-			}
+		if len(beforeParts) >= 1 {
+			// Try to parse the last part as size
+			fmt.Sscanf(beforeParts[len(beforeParts)-1], "%d", &size)
 		}
 
-		if arrowIdx > 0 {
-			// Symlink case: name is the part before the arrow
-			name = parts[arrowIdx-1]
-			if arrowIdx >= 3 {
-				modTime = parts[arrowIdx-3] + " " + parts[arrowIdx-2]
+		// Handle name and symlinks
+		name := afterDateTime
+		if isLink {
+			arrowIdx := strings.Index(name, " -> ")
+			if arrowIdx != -1 {
+				name = name[:arrowIdx]
 			}
+			// In many Android contexts, we want to treat symlinks to directories as directories
 			isDir = true
-		} else {
-			// Regular case: name is the last part
-			name = parts[len(parts)-1]
-			if len(parts) >= 3 {
-				modTime = parts[len(parts)-3] + " " + parts[len(parts)-2]
-			}
 		}
-
-		// Cleanup: Handle '?' placeholders from system
-		if strings.Contains(modTime, "?") || len(modTime) < 5 {
-			modTime = "N/A"
-		}
-
-		// CRITICAL: Extract base name. If name is "/sdcard", this makes it "sdcard"
-		name = path.Base(name)
 
 		// Skip current dir, parent dir, or entries that match the directory itself
-		if name == "." || name == ".." || name == "" || name == "?" || name == path.Base(pathStr) {
+		// Use path.Base for name comparison
+		cleanName := strings.TrimSpace(name)
+		if cleanName == "." || cleanName == ".." || cleanName == "" || cleanName == "?" {
 			continue
 		}
 
-		// Find size
-		foundSize := false
-		for i := 1; i < len(parts); i++ {
-			if !foundSize {
-				if len(parts[i]) > 1 && parts[i][0] >= '0' && parts[i][0] <= '9' {
-					if n, err := fmt.Sscanf(parts[i], "%d", &size); n > 0 && err == nil {
-						foundSize = true
-						break
-					}
-				}
-			}
+		// If the name is exactly the path we are listing (some ls outputs repeat it), skip
+		if cleanName == path.Base(pathStr) || cleanName == pathStr {
+			continue
 		}
 
-		// Safely build the full path using path.Join
-		fullPath := path.Join(pathStr, name)
-
 		files = append(files, FileInfo{
-			Name:    name,
+			Name:    cleanName,
 			Size:    size,
 			Mode:    mode,
 			ModTime: modTime,
 			IsDir:   isDir,
-			Path:    fullPath,
+			Path:    path.Join(pathStr, cleanName),
 		})
 	}
 
@@ -1364,12 +1353,17 @@ func (a *App) ListFiles(deviceId, pathStr string) ([]FileInfo, error) {
 }
 
 // DeleteFile deletes a file or directory on the device
-func (a *App) DeleteFile(deviceId, path string) error {
+func (a *App) DeleteFile(deviceId, pathStr string) error {
 	if deviceId == "" {
 		return fmt.Errorf("no device specified")
 	}
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "rm", "-rf", path)
-	return cmd.Run()
+	pathStr = path.Clean("/" + pathStr)
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "rm", "-rf", "\""+pathStr+"\"")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
 }
 
 // MoveFile moves or renames a file or directory on the device
@@ -1377,8 +1371,14 @@ func (a *App) MoveFile(deviceId, src, dest string) error {
 	if deviceId == "" {
 		return fmt.Errorf("no device specified")
 	}
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "mv", src, dest)
-	return cmd.Run()
+	src = path.Clean("/" + src)
+	dest = path.Clean("/" + dest)
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "mv", "\""+src+"\"", "\""+dest+"\"")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
 }
 
 // CopyFile copies a file or directory on the device
@@ -1386,16 +1386,27 @@ func (a *App) CopyFile(deviceId, src, dest string) error {
 	if deviceId == "" {
 		return fmt.Errorf("no device specified")
 	}
+	src = path.Clean("/" + src)
+	dest = path.Clean("/" + dest)
 	// Use cp -R for recursive copy
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "cp", "-R", src, dest)
-	return cmd.Run()
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "cp", "-R", "\""+src+"\"", "\""+dest+"\"")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
 }
 
 // Mkdir creates a new directory on the device
-func (a *App) Mkdir(deviceId, path string) error {
+func (a *App) Mkdir(deviceId, pathStr string) error {
 	if deviceId == "" {
 		return fmt.Errorf("no device specified")
 	}
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "mkdir", "-p", path)
-	return cmd.Run()
+	pathStr = path.Clean("/" + pathStr)
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "mkdir", "-p", "\""+pathStr+"\"")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
 }

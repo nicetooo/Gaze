@@ -41,6 +41,34 @@ const EventsOff = (window as any).runtime.EventsOff;
 const { Content, Sider } = Layout;
 const { Option } = Select;
 
+const FocusInput = ({ defaultValue, onChange, placeholder, selectAll }: any) => {
+  const inputRef = useRef<any>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      inputRef.current?.focus();
+      if (selectAll) {
+        inputRef.current?.select();
+      }
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [selectAll]);
+
+  return (
+    <Input
+      ref={inputRef}
+      defaultValue={defaultValue}
+      onChange={onChange}
+      placeholder={placeholder}
+      style={{ marginTop: 16 }}
+      onPressEnter={() => {
+        // Trigger the OK button of the modal
+        const okBtn = document.querySelector('.ant-modal-confirm-btns .ant-btn-primary') as HTMLButtonElement;
+        if (okBtn) okBtn.click();
+      }}
+    />
+  );
+};
+
 interface Device {
   id: string;
   state: string;
@@ -286,31 +314,57 @@ function App() {
           fetchFiles(currentPath);
           break;
         case 'rename':
+          let newName = file.name;
           Modal.confirm({
-            title: 'Rename File',
-            content: <Input defaultValue={file.name} id="rename-input" />,
+            title: 'Rename',
+            autoFocusButton: null,
+            content: (
+              <FocusInput 
+                defaultValue={file.name} 
+                onChange={(e: any) => newName = e.target.value}
+                placeholder="Enter new name"
+                selectAll={true}
+              />
+            ),
             onOk: async () => {
-              const newName = (document.getElementById('rename-input') as HTMLInputElement).value;
               if (newName && newName !== file.name) {
-                const newPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + newName;
-                await MoveFile(selectedDevice, file.path, newPath);
-                message.success('Renamed to ' + newName);
-                fetchFiles(currentPath);
+                try {
+                  const parentPath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+                  const newPath = parentPath + newName;
+                  await MoveFile(selectedDevice, file.path, newPath);
+                  message.success('Renamed to ' + newName);
+                  fetchFiles(currentPath);
+                } catch (err) {
+                  message.error('Rename failed: ' + String(err));
+                  throw err; // Keep modal open
+                }
               }
             }
           });
           break;
         case 'mkdir':
+          let folderName = '';
           Modal.confirm({
             title: 'New Directory',
-            content: <Input placeholder="Directory name" id="mkdir-input" />,
+            autoFocusButton: null,
+            content: (
+              <FocusInput 
+                onChange={(e: any) => folderName = e.target.value}
+                placeholder="Folder name"
+              />
+            ),
             onOk: async () => {
-              const name = (document.getElementById('mkdir-input') as HTMLInputElement).value;
-              if (name) {
-                const newPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + name;
-                await Mkdir(selectedDevice, newPath);
-                message.success('Created directory ' + name);
-                fetchFiles(currentPath);
+              if (folderName) {
+                try {
+                  const parentPath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+                  const newPath = parentPath + folderName;
+                  await Mkdir(selectedDevice, newPath);
+                  message.success('Created directory ' + folderName);
+                  fetchFiles(currentPath);
+                } catch (err) {
+                  message.error('Create directory failed: ' + String(err));
+                  throw err; // Keep modal open
+                }
               }
             }
           });
