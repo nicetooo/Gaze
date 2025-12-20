@@ -20,6 +20,7 @@ export namespace main {
 	    id: string;
 	    state: string;
 	    model: string;
+	    brand: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Device(source);
@@ -30,6 +31,7 @@ export namespace main {
 	        this.id = source["id"];
 	        this.state = source["state"];
 	        this.model = source["model"];
+	        this.brand = source["brand"];
 	    }
 	}
 	export class ScrcpyConfig {

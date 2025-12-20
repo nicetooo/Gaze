@@ -33,6 +33,7 @@ type Device struct {
 	ID    string `json:"id"`
 	State string `json:"state"`
 	Model string `json:"model"`
+	Brand string `json:"brand"`
 }
 
 type AppPackage struct {
@@ -127,7 +128,7 @@ func (a *App) GetDevices() ([]Device, error) {
 				ID:    parts[0],
 				State: parts[1],
 			}
-			// Try to parse model
+			// Try to parse basic model from -l
 			for _, p := range parts {
 				if strings.HasPrefix(p, "model:") {
 					device.Model = strings.TrimPrefix(p, "model:")
@@ -136,6 +137,37 @@ func (a *App) GetDevices() ([]Device, error) {
 			devices = append(devices, device)
 		}
 	}
+
+	// Fetch details in parallel for authorized devices
+	var wg sync.WaitGroup
+	for i := range devices {
+		if devices[i].State == "device" {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				d := &devices[idx]
+
+				// Fetch manufacturer and model in one shell command to reduce overhead
+				// Format: manufacturer;model
+				cmd := exec.CommandContext(ctx, a.adbPath, "-s", d.ID, "shell", "getprop ro.product.manufacturer; getprop ro.product.model")
+				out, err := cmd.Output()
+				if err == nil {
+					parts := strings.Split(string(out), "\n")
+					if len(parts) >= 1 {
+						d.Brand = strings.TrimSpace(parts[0])
+					}
+					if len(parts) >= 2 {
+						refinedModel := strings.TrimSpace(parts[1])
+						if refinedModel != "" {
+							d.Model = refinedModel
+						}
+					}
+				}
+			}(i)
+		}
+	}
+	wg.Wait()
+
 	return devices, nil
 }
 

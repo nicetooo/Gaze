@@ -34,6 +34,7 @@ interface Device {
   id: string;
   state: string;
   model: string;
+  brand: string;
 }
 
 function App() {
@@ -236,6 +237,12 @@ function App() {
       key: 'id',
     },
     {
+      title: 'Brand',
+      dataIndex: 'brand',
+      key: 'brand',
+      render: (brand: string) => brand ? brand.toUpperCase() : '-',
+    },
+    {
       title: 'Model',
       dataIndex: 'model',
       key: 'model',
@@ -404,7 +411,9 @@ function App() {
                   placeholder="Select Device"
                 >
                   {devices.map(d => (
-                    <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                    <Option key={d.id} value={d.id}>
+                      {d.brand ? `${d.brand} ${d.model}` : (d.model || d.id)}
+                    </Option>
                   ))}
                 </Select>
                 <Button icon={<ReloadOutlined />} onClick={fetchPackages} loading={appsLoading}>
@@ -471,7 +480,9 @@ function App() {
                   disabled={isLogging}
                 >
                   {devices.map(d => (
-                    <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                    <Option key={d.id} value={d.id}>
+                      {d.brand ? `${d.brand} ${d.model}` : (d.model || d.id)}
+                    </Option>
                   ))}
                 </Select>
                 <Select
@@ -544,7 +555,9 @@ function App() {
                       placeholder="Select Device"
                     >
                       {devices.map(d => (
-                        <Option key={d.id} value={d.id}>{d.model || d.id}</Option>
+                        <Option key={d.id} value={d.id}>
+                          {d.brand ? `${d.brand} ${d.model}` : (d.model || d.id)}
+                        </Option>
                       ))}
                     </Select>
                     <Button 
