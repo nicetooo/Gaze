@@ -1052,6 +1052,16 @@ function App() {
                     label: "简体中文",
                     onClick: () => i18n.changeLanguage("zh"),
                   },
+                  {
+                    key: "ja",
+                    label: "日本語",
+                    onClick: () => i18n.changeLanguage("ja"),
+                  },
+                  {
+                    key: "ko",
+                    label: "한국어",
+                    onClick: () => i18n.changeLanguage("ko"),
+                  },
                 ],
                 selectedKeys: [i18n.language],
               }}
