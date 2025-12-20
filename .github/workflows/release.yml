@@ -7,6 +7,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -110,5 +112,6 @@ jobs:
             adbGUI-macOS.zip
             adbGUI-Windows.zip
             adbGUI-Linux.tar.gz
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
