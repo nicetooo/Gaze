@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown, List, Switch, Slider, InputNumber, Card, Row, Col, Modal, Tooltip } from 'antd';
+import { Layout, Menu, Table, Button, Tag, Space, message, Input, Select, Popconfirm, Radio, Dropdown, List, Switch, Slider, InputNumber, Card, Row, Col, Modal, Tooltip, Checkbox } from 'antd';
 import LogcatView from './components/LogcatView';
 import { 
   MobileOutlined, 
@@ -70,7 +70,7 @@ function App() {
   const [permissionSearch, setPermissionSearch] = useState('');
 
   // Files state
-  const [currentPath, setCurrentPath] = useState('/sdcard');
+  const [currentPath, setCurrentPath] = useState('/');
   const [fileList, setFileList] = useState<any[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
   const [clipboard, setClipboard] = useState<{ path: string, type: 'copy' | 'cut' } | null>(null);
@@ -246,7 +246,14 @@ function App() {
     setFilesLoading(true);
     try {
       const res = await ListFiles(selectedDevice, path);
-      setFileList(res || []);
+      // Sort by time descending by default
+      const sorted = (res || []).sort((a: any, b: any) => {
+        if (a.modTime === 'N/A' && b.modTime === 'N/A') return 0;
+        if (a.modTime === 'N/A') return 1;
+        if (b.modTime === 'N/A') return -1;
+        return b.modTime.localeCompare(a.modTime);
+      });
+      setFileList(sorted);
       setCurrentPath(path);
     } catch (err) {
       message.error('Failed to list files: ' + String(err));
@@ -546,6 +553,13 @@ function App() {
           }}>
             Logcat
           </Button>
+          <Button size="small" onClick={() => {
+             setSelectedDevice(record.id);
+             setSelectedKey('6');
+             fetchFiles('/');
+          }}>
+            Files
+          </Button>
           <Button 
             icon={<DesktopOutlined />} 
             size="small" 
@@ -772,6 +786,7 @@ function App() {
           {
             title: 'Name',
             key: 'name',
+            sorter: (a: any, b: any) => a.name.localeCompare(b.name),
             render: (_: any, record: any) => (
               <Space onClick={() => record.isDir && fetchFiles(record.path)} style={{ cursor: record.isDir ? 'pointer' : 'default', width: '100%' }}>
                 {record.isDir ? <FolderOutlined style={{ color: '#1890ff' }} /> : <FileOutlined />}
@@ -784,6 +799,7 @@ function App() {
             dataIndex: 'size',
             key: 'size',
             width: 100,
+            sorter: (a: any, b: any) => a.size - b.size,
             render: (size: number, record: any) => record.isDir ? '-' : (size > 1024 * 1024 ? (size / (1024 * 1024)).toFixed(2) + ' MB' : (size / 1024).toFixed(2) + ' KB'),
           },
           {
@@ -791,6 +807,13 @@ function App() {
             dataIndex: 'modTime',
             key: 'modTime',
             width: 180,
+            defaultSortOrder: 'descend' as const,
+            sorter: (a: any, b: any) => {
+              if (a.modTime === 'N/A' && b.modTime === 'N/A') return 0;
+              if (a.modTime === 'N/A') return 1;
+              if (b.modTime === 'N/A') return -1;
+              return b.modTime.localeCompare(a.modTime);
+            },
           },
           {
             title: 'Action',
@@ -824,9 +847,33 @@ function App() {
         const filteredFiles = fileList.filter(f => showHiddenFiles || !f.name.startsWith('.'));
 
         return (
-          <div style={{ padding: 24, height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+          <div style={{ padding: '16px 24px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h2 style={{ margin: 0 }}>Files</h2>
+              <Space>
+                <Select 
+                  value={selectedDevice} 
+                  onChange={(val) => {
+                    setSelectedDevice(val);
+                    fetchFiles(currentPath);
+                  }} 
+                  style={{ width: 180 }} 
+                  placeholder="Select Device"
+                >
+                  {devices.map(d => (
+                    <Option key={d.id} value={d.id}>
+                      {d.brand ? `${d.brand} ${d.model}` : (d.model || d.id)}
+                    </Option>
+                  ))}
+                </Select>
+                <Button icon={<ReloadOutlined />} onClick={() => fetchFiles(currentPath)} loading={filesLoading}>
+                  Refresh
+                </Button>
+              </Space>
+            </div>
+
+            <div style={{ marginBottom: 12, display: 'flex', gap: 16, alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ flex: 1, display: 'flex', gap: 8 }}>
                 <Button 
                   icon={<ArrowLeftOutlined />} 
                   onClick={() => {
@@ -842,10 +889,9 @@ function App() {
                   onPressEnter={() => fetchFiles(currentPath)}
                   style={{ flex: 1 }}
                 />
-                <Button icon={<ReloadOutlined />} onClick={() => fetchFiles(currentPath)} loading={filesLoading} />
               </div>
-              <Space style={{ marginLeft: 16 }}>
-                <Checkbox checked={showHiddenFiles} onChange={e => setShowHiddenFiles(e.target.checked)}>
+              <Space>
+                <Checkbox checked={showHiddenFiles} onChange={(e: any) => setShowHiddenFiles(e.target.checked)}>
                   Show Hidden
                 </Checkbox>
                 <Button icon={<FolderAddOutlined />} onClick={() => handleFileAction('mkdir', null)}>New Folder</Button>
@@ -859,18 +905,21 @@ function App() {
                 </Button>
               </Space>
             </div>
-            <Table 
-              columns={fileColumns} 
-              dataSource={filteredFiles} 
-              rowKey="path" 
-              loading={filesLoading}
-              pagination={false}
-              size="small"
-              scroll={{ y: 'calc(100vh - 250px)' }}
-              onRow={(record) => ({
-                onDoubleClick: () => record.isDir && fetchFiles(record.path),
-              })}
-            />
+
+            <div style={{ flex: 1, overflow: 'hidden', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #f0f0f0' }}>
+              <Table 
+                columns={fileColumns} 
+                dataSource={filteredFiles} 
+                rowKey="path" 
+                loading={filesLoading}
+                pagination={false}
+                size="small"
+                scroll={{ y: 'calc(100vh - 180px)' }}
+                onRow={(record) => ({
+                  onDoubleClick: () => record.isDir && fetchFiles(record.path),
+                })}
+              />
+            </div>
           </div>
         );
       case '2':

@@ -1258,9 +1258,16 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 		return nil, fmt.Errorf("no device specified")
 	}
 
-	// Use ls -la to get detailed information
-	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ls", "-la", path)
-	output, err := cmd.Output()
+	// Clean the path and ensure it's absolute
+	path = filepath.ToSlash(path)
+	if path == "" || path == "." {
+		path = "/"
+	}
+
+	// Use ls -la and CombinedOutput to capture both stdout and stderr
+	// We quote the path to handle spaces correctly in adb shell
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ls", "-la", "\""+path+"\"")
+	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files: %w (output: %s)", err, string(output))
 	}
@@ -1287,48 +1294,75 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 		var size int64
 		var modTime string
 
-		// Find the index of size field (usually index 3 or 4)
-		// and name usually starts after the date/time fields (index 5, 6 or 6, 7)
-		// We use a more robust scanning approach
+		// Find the arrow for symlinks
+		arrowIdx := -1
+		for i, p := range parts {
+			if p == "->" {
+				arrowIdx = i
+				break
+			}
+		}
 
-		// In most Android versions: 0:mode, 1:links, 2:user, 3:group, 4:size, 5:date, 6:time, 7:name
-		// But links, user, group might vary. We know size is the first large number after group.
+		if arrowIdx > 0 {
+			// Symlink case: [mode] ... [date] [time] [name] -> [target]
+			name = parts[arrowIdx-1]
+			// Look backwards from name to find date and time
+			if arrowIdx >= 3 {
+				modTime = parts[arrowIdx-3] + " " + parts[arrowIdx-2]
+			}
+			isDir = true
+		} else {
+			// Regular file/dir case: [mode] ... [size] [date] [time] [name]
+			name = parts[len(parts)-1]
+			if len(parts) >= 3 {
+				// Try to find if parts[len-3] and parts[len-2] look like date and time
+				t1 := parts[len(parts)-3]
+				t2 := parts[len(parts)-2]
+				modTime = t1 + " " + t2
+			}
+		}
 
-		foundSize := false
-		for i := 3; i < len(parts); i++ {
-			// Try to parse size
-			if !foundSize {
-				if n, err := fmt.Sscanf(parts[i], "%d", &size); n > 0 && err == nil {
-					foundSize = true
-					if i+3 < len(parts) {
-						modTime = parts[i+1] + " " + parts[i+2]
-						name = strings.Join(parts[i+3:], " ")
-					}
+		// Cleanup: If modTime contains only '?' or doesn't look like a date, set to N/A
+		if strings.Contains(modTime, "?") || len(modTime) < 5 {
+			modTime = "N/A"
+		}
+
+		// Cleanup name: handle cases where name might be parsed as '?'
+		if name == "?" {
+			// Try to find the last non-question mark part
+			for i := len(parts) - 1; i >= 0; i-- {
+				if parts[i] != "?" && parts[i] != "->" {
+					name = parts[i]
 					break
 				}
 			}
 		}
 
-		// Fallback if the above parsing failed
-		if name == "" {
-			name = parts[len(parts)-1]
-			if len(parts) >= 3 {
-				modTime = parts[len(parts)-3] + " " + parts[len(parts)-2]
+		// Final name cleanup: if it's a path, get the base
+		if strings.Contains(name, "/") && !isLink {
+			name = filepath.Base(name)
+		}
+
+		// Find size (the first numeric field that isn't the links count at index 1)
+		foundSize := false
+		for i := 1; i < len(parts); i++ {
+			if !foundSize {
+				// Don't treat permissions or single digit link counts as size
+				if len(parts[i]) > 1 && parts[i][0] >= '0' && parts[i][0] <= '9' {
+					if n, err := fmt.Sscanf(parts[i], "%d", &size); n > 0 && err == nil {
+						foundSize = true
+						break
+					}
+				}
 			}
 		}
 
-		// Handle symbolic links: "name -> /path/to/target"
-		if isLink && strings.Contains(name, " -> ") {
-			linkParts := strings.Split(name, " -> ")
-			name = linkParts[0]
-			// Often symlinks in Android data are directories
-			isDir = true
-		}
-
-		// Skip . and ..
 		if name == "." || name == ".." || name == "" {
 			continue
 		}
+
+		// Build full path safely using forward slashes for Android
+		fullPath := strings.TrimSuffix(path, "/") + "/" + name
 
 		files = append(files, FileInfo{
 			Name:    name,
@@ -1336,7 +1370,7 @@ func (a *App) ListFiles(deviceId, path string) ([]FileInfo, error) {
 			Mode:    mode,
 			ModTime: modTime,
 			IsDir:   isDir,
-			Path:    filepath.Join(path, name),
+			Path:    fullPath,
 		})
 	}
 
