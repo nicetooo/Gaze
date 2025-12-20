@@ -62,11 +62,11 @@ jobs:
           mkdir -p bin/windows
           # Example for ADB
           curl -L -o platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-windows.zip
-          unzip -j platform-tools.zip platform-tools/adb.exe -d bin/windows/
+          unzip -o -j platform-tools.zip platform-tools/adb.exe -d bin/windows/
           # Example for Scrcpy (v2.3.1)
           curl -L -o scrcpy.zip https://github.com/Genymobile/scrcpy/releases/download/v2.3.1/scrcpy-win64-v2.3.1.zip
-          unzip -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy.exe -d bin/windows/
-          unzip -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy-server -d bin/
+          unzip -o -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy.exe -d bin/windows/
+          unzip -o -j scrcpy.zip scrcpy-win64-v2.3.1/scrcpy-server -d bin/
 
       - name: Download Binaries (Linux)
         if: matrix.platform == 'linux'
@@ -74,7 +74,7 @@ jobs:
           mkdir -p bin/linux
           # Example for ADB
           curl -L -o platform-tools.zip https://dl.google.com/android/repository/platform-tools-latest-linux.zip
-          unzip -j platform-tools.zip platform-tools/adb -d bin/linux/
+          unzip -o -j platform-tools.zip platform-tools/adb -d bin/linux/
           # Scrcpy on Linux is usually installed via package manager, 
           # but for embedding we need the binary. 
 
