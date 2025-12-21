@@ -1603,8 +1603,28 @@ func (a *App) TakeScreenshot(deviceId, savePath string) (string, error) {
 		return "", fmt.Errorf("no save path specified")
 	}
 
-	// 4. Capture screenshot via temp file on device then pull
-	// This is the most reliable way across all platforms
+	// 4. Check if screen is truly active and unlocked
+	// We use Case-Insensitive matching and cover multiple variants
+	// Screen status: mWakefulness=Awake (Pixel), Display Power: state=ON (Xiaomi/Others)
+	// Lock status: mKeyguardShowing=true, mShowingLockscreen=true
+	checkCmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "dumpsys power | grep -iE 'state=|wakefulness=' ; dumpsys window | grep -iE 'keyguardShowing|showingLockscreen'")
+	out, _ := checkCmd.CombinedOutput()
+	outStr := strings.TrimSpace(string(out))
+
+	// Screen is considered ON only if we explicitly see "Awake" or "state=ON"
+	reOn := regexp.MustCompile(`(?i)wakefulness=Awake|state=ON|mDisplayState=ON`)
+	isOn := reOn.MatchString(outStr)
+
+	// Screen is considered LOCKED if we see "Showing=true" or "Lockscreen=true"
+	reLocked := regexp.MustCompile(`(?i)(keyguardShowing|showingLockscreen).*true`)
+	isLocked := reLocked.MatchString(outStr)
+
+	if !isOn || isLocked {
+		return "", fmt.Errorf("SCREEN_OFF")
+	}
+
+	// 5. Capture screenshot via temp file on device then pull
+	wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_capturing")
 	remotePath := "/sdcard/screenshot_tmp.png"
 	capCmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "screencap", "-p", remotePath)
 	if out, err := capCmd.CombinedOutput(); err != nil {
@@ -1612,6 +1632,7 @@ func (a *App) TakeScreenshot(deviceId, savePath string) (string, error) {
 	}
 	defer exec.Command(a.adbPath, "-s", deviceId, "shell", "rm", remotePath).Run()
 
+	wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_pulling")
 	pullCmd := exec.Command(a.adbPath, "-s", deviceId, "pull", remotePath, savePath)
 	if out, err := pullCmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("failed to pull screenshot: %w, output: %s", err, string(out))

@@ -28,6 +28,8 @@ import {
 } from "../../wailsjs/go/main/App";
 
 const { Option } = Select;
+const EventsOn = (window as any).runtime.EventsOn;
+const EventsOff = (window as any).runtime.EventsOff;
 
 interface Device {
   id: string;
@@ -158,12 +160,33 @@ const MirrorView: React.FC<MirrorViewProps> = ({
       const defaultPath = await SelectScreenshotPath(device?.model || "");
       if (!defaultPath) return;
 
-      const path = await TakeScreenshot(selectedDevice, defaultPath);
-      if (path) {
-        message.success(t("app.screenshot_success", { path }));
+      const msgKey = "screenshot-msg";
+      message.loading({ content: t("app.screenshot_capturing"), key: msgKey, duration: 0 });
+      
+      const unregister = EventsOn("screenshot-progress", (stepKey: string) => {
+        message.loading({ content: t(`app.${stepKey}`), key: msgKey, duration: 0 });
+      });
+
+      try {
+        const path = await TakeScreenshot(selectedDevice, defaultPath);
+        if (path) {
+          message.success({ content: t("app.screenshot_success", { path }), key: msgKey });
+        } else {
+          message.destroy(msgKey);
+        }
+      } catch (err) {
+        const errorMsg = String(err);
+        if (errorMsg.includes("SCREEN_OFF")) {
+          message.warning({ content: t("app.screenshot_off"), key: msgKey });
+        } else {
+          message.error({ content: t("app.command_failed") + ": " + errorMsg, key: msgKey });
+        }
+        throw err;
+      } finally {
+        unregister();
       }
     } catch (err) {
-      message.error(t("app.command_failed") + ": " + String(err));
+      // Error is already handled
     }
   };
 
