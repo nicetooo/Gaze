@@ -160,33 +160,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
       const defaultPath = await SelectScreenshotPath(device?.model || "");
       if (!defaultPath) return;
 
-      const msgKey = "screenshot-msg";
-      message.loading({ content: t("app.screenshot_capturing"), key: msgKey, duration: 0 });
-      
-      const unregister = EventsOn("screenshot-progress", (stepKey: string) => {
-        message.loading({ content: t(`app.${stepKey}`), key: msgKey, duration: 0 });
-      });
-
-      try {
-        const path = await TakeScreenshot(selectedDevice, defaultPath);
-        if (path) {
-          message.success({ content: t("app.screenshot_success", { path }), key: msgKey });
-        } else {
-          message.destroy(msgKey);
-        }
-      } catch (err) {
-        const errorMsg = String(err);
-        if (errorMsg.includes("SCREEN_OFF")) {
-          message.warning({ content: t("app.screenshot_off"), key: msgKey });
-        } else {
-          message.error({ content: t("app.command_failed") + ": " + errorMsg, key: msgKey });
-        }
-        throw err;
-      } finally {
-        unregister();
-      }
+      // The global listener will handle the toasts based on events emitted by TakeScreenshot
+      await TakeScreenshot(selectedDevice, defaultPath);
     } catch (err) {
-      // Error is already handled
+      // Functional errors are handled by the global listener via events
     }
   };
 

@@ -218,9 +218,36 @@ func updateTrayMenu(ctx context.Context, app *App) {
 
 		devItem := systray.AddMenuItem(name, "")
 
+		d := dev // Capture loop variable
+
+		// Screenshot
+		mScreenshot := devItem.AddSubMenuItem("Take Screenshot", "")
+		mScreenshot.Click(func() {
+			go func() {
+				// Use app functions to generate a path and take screenshot
+				savePath, err := app.SelectScreenshotPath(d.Model)
+				if err != nil {
+					wailsRuntime.MessageDialog(ctx, wailsRuntime.MessageDialogOptions{
+						Type:    wailsRuntime.ErrorDialog,
+						Title:   "Screenshot Failed",
+						Message: fmt.Sprintf("Failed to select path: %v", err),
+					})
+					return
+				}
+				if savePath == "" {
+					return // Cancelled by user
+				}
+
+				finalPath, err := app.TakeScreenshot(d.ID, savePath)
+				if err != nil {
+					return
+				}
+				_ = finalPath
+			}()
+		})
+
 		// Submenus for connected devices
 		mMirror := devItem.AddSubMenuItem("Screen Mirror", "")
-		d := dev // Capture loop variable
 		mMirror.Click(func() {
 			go func() {
 				// Default config for tray launch

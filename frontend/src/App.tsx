@@ -384,6 +384,29 @@ function App() {
     };
   }, []);
 
+  // Global screenshot progress listener
+  useEffect(() => {
+    const msgKey = "screenshot-msg";
+    const unregister = EventsOn("screenshot-progress", (stepKey: string, data?: any) => {
+      switch (stepKey) {
+        case "screenshot_success":
+           message.success({ content: t("app.screenshot_success", { path: data }), key: msgKey });
+           break;
+        case "screenshot_error":
+           message.error({ content: t("app.command_failed") + ": " + String(data), key: msgKey });
+           break;
+        case "screenshot_off":
+           message.warning({ content: t("app.screenshot_off"), key: msgKey });
+           break;
+        default:
+           // progress steps: waking, capturing, pulling
+           message.loading({ content: t(`app.${stepKey}`), key: msgKey, duration: 0 });
+      }
+    });
+
+    return () => unregister();
+  }, [t]);
+
   // Poll devices list sequentially after each fetch completes
   useEffect(() => {
     const timer = setInterval(() => {

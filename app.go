@@ -1614,12 +1614,14 @@ func (a *App) TakeScreenshot(deviceId, savePath string) (string, error) {
 	// Screen is considered ON only if we explicitly see "Awake" or "state=ON"
 	reOn := regexp.MustCompile(`(?i)wakefulness=Awake|state=ON|mDisplayState=ON`)
 	isOn := reOn.MatchString(outStr)
+	isOff := !isOn
 
 	// Screen is considered LOCKED if we see "Showing=true" or "Lockscreen=true"
 	reLocked := regexp.MustCompile(`(?i)(keyguardShowing|showingLockscreen).*true`)
 	isLocked := reLocked.MatchString(outStr)
 
-	if !isOn || isLocked {
+	if isOff || isLocked {
+		wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_off")
 		return "", fmt.Errorf("SCREEN_OFF")
 	}
 
@@ -1635,9 +1637,11 @@ func (a *App) TakeScreenshot(deviceId, savePath string) (string, error) {
 	wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_pulling")
 	pullCmd := exec.Command(a.adbPath, "-s", deviceId, "pull", remotePath, savePath)
 	if out, err := pullCmd.CombinedOutput(); err != nil {
+		wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_error", err.Error())
 		return "", fmt.Errorf("failed to pull screenshot: %w, output: %s", err, string(out))
 	}
 
+	wailsRuntime.EventsEmit(a.ctx, "screenshot-progress", "screenshot_success", savePath)
 	return savePath, nil
 }
 
