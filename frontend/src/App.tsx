@@ -92,17 +92,26 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [isLogging, setIsLogging] = useState(false);
-  const [isMirroring, setIsMirroring] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [mirrorStartTime, setMirrorStartTime] = useState<number | null>(null);
-  const [recordStartTime, setRecordStartTime] = useState<number | null>(null);
-  const [mirrorDuration, setMirrorDuration] = useState(0);
-  const [recordDuration, setRecordDuration] = useState(0);
+  
+  // Multi-device mirror status
+  const [mirrorStatuses, setMirrorStatuses] = useState<Record<string, {
+    isMirroring: boolean;
+    startTime: number | null;
+    duration: number;
+  }>>({});
 
+  // Multi-device record status
+  const [recordStatuses, setRecordStatuses] = useState<Record<string, {
+    isRecording: boolean;
+    startTime: number | null;
+    duration: number;
+    recordPath: string;
+  }>>({});
+
+  const recordPathRefs = useRef<Record<string, string>>({});
   // Refs for event listeners
   const loadingRef = useRef(false);
   const isFetchingRef = useRef(false);
-  const recordPathRef = useRef("");
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -274,31 +283,50 @@ function App() {
     fetchDevices();
 
     EventsOn("scrcpy-started", (data: any) => {
-      setIsMirroring(true);
-      setMirrorStartTime((prev) => prev || data.startTime);
-      if (data.recording) {
-        setIsRecording(true);
-        setRecordStartTime((prev) => prev || data.startTime);
-        recordPathRef.current = data.recordPath;
-      }
+      const deviceId = data.deviceId;
+      setMirrorStatuses(prev => ({
+        ...prev,
+        [deviceId]: {
+          isMirroring: true,
+          startTime: data.startTime,
+          duration: 0
+        }
+      }));
     });
 
-    EventsOn("scrcpy-stopped", () => {
-      setIsMirroring(false);
-      setMirrorStartTime(null);
+    EventsOn("scrcpy-stopped", (deviceId: string) => {
+      setMirrorStatuses(prev => {
+        const next = { ...prev };
+        if (next[deviceId]) {
+          next[deviceId] = { ...next[deviceId], isMirroring: false, startTime: null };
+        }
+        return next;
+      });
     });
 
     EventsOn("scrcpy-record-started", (data: any) => {
-      setIsRecording(true);
-      setRecordStartTime(data.startTime);
-      setRecordDuration(0);
-      recordPathRef.current = data.recordPath;
+      const deviceId = data.deviceId;
+      setRecordStatuses(prev => ({
+        ...prev,
+        [deviceId]: {
+          isRecording: true,
+          startTime: data.startTime,
+          duration: 0,
+          recordPath: data.recordPath
+        }
+      }));
+      recordPathRefs.current[deviceId] = data.recordPath;
     });
 
-    EventsOn("scrcpy-record-stopped", () => {
-      const path = recordPathRef.current;
-      setIsRecording(false);
-      setRecordStartTime(null);
+    EventsOn("scrcpy-record-stopped", (deviceId: string) => {
+      const path = recordPathRefs.current[deviceId];
+      setRecordStatuses(prev => {
+        const next = { ...prev };
+        if (next[deviceId]) {
+          next[deviceId] = { ...next[deviceId], isRecording: false, startTime: null };
+        }
+        return next;
+      });
 
       notification.success({
         message: t("app.recording_saved"),
@@ -317,10 +345,11 @@ function App() {
             {t("app.show_in_folder")}
           </Button>
         ),
-        key: "scrcpy-record-saved",
+        key: "scrcpy-record-saved-" + deviceId,
         duration: 5,
       });
     });
+
 
     EventsOn("tray:navigate", (data: any) => {
       if (data.deviceId) {
@@ -351,22 +380,38 @@ function App() {
     };
   }, []);
 
+  // Poll devices list sequentially after each fetch completes
   useEffect(() => {
-    let timer: any;
-    if (isMirroring || isRecording) {
-      timer = setInterval(() => {
-        if (isMirroring && mirrorStartTime) {
-          setMirrorDuration(Math.floor(Date.now() / 1000 - mirrorStartTime));
-        }
-        if (isRecording && recordStartTime) {
-          setRecordDuration(Math.floor(Date.now() / 1000 - recordStartTime));
-        }
-      }, 1000);
-    }
-    if (!isMirroring) setMirrorDuration(0);
-    if (!isRecording) setRecordDuration(0);
+    const timer = setInterval(() => {
+      const now = Math.floor(Date.now() / 1000);
+      
+      setMirrorStatuses(prev => {
+        let changed = false;
+        const next = { ...prev };
+        Object.keys(next).forEach(id => {
+          if (next[id].isMirroring && next[id].startTime) {
+            next[id].duration = now - next[id].startTime!;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+
+      setRecordStatuses(prev => {
+        let changed = false;
+        const next = { ...prev };
+        Object.keys(next).forEach(id => {
+          if (next[id].isRecording && next[id].startTime) {
+            next[id].duration = now - next[id].startTime!;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
     return () => clearInterval(timer);
-  }, [isMirroring, isRecording, mirrorStartTime, recordStartTime]);
+  }, []);
+
 
   // Poll devices list sequentially after each fetch completes
   useEffect(() => {
@@ -421,6 +466,8 @@ function App() {
             handleAdbDisconnect={handleAdbDisconnect}
             handleRemoveHistoryDevice={handleRemoveHistoryDevice}
             handleOpenSettings={handleOpenSettings}
+            mirrorStatuses={mirrorStatuses}
+            recordStatuses={recordStatuses}
           />
         );
       case "6":
@@ -474,12 +521,11 @@ function App() {
             setSelectedDevice={setSelectedDevice}
             fetchDevices={fetchDevices}
             loading={loading}
-            isMirroring={isMirroring}
-            mirrorDuration={mirrorDuration}
-            isRecording={isRecording}
-            recordDuration={recordDuration}
+            mirrorStatuses={mirrorStatuses}
+            recordStatuses={recordStatuses}
           />
         );
+
       default:
         return <div style={{ padding: 24 }}>{t("app.select_option")}</div>;
     }

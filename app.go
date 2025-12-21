@@ -1645,14 +1645,22 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 }
 
 // SelectRecordPath returns a default recording path in the Downloads folder
-func (a *App) SelectRecordPath() (string, error) {
+func (a *App) SelectRecordPath(deviceModel string) (string, error) {
 	defaultDir, _ := os.UserHomeDir()
 	downloadsDir := filepath.Join(defaultDir, "Downloads")
 	if _, err := os.Stat(downloadsDir); err == nil {
 		defaultDir = downloadsDir
 	}
 
-	filename := "recording_" + time.Now().Format("20060102_150405") + ".mp4"
+	cleanModel := "Device"
+	if deviceModel != "" {
+		cleanModel = strings.ReplaceAll(deviceModel, " ", "_")
+		// Remove other potentially problematic characters
+		reg := regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+		cleanModel = reg.ReplaceAllString(cleanModel, "")
+	}
+
+	filename := fmt.Sprintf("adbGUI_%s_%s.mp4", cleanModel, time.Now().Format("20060102_150405"))
 	fullPath := filepath.Join(defaultDir, filename)
 	return fullPath, nil
 }

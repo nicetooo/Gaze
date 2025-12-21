@@ -126,8 +126,8 @@ export function RunAdbCommand(arg1) {
   return window['go']['main']['App']['RunAdbCommand'](arg1);
 }
 
-export function SelectRecordPath() {
-  return window['go']['main']['App']['SelectRecordPath']();
+export function SelectRecordPath(arg1) {
+  return window['go']['main']['App']['SelectRecordPath'](arg1);
 }
 
 export function StartActivity(arg1, arg2) {

@@ -33,16 +33,27 @@ interface Device {
   brand: string;
 }
 
+interface MirrorStatus {
+  isMirroring: boolean;
+  startTime: number | null;
+  duration: number;
+}
+
+interface RecordStatus {
+  isRecording: boolean;
+  startTime: number | null;
+  duration: number;
+  recordPath: string;
+}
+
 interface MirrorViewProps {
   devices: Device[];
   selectedDevice: string;
   setSelectedDevice: (id: string) => void;
   fetchDevices: () => Promise<void>;
   loading: boolean;
-  isMirroring: boolean;
-  mirrorDuration: number;
-  isRecording: boolean;
-  recordDuration: number;
+  mirrorStatuses: Record<string, MirrorStatus>;
+  recordStatuses: Record<string, RecordStatus>;
 }
 
 const MirrorView: React.FC<MirrorViewProps> = ({
@@ -51,15 +62,12 @@ const MirrorView: React.FC<MirrorViewProps> = ({
   setSelectedDevice,
   fetchDevices,
   loading,
-  isMirroring,
-  mirrorDuration,
-  isRecording,
-  recordDuration,
+  mirrorStatuses,
+  recordStatuses,
 }) => {
   const { t } = useTranslation();
 
-  // Scrcpy local state
-  const [scrcpyConfig, setScrcpyConfig] = useState<main.ScrcpyConfig>({
+  const defaultConfig: main.ScrcpyConfig = {
     maxSize: 0,
     bitRate: 8,
     maxFps: 60,
@@ -75,18 +83,44 @@ const MirrorView: React.FC<MirrorViewProps> = ({
     videoCodec: "h264",
     audioCodec: "opus",
     recordPath: "",
-  });
-  const [shouldRecord, setShouldRecord] = useState(false);
+  };
+
+  // Scrcpy states per device
+  const [deviceConfigs, setDeviceConfigs] = useState<Record<string, main.ScrcpyConfig>>({});
+  const [deviceShouldRecord, setDeviceShouldRecord] = useState<Record<string, boolean>>({});
+
+  // Helper to get current device's config
+  const currentConfig = deviceConfigs[selectedDevice] || defaultConfig;
+  const currentShouldRecord = !!deviceShouldRecord[selectedDevice];
+  const currentMirrorStatus = mirrorStatuses[selectedDevice] || { isMirroring: false, duration: 0 };
+  const currentRecordStatus = recordStatuses[selectedDevice] || { isRecording: false, duration: 0, recordPath: "" };
+
+  const setScrcpyConfig = (config: main.ScrcpyConfig) => {
+    if (!selectedDevice) return;
+    setDeviceConfigs(prev => ({
+      ...prev,
+      [selectedDevice]: config
+    }));
+  };
+
+  const setShouldRecord = (val: boolean) => {
+    if (!selectedDevice) return;
+    setDeviceShouldRecord(prev => ({
+      ...prev,
+      [selectedDevice]: val
+    }));
+  };
 
   const handleStartScrcpy = async (deviceId: string, overrideConfig?: main.ScrcpyConfig) => {
     try {
-      let currentConfig = { ...(overrideConfig || scrcpyConfig) };
-      await StartScrcpy(deviceId, currentConfig);
+      let config = { ...(overrideConfig || currentConfig) };
+      await StartScrcpy(deviceId, config);
 
-      if (shouldRecord && !isRecording) {
-        const path = await SelectRecordPath();
+      if (currentShouldRecord && !currentRecordStatus.isRecording) {
+        const device = devices.find(d => d.id === deviceId);
+        const path = await SelectRecordPath(device?.model || "");
         if (path) {
-          const recordConfig = { ...currentConfig, recordPath: path };
+          const recordConfig = { ...config, recordPath: path };
           await StartRecording(deviceId, recordConfig);
         } else {
           setShouldRecord(false);
@@ -95,7 +129,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 
       if (!overrideConfig) {
         message.success(
-          shouldRecord
+          currentShouldRecord
             ? t("app.scrcpy_started_record")
             : t("app.scrcpy_started_mirror")
         );
@@ -107,7 +141,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 
   const handleStopScrcpy = async (deviceId: string) => {
     try {
-      if (isRecording) {
+      if (currentRecordStatus.isRecording) {
         await StopRecording(deviceId);
       }
       await StopScrcpy(deviceId);
@@ -120,12 +154,13 @@ const MirrorView: React.FC<MirrorViewProps> = ({
   const handleStartMidSessionRecord = async () => {
     if (!selectedDevice) return;
     try {
-      const path = await SelectRecordPath();
+      const device = devices.find(d => d.id === selectedDevice);
+      const path = await SelectRecordPath(device?.model || "");
       if (!path) {
         setShouldRecord(false);
         return;
       }
-      const config = { ...scrcpyConfig, recordPath: path };
+      const config = { ...currentConfig, recordPath: path };
       await StartRecording(selectedDevice, config);
       message.success(t("app.record_started"));
     } catch (err) {
@@ -146,10 +181,16 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 
   const updateScrcpyConfig = async (newConfig: main.ScrcpyConfig) => {
     setScrcpyConfig(newConfig);
-    if (isMirroring && selectedDevice) {
+    if (currentMirrorStatus.isMirroring && selectedDevice) {
       await handleStartScrcpy(selectedDevice, newConfig);
     }
   };
+
+  // Status for display
+  const isMirroring = currentMirrorStatus.isMirroring;
+  const isRecording = currentRecordStatus.isRecording;
+  const mirrorDuration = currentMirrorStatus.duration;
+  const recordDuration = currentRecordStatus.duration;
 
   return (
     <div
@@ -272,9 +313,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               size="small"
               style={{
                 border:
-                  shouldRecord || isRecording ? "1px solid #ff4d4f" : undefined,
+                  currentShouldRecord || isRecording ? "1px solid #ff4d4f" : undefined,
                 backgroundColor:
-                  shouldRecord || isRecording ? "#fff1f0" : undefined,
+                  currentShouldRecord || isRecording ? "#fff1f0" : undefined,
               }}
             >
               <div
@@ -289,7 +330,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span
                     style={{
                       fontWeight:
-                        shouldRecord || isRecording ? "bold" : "normal",
+                        currentShouldRecord || isRecording ? "bold" : "normal",
                     }}
                   >
                     {t("mirror.record_screen")}
@@ -297,12 +338,12 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <div style={{ fontSize: "11px", color: "#888" }}>
                     {isRecording
                       ? t("mirror.recording_in_progress")
-                      : shouldRecord
+                      : currentShouldRecord
                       ? t("mirror.save_dialog_desc")
                       : t("mirror.independent_desc")}
                   </div>
                 </Space>
-                {shouldRecord || isRecording ? (
+                {currentShouldRecord || isRecording ? (
                   <Button
                     type="primary"
                     danger
@@ -364,7 +405,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                       {new Date(recordDuration * 1000).toISOString().substr(11, 8)}
                     </span>
                   </div>
-                  {scrcpyConfig.recordPath && (
+                  {currentRecordStatus.recordPath && (
                     <div
                       style={{
                         fontSize: "10px",
@@ -373,7 +414,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                         marginTop: 4,
                       }}
                     >
-                      {t("files.title")}: {scrcpyConfig.recordPath.split(/[\\/]/).pop()}
+                      {t("files.title")}: {currentRecordStatus.recordPath.split(/[\\/]/).pop()}
                     </div>
                   )}
                 </div>
@@ -399,15 +440,15 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   }}
                 >
                   <span>{t("mirror.max_res")}</span>
-                  <Tag>{scrcpyConfig.maxSize || "Auto"}</Tag>
+                  <Tag>{currentConfig.maxSize || "Auto"}</Tag>
                 </div>
                 <Slider
                   min={0}
                   max={2560}
                   step={128}
-                  value={scrcpyConfig.maxSize}
+                  value={currentConfig.maxSize}
                   onChange={(v) =>
-                    setScrcpyConfig({ ...scrcpyConfig, maxSize: v })
+                    setScrcpyConfig({ ...currentConfig, maxSize: v })
                   }
                   marks={{
                     0: "Auto",
@@ -426,14 +467,14 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   }}
                 >
                   <span>{t("mirror.bitrate")}</span>
-                  <Tag>{scrcpyConfig.bitRate}M</Tag>
+                  <Tag>{currentConfig.bitRate}M</Tag>
                 </div>
                 <Slider
                   min={1}
                   max={64}
-                  value={scrcpyConfig.bitRate}
+                  value={currentConfig.bitRate}
                   onChange={(v) =>
-                    setScrcpyConfig({ ...scrcpyConfig, bitRate: v })
+                    setScrcpyConfig({ ...currentConfig, bitRate: v })
                   }
                 />
               </div>
@@ -446,14 +487,14 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   }}
                 >
                   <span>{t("mirror.max_fps")}</span>
-                  <Tag>{scrcpyConfig.maxFps}</Tag>
+                  <Tag>{currentConfig.maxFps}</Tag>
                 </div>
                 <Slider
                   min={15}
                   max={144}
-                  value={scrcpyConfig.maxFps}
+                  value={currentConfig.maxFps}
                   onChange={(v) =>
-                    setScrcpyConfig({ ...scrcpyConfig, maxFps: v })
+                    setScrcpyConfig({ ...currentConfig, maxFps: v })
                   }
                 />
               </div>
@@ -468,9 +509,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                 <span>{t("mirror.video_codec")}</span>
                 <Select
                   size="small"
-                  value={scrcpyConfig.videoCodec}
+                  value={currentConfig.videoCodec}
                   onChange={(v) =>
-                    updateScrcpyConfig({ ...scrcpyConfig, videoCodec: v })
+                    updateScrcpyConfig({ ...currentConfig, videoCodec: v })
                   }
                   style={{ width: 100 }}
                 >
@@ -496,9 +537,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.disable_audio")}</span>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.noAudio}
+                    checked={currentConfig.noAudio}
                     onChange={(v) =>
-                      updateScrcpyConfig({ ...scrcpyConfig, noAudio: v })
+                      updateScrcpyConfig({ ...currentConfig, noAudio: v })
                     }
                   />
                 </div>
@@ -506,10 +547,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.audio_codec")}</span>
                   <Select
                     size="small"
-                    disabled={scrcpyConfig.noAudio}
-                    value={scrcpyConfig.audioCodec}
+                    disabled={currentConfig.noAudio}
+                    value={currentConfig.audioCodec}
                     onChange={(v) =>
-                      updateScrcpyConfig({ ...scrcpyConfig, audioCodec: v })
+                      updateScrcpyConfig({ ...currentConfig, audioCodec: v })
                     }
                     style={{ width: 100 }}
                   >
@@ -547,10 +588,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.always_on_top")}</span>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.alwaysOnTop}
+                    checked={currentConfig.alwaysOnTop}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         alwaysOnTop: v,
                       })
                     }
@@ -560,10 +601,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.fullscreen")}</span>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.fullscreen}
+                    checked={currentConfig.fullscreen}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         fullscreen: v,
                       })
                     }
@@ -573,10 +614,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.borderless")}</span>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.windowBorderless}
+                    checked={currentConfig.windowBorderless}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         windowBorderless: v,
                       })
                     }
@@ -602,9 +643,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   </Tooltip>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.stayAwake}
+                    checked={currentConfig.stayAwake}
                     onChange={(v) =>
-                      updateScrcpyConfig({ ...scrcpyConfig, stayAwake: v })
+                      updateScrcpyConfig({ ...currentConfig, stayAwake: v })
                     }
                   />
                 </div>
@@ -614,9 +655,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   </Tooltip>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.readOnly}
+                    checked={currentConfig.readOnly}
                     onChange={(v) =>
-                      updateScrcpyConfig({ ...scrcpyConfig, readOnly: v })
+                      updateScrcpyConfig({ ...currentConfig, readOnly: v })
                     }
                   />
                 </div>
@@ -624,10 +665,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   <span>{t("mirror.show_touches")}</span>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.showTouches}
+                    checked={currentConfig.showTouches}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         showTouches: v,
                       })
                     }
@@ -653,10 +694,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   </Tooltip>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.turnScreenOff}
+                    checked={currentConfig.turnScreenOff}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         turnScreenOff: v,
                       })
                     }
@@ -668,10 +709,10 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                   </Tooltip>
                   <Switch
                     size="small"
-                    checked={scrcpyConfig.powerOffOnClose}
+                    checked={currentConfig.powerOffOnClose}
                     onChange={(v) =>
                       updateScrcpyConfig({
-                        ...scrcpyConfig,
+                        ...currentConfig,
                         powerOffOnClose: v,
                       })
                     }
@@ -687,5 +728,6 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 };
 
 export default MirrorView;
+
 
 

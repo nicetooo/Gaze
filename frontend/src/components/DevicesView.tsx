@@ -8,7 +8,9 @@ import {
   FileTextOutlined,
   FolderOutlined,
   DesktopOutlined,
+  DownloadOutlined,
   InfoCircleOutlined,
+
   WifiOutlined,
   UsbOutlined,
   DisconnectOutlined,
@@ -57,7 +59,10 @@ interface DevicesViewProps {
   handleRemoveHistoryDevice: (id: string) => Promise<void>;
   handleOpenSettings: (id: string, action?: string, data?: string) => Promise<void>;
   busyDevices?: Set<string>;
+  mirrorStatuses?: Record<string, { isMirroring: boolean; duration: number }>;
+  recordStatuses?: Record<string, { isRecording: boolean; duration: number }>;
 }
+
 
 const DevicesView: React.FC<DevicesViewProps> = ({
   devices,
@@ -75,7 +80,10 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   handleRemoveHistoryDevice,
   handleOpenSettings,
   busyDevices = new Set(),
+  mirrorStatuses = {},
+  recordStatuses = {},
 }) => {
+
   const { t } = useTranslation();
 
   // Merge history devices that are not currently active
@@ -182,6 +190,9 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       width: 100,
       render: (state: string, record: Device) => {
         const isBusy = busyDevices.has(record.id) || busyDevices.has(record.serial);
+        const mirrorStatus = mirrorStatuses[record.id] || mirrorStatuses[record.serial];
+        const recordStatus = recordStatuses[record.id] || recordStatuses[record.serial];
+
         const config = isBusy 
           ? { color: "blue", icon: <ReloadOutlined spin />, text: t("common.loading") }
           : {
@@ -191,12 +202,25 @@ const DevicesView: React.FC<DevicesViewProps> = ({
             }[state] || { color: "red", icon: <CloseCircleOutlined />, text: state };
 
         return (
-          <Tooltip title={config.text}>
-            <Tag color={config.color} icon={config.icon} style={{ marginRight: 0, paddingInline: 8 }} />
-          </Tooltip>
+          <Space>
+            <Tooltip title={config.text}>
+              <Tag color={config.color} icon={config.icon} style={{ marginRight: 0, paddingInline: 8 }} />
+            </Tooltip>
+            {mirrorStatus?.isMirroring && (
+              <Tooltip title="Mirroring">
+                <Tag color="processing" icon={<DesktopOutlined />} style={{ marginRight: 0, paddingInline: 8 }} />
+              </Tooltip>
+            )}
+            {recordStatus?.isRecording && (
+              <Tooltip title="Recording">
+                <Tag color="error" icon={<DownloadOutlined />} style={{ marginRight: 0, paddingInline: 8 }} />
+              </Tooltip>
+            )}
+          </Space>
         );
       },
     },
+
     {
       title: t("devices.action"),
       key: "action",
