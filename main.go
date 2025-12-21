@@ -5,15 +5,18 @@ import (
 	"embed"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"time"
 
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
+	"github.com/wailsapp/wails/v2/pkg/menu/keys"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
@@ -29,13 +32,38 @@ var assets embed.FS
 func main() {
 	// Create an instance of the app structure
 	app := NewApp()
-	var shouldQuit bool
+
+	// Handle system signals for graceful shutdown (like Dock Quit or Cmd+Q)
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+		sig := <-sigChan
+		os.Stderr.WriteString(fmt.Sprintf("\n[SIGNAL RECEIVED: %v]\n", sig))
+		shouldQuit = true
+		wailsRuntime.Quit(app.ctx)
+		time.Sleep(200 * time.Millisecond)
+		os.Exit(0)
+	}()
 
 	// Create application menu
 	var applicationMenu *menu.Menu
 	if runtime.GOOS == "darwin" {
 		applicationMenu = menu.NewMenu()
-		applicationMenu.Append(menu.AppMenu())
+
+		// Custom App Menu to intercept Quit
+		customAppMenu := menu.NewMenu()
+		customAppMenu.Append(menu.Text("About adbGUI", nil, func(_ *menu.CallbackData) {
+			wailsRuntime.WindowShow(app.ctx)
+		}))
+		customAppMenu.Append(menu.Separator())
+		customAppMenu.Append(menu.Text("Quit adbGUI", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+			os.Stderr.WriteString("\n[MENU QUIT CLICKED]\n")
+			shouldQuit = true
+			wailsRuntime.Quit(app.ctx)
+		}))
+
+		applicationMenu.Append(menu.SubMenu("adbGUI", customAppMenu))
+		applicationMenu.Append(menu.EditMenu())
 		applicationMenu.Append(menu.WindowMenu())
 	}
 
@@ -49,11 +77,12 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		Menu:             applicationMenu,
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		Menu:              applicationMenu,
+		BackgroundColour:  &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		HideWindowOnClose: true,
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
-			// Initialize system tray
+
 			// Initialize system tray
 			if runtime.GOOS == "darwin" {
 				start, _ := systray.RunWithExternalLoop(func() {
@@ -108,18 +137,15 @@ func main() {
 							}
 						}
 					}()
-				}, func() {})
+				}, func() {
+					os.Stderr.WriteString("\n[SYSTRAY EXITING]\n")
+					shouldQuit = true
+					os.Exit(0)
+				})
 				start()
 			}
 		},
 		WindowStartState: options.Normal,
-		OnBeforeClose: func(ctx context.Context) (prevent bool) {
-			if runtime.GOOS == "darwin" && !shouldQuit {
-				wailsRuntime.WindowHide(ctx)
-				return true // Prevent closing
-			}
-			return false
-		},
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,
 			DisableWebViewDrop: true,
@@ -151,6 +177,7 @@ func main() {
 	}
 }
 
+// package-level variable to track if we should really quit
 var shouldQuit bool
 
 func updateTrayMenu(ctx context.Context, app *App) {
