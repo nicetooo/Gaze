@@ -98,7 +98,7 @@ jobs:
 
       - name: Build Wails App
         run: |
-          wails build -platform ${{ matrix.platform }}/${{ matrix.arch }} -clean
+          wails build -platform ${{ matrix.platform }}/${{ matrix.arch }} -clean -ldflags "-X 'main.version=${{ github.ref_name }}'"
 
       - name: Package Artifacts (macOS)
         if: matrix.platform == 'darwin'

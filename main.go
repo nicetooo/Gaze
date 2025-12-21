@@ -29,9 +29,12 @@ var iconData []byte
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// version is the application version, set at build time via -ldflags
+var version = "v0.0.0-dev"
+
 func main() {
 	// Create an instance of the app structure
-	app := NewApp()
+	app := NewApp(version)
 
 	// Handle system signals for graceful shutdown (like Dock Quit or Cmd+Q)
 	go func() {

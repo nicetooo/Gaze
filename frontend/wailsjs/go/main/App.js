@@ -54,6 +54,10 @@ export function GetAppInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetAppInfo'](arg1, arg2, arg3);
 }
 
+export function GetAppVersion() {
+  return window['go']['main']['App']['GetAppVersion']();
+}
+
 export function GetDeviceIP(arg1) {
   return window['go']['main']['App']['GetDeviceIP'](arg1);
 }

@@ -65,6 +65,8 @@ type App struct {
 	// History
 	historyPath string
 	historyMu   sync.Mutex
+
+	version string
 }
 
 type HistoryDevice struct {
@@ -128,13 +130,19 @@ type AppPackage struct {
 }
 
 // NewApp creates a new App application struct
-func NewApp() *App {
+func NewApp(version string) *App {
 	return &App{
 		aaptCache:       make(map[string]AppPackage),
 		scrcpyCmds:      make(map[string]*exec.Cmd),
 		scrcpyRecordCmd: make(map[string]*exec.Cmd),
 		openFileCmds:    make(map[string]*exec.Cmd),
+		version:         version,
 	}
+}
+
+// GetAppVersion returns the application version
+func (a *App) GetAppVersion() string {
+	return a.version
 }
 
 // StopLogcat stops the logcat stream

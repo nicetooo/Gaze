@@ -29,6 +29,8 @@ export function ForceStopApp(arg1:string,arg2:string):Promise<string>;
 
 export function GetAppInfo(arg1:string,arg2:string,arg3:boolean):Promise<main.AppPackage>;
 
+export function GetAppVersion():Promise<string>;
+
 export function GetDeviceIP(arg1:string):Promise<string>;
 
 export function GetDeviceInfo(arg1:string):Promise<main.DeviceInfo>;
