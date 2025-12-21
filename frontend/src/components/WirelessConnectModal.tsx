@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Modal, Form, Input, Tabs, Button, message, Space, Typography, QRCode } from "antd";
 import { useTranslation } from "react-i18next";
-import { WifiOutlined, LinkOutlined, ScanOutlined } from "@ant-design/icons";
+import { WifiOutlined, LinkOutlined } from "@ant-design/icons";
 // @ts-ignore
 import { StartWirelessServer } from "../../wailsjs/go/main/App";
 // @ts-ignore
@@ -27,7 +27,7 @@ const WirelessConnectModal: React.FC<WirelessConnectModalProps> = ({
   const { t } = useTranslation();
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("scan");
+  const [activeTab, setActiveTab] = useState("connect");
   const [connectUrl, setConnectUrl] = useState("");
 
   useEffect(() => {
@@ -84,27 +84,6 @@ const WirelessConnectModal: React.FC<WirelessConnectModalProps> = ({
   };
 
   const items = [
-    {
-      key: "scan",
-      label: (
-        <span>
-          <ScanOutlined />
-          {t("devices.scan_qr_code")}
-        </span>
-      ),
-      children: (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 0" }}>
-          <QRCode value={connectUrl} size={200} status={connectUrl ? "active" : "loading"} />
-          <div style={{ marginTop: 16, textAlign: "center" }}>
-            <Text strong>{t("devices.scan_qr_desc")}</Text>
-            <br />
-            <Text type="secondary" style={{ fontSize: "12px" }}>
-              {t("devices.pairing_guide").replace(t("devices.pair_code"), "TCP/IP 5555")}
-            </Text>
-          </div>
-        </div>
-      ),
-    },
     {
       key: "connect",
       label: (
@@ -165,11 +144,11 @@ const WirelessConnectModal: React.FC<WirelessConnectModalProps> = ({
       title={t("devices.wireless_connect")}
       open={visible}
       onCancel={onCancel}
-      onOk={activeTab === "scan" ? onCancel : handleSubmit}
+      onOk={handleSubmit}
       confirmLoading={loading}
       destroyOnClose
       width={400}
-      okText={activeTab === "scan" ? t("common.close") : t("common.ok")}
+      okText={t("common.ok")}
     >
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
     </Modal>

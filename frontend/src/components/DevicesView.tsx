@@ -36,6 +36,7 @@ interface HistoryDevice {
   model: string;
   brand: string;
   type: string;
+  wifiAddr: string;
   lastSeen: string;
 }
 
@@ -55,6 +56,7 @@ interface DevicesViewProps {
   handleAdbDisconnect: (address: string) => Promise<void>;
   handleAdbConnect: (address: string) => Promise<void>;
   handleRemoveHistoryDevice: (id: string) => Promise<void>;
+  busyDevices?: Set<string>;
 }
 
 const DevicesView: React.FC<DevicesViewProps> = ({
@@ -73,24 +75,46 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   handleAdbDisconnect,
   handleAdbConnect,
   handleRemoveHistoryDevice,
+  busyDevices = new Set(),
 }) => {
   const { t } = useTranslation();
 
   // Merge history devices that are not currently active
-  const allDevices = [...devices];
+  const allDevices = devices.map(d => {
+    // If active device is wired only, check history for a known wifiAddr
+    if (d.type === "wired" && !d.wifiAddr) {
+      const history = historyDevices.find(hd => hd.serial && hd.serial === d.serial);
+      if (history && history.wifiAddr) {
+        return { ...d, wifiAddr: history.wifiAddr };
+      }
+    }
+    // Normalize model for display
+    return { ...d, model: d.model?.replace(/_/g, " ") };
+  });
+
   historyDevices.forEach(hd => {
-    // Check if device is already in active list by serial (preferred) or id
-    const isActive = devices.some(d => (hd.serial && d.serial === hd.serial) || d.id === hd.id || d.ids?.includes(hd.id));
+    // Aggressive deduplication: check Serial, then exact ID, then check if ID exists in any active device's ID list or matches wifiAddr
+    const isActive = devices.some(d => {
+      if (hd.serial && d.serial === hd.serial) return true;
+      if (d.id === hd.id) return true;
+      if (d.ids && d.ids.includes(hd.id)) return true;
+      // Compare by splitting ports (e.g. 192.168.0.4:5555 should match 192.168.0.4)
+      const hdIP = hd.id?.split(':')[0];
+      const dWifiIP = d.wifiAddr?.split(':')[0];
+      if (hdIP && dWifiIP && hdIP === dWifiIP) return true;
+      return false;
+    });
+    
     if (!isActive) {
       allDevices.push({
         id: hd.id,
         serial: hd.serial,
         state: "offline",
-        model: hd.model,
+        model: hd.model?.replace(/_/g, " "),
         brand: hd.brand,
         type: hd.type,
         ids: [hd.id],
-        wifiAddr: hd.type === "wireless" ? hd.id : ""
+        wifiAddr: hd.wifiAddr || (hd.type === "wireless" ? hd.id : "")
       });
     }
   });
@@ -134,7 +158,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       width: 100,
       render: (type: string, record: Device) => (
         <Space>
-          {record.state !== "offline" && (
+          {(record.state !== "offline" || busyDevices.has(record.id) || busyDevices.has(record.serial)) && (
             <>
               {(type === "wired" || type === "both") && (
                 <Tooltip title={t("devices.wired")}>
@@ -156,12 +180,15 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       dataIndex: "state",
       key: "state",
       width: 100,
-      render: (state: string) => {
-        const config = {
-          device: { color: "green", icon: <CheckCircleOutlined />, text: t("devices.online") },
-          offline: { color: "default", icon: <StopOutlined />, text: t("devices.offline") },
-          unauthorized: { color: "red", icon: <CloseCircleOutlined />, text: t("devices.unauthorized") },
-        }[state] || { color: "red", icon: <CloseCircleOutlined />, text: state };
+      render: (state: string, record: Device) => {
+        const isBusy = busyDevices.has(record.id) || busyDevices.has(record.serial);
+        const config = isBusy 
+          ? { color: "blue", icon: <ReloadOutlined spin />, text: t("common.loading") }
+          : {
+              device: { color: "green", icon: <CheckCircleOutlined />, text: t("devices.online") },
+              offline: { color: "default", icon: <StopOutlined />, text: t("devices.offline") },
+              unauthorized: { color: "red", icon: <CloseCircleOutlined />, text: t("devices.unauthorized") },
+            }[state] || { color: "red", icon: <CloseCircleOutlined />, text: state };
 
         return (
           <Tooltip title={config.text}>
@@ -174,9 +201,11 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.action"),
       key: "action",
       width: 320,
-      render: (_: any, record: Device) => (
+      render: (_: any, record: Device) => {
+        const isBusy = busyDevices.has(record.id) || busyDevices.has(record.serial);
+        return (
         <Space size="small">
-          {record.state === "device" ? (
+          {(record.state === "device" || isBusy) ? (
             <>
               <Tooltip title={t("device_info.title")}>
                 <Button
@@ -249,20 +278,23 @@ const DevicesView: React.FC<DevicesViewProps> = ({
                     size="small"
                     danger
                     icon={<DisconnectOutlined />}
-                    onClick={() => handleAdbDisconnect(record.wifiAddr || record.id)}
+                    onClick={() => {
+                      const wirelessIds = record.ids.filter(id => id.includes(":") || id.startsWith("adb-"));
+                      handleAdbDisconnect(wirelessIds.join(","));
+                    }}
                   />
                 </Tooltip>
               )}
             </>
           ) : (
             <>
-              {record.type === "wireless" && (
+              {record.wifiAddr && (
                 <Tooltip title={t("devices.reconnect")}>
                   <Button
                     size="small"
                     type="primary"
                     icon={<LinkOutlined />}
-                    onClick={() => handleAdbConnect(record.id)}
+                    onClick={() => handleAdbConnect(record.wifiAddr)}
                   />
                 </Tooltip>
               )}
@@ -277,7 +309,8 @@ const DevicesView: React.FC<DevicesViewProps> = ({
             </>
           )}
         </Space>
-      ),
+        );
+      },
     },
   ];
 

@@ -102,6 +102,7 @@ function App() {
   const [selectedKey, setSelectedKey] = useState("1");
   const [devices, setDevices] = useState<Device[]>([]);
   const [historyDevices, setHistoryDevices] = useState<any[]>([]);
+  const [busyDevices, setBusyDevices] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
 
   // Device Info state
@@ -182,6 +183,7 @@ function App() {
   const isRecordingRef = useRef(false);
   const recordPathRef = useRef("");
   const loadingRef = useRef(false);
+  const isFetchingRef = useRef(false);
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -196,7 +198,14 @@ function App() {
   }, [loading]);
 
   const fetchDevices = async (silent: boolean = false) => {
-    if (!silent) {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
+    // If silent is passed from an event (like onClick), it might be an object
+    // Ensure we treat it as a boolean
+    const isSilent = silent === true;
+
+    if (!isSilent) {
       setLoading(true);
     }
     try {
@@ -218,7 +227,7 @@ function App() {
           setSelectedDevice(deviceId);
         }
         // Automatically fetch user packages when device is connected (only for non-silent refresh)
-        if (deviceId && !silent) {
+        if (deviceId && !isSilent) {
           // Use setTimeout to avoid blocking the UI update
           setTimeout(() => {
             fetchPackages("user", deviceId);
@@ -227,13 +236,14 @@ function App() {
       }
     } catch (err) {
       // Only show error message for non-silent refreshes
-      if (!silent) {
+      if (!isSilent) {
         message.error(t("app.fetch_devices_failed") + ": " + String(err));
       }
     } finally {
-      if (!silent) {
+      if (!isSilent) {
         setLoading(false);
       }
+      isFetchingRef.current = false;
     }
   };
 
@@ -283,17 +293,23 @@ function App() {
 
   const handleSwitchToWireless = async (deviceId: string) => {
     const hide = message.loading(t("app.switching_to_wireless"), 0);
+    setBusyDevices(prev => new Set(prev).add(deviceId));
     try {
       const res = await SwitchToWireless(deviceId);
       if (res.includes("connected to")) {
         message.success(t("app.switch_success"));
-        fetchDevices();
+        await fetchDevices(true);
       } else {
         throw new Error(res);
       }
     } catch (err) {
       message.error(t("app.switch_failed") + ": " + String(err));
     } finally {
+      setBusyDevices(prev => {
+        const next = new Set(prev);
+        next.delete(deviceId);
+        return next;
+      });
       hide();
     }
   };
@@ -427,7 +443,7 @@ function App() {
   useEffect(() => {
     // When switching to devices tab, auto refresh
     if (selectedKey === "1") {
-      fetchDevices();
+      fetchDevices(true);
     }
     // When switching to apps, logcat or files tab, if data is not loaded yet, fetch it
     if (
@@ -442,21 +458,34 @@ function App() {
     }
   }, [selectedKey, selectedDevice]);
 
-  // Poll devices list when staying on devices tab
+  // Poll devices list sequentially after each fetch completes
   useEffect(() => {
     if (selectedKey !== "1") {
-      return; // Don't poll if not on devices tab
+      return;
     }
 
-    const pollInterval = setInterval(() => {
-      // Only poll if not currently loading to avoid concurrent requests
+    let timeoutId: any;
+    let isActive = true;
+
+    const poll = async () => {
+      if (!isActive) return;
+      
       // Use silent=true to avoid showing loading state
       if (!loadingRef.current) {
-        fetchDevices(true);
+        await fetchDevices(true);
       }
-    }, 3000); // Poll every 3 seconds
+      
+      if (isActive) {
+        timeoutId = setTimeout(poll, 3000); // Wait 3s after the previous one finishes
+      }
+    };
 
-    return () => clearInterval(pollInterval);
+    timeoutId = setTimeout(poll, 3000);
+
+    return () => {
+      isActive = false;
+      clearTimeout(timeoutId);
+    };
   }, [selectedKey]);
 
   const fetchPackages = async (packageType?: string, deviceId?: string) => {
@@ -999,6 +1028,7 @@ function App() {
             historyDevices={historyDevices}
             loading={loading}
             fetchDevices={fetchDevices}
+            busyDevices={busyDevices}
             setSelectedKey={setSelectedKey}
             setSelectedDevice={setSelectedDevice}
             setShellCmd={setShellCmd}

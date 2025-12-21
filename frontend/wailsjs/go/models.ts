@@ -122,6 +122,7 @@ export namespace main {
 	    model: string;
 	    brand: string;
 	    type: string;
+	    wifiAddr: string;
 	    // Go type: time
 	    lastSeen: any;
 	
@@ -136,6 +137,7 @@ export namespace main {
 	        this.model = source["model"];
 	        this.brand = source["brand"];
 	        this.type = source["type"];
+	        this.wifiAddr = source["wifiAddr"];
 	        this.lastSeen = this.convertValues(source["lastSeen"], null);
 	    }
 	

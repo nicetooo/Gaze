@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -72,6 +73,7 @@ type HistoryDevice struct {
 	Model    string    `json:"model"`
 	Brand    string    `json:"brand"`
 	Type     string    `json:"type"`
+	WifiAddr string    `json:"wifiAddr"`
 	LastSeen time.Time `json:"lastSeen"`
 }
 
@@ -210,6 +212,7 @@ func (a *App) addToHistory(device Device) {
 			history[i].Brand = device.Brand
 			history[i].Type = device.Type
 			history[i].Serial = device.Serial
+			history[i].WifiAddr = device.WifiAddr
 			history[i].ID = device.ID // Update to latest ID
 			found = true
 			break
@@ -223,6 +226,7 @@ func (a *App) addToHistory(device Device) {
 			Model:    device.Model,
 			Brand:    device.Brand,
 			Type:     device.Type,
+			WifiAddr: device.WifiAddr,
 			LastSeen: time.Now(),
 		})
 	}
@@ -1029,7 +1033,7 @@ func (a *App) GetDeviceIP(deviceId string) (string, error) {
 	if err != nil || ip == "" {
 		// Fallback: try getprop
 		cmd = exec.Command(a.adbPath, "-s", deviceId, "shell", "getprop dhcp.wlan0.ipaddress")
-		output, err = cmd.CombinedOutput()
+		output, _ = cmd.CombinedOutput()
 		ip = strings.TrimSpace(string(output))
 	}
 
@@ -1209,20 +1213,38 @@ func (a *App) StartWirelessServer() (string, error) {
 	return a.localAddr, nil
 }
 
-// AdbDisconnect disconnects from a wireless device
+// AdbDisconnect disconnects from a wireless device (handles both IP and mDNS aliases)
 func (a *App) AdbDisconnect(address string) (string, error) {
 	if address == "" {
 		return "", fmt.Errorf("address is required")
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, a.adbPath, "disconnect", address)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return string(output), fmt.Errorf("disconnection failed: %w, output: %s", err, string(output))
+	// Split by comma in case multiple IDs were passed
+	addresses := strings.Split(address, ",")
+	var lastOut string
+	var lastErr error
+
+	for _, addr := range addresses {
+		addr = strings.TrimSpace(addr)
+		if addr == "" {
+			continue
+		}
+		cmd := exec.CommandContext(ctx, a.adbPath, "disconnect", addr)
+		output, err := cmd.CombinedOutput()
+		lastOut = string(output)
+		// If it fails with "no such device", it might be already disconnected
+		if err != nil && !strings.Contains(string(output), "no such device") {
+			lastErr = err
+		}
 	}
-	return string(output), nil
+
+	if lastErr != nil {
+		return lastOut, fmt.Errorf("disconnection failed: %w, output: %s", lastErr, lastOut)
+	}
+	return "disconnected", nil
 }
 
 // GetDevices returns a list of connected ADB devices
@@ -1230,13 +1252,14 @@ func (a *App) GetDevices() ([]Device, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// 1. Get raw output from adb devices -l
 	cmd := exec.CommandContext(ctx, a.adbPath, "devices", "-l")
 	output, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run adb devices: %w (output: %s)", err, string(output))
+		return nil, fmt.Errorf("failed to run adb devices: %w", err)
 	}
 
 	// Load history to help with device identification and metadata preservation
@@ -1252,13 +1275,18 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 	}
 
+	// 3. Parse raw identifiers
 	lines := strings.Split(string(output), "\n")
-	type rawDevice struct {
-		id    string
-		state string
-		props map[string]string
+	type adbNode struct {
+		id         string
+		state      string
+		isWireless bool
+		isMDNS     bool
+		hasUSB     bool
+		model      string
+		serial     string // resolved hardware serial
 	}
-	var rawDevices []rawDevice
+	var nodes []*adbNode
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1267,150 +1295,222 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
-			rd := rawDevice{
+			node := &adbNode{
 				id:    parts[0],
 				state: parts[1],
-				props: make(map[string]string),
 			}
+			// Parse properties
 			for _, p := range parts[2:] {
 				if strings.Contains(p, ":") {
 					kv := strings.SplitN(p, ":", 2)
-					rd.props[kv[0]] = kv[1]
+					if kv[0] == "model" {
+						node.model = kv[1]
+					}
+					if kv[0] == "usb" {
+						node.hasUSB = true
+					}
 				}
 			}
-			rawDevices = append(rawDevices, rd)
+			node.isWireless = strings.Contains(node.id, ":") || strings.Contains(node.id, "._tcp") || strings.Contains(node.id, "._adb-tls-connect")
+			if node.hasUSB {
+				node.isWireless = false
+			}
+			node.isMDNS = strings.Contains(node.id, "._tcp") || strings.Contains(node.id, "._adb-tls-connect")
+			nodes = append(nodes, node)
 		}
 	}
 
-	// Unify devices by serial number
-	deviceMap := make(map[string]*Device)
-	var finalDevices []*Device
+	// Regex for mDNS serial extraction
+	mdnsRe := regexp.MustCompile(`adb-([a-zA-Z0-9]+)-`)
 
+	// 4. Phase 1: Resolve "True Serial" for every node
 	var wg sync.WaitGroup
-	var mu sync.Mutex
-
-	for _, rd := range rawDevices {
+	for _, n := range nodes {
 		wg.Add(1)
-		go func(r rawDevice) {
+		go func(node *adbNode) {
 			defer wg.Done()
 
-			// 1. Initial serial guess from history or ID
-			serial := r.id
-			if hd, ok := historyByID[r.id]; ok && hd.Serial != "" {
-				serial = hd.Serial
-			}
-
-			// 2. Try to get real hardware serial via shell if "device" state
-			if r.state == "device" {
-				c := exec.CommandContext(ctx, a.adbPath, "-s", r.id, "shell", "getprop ro.serialno")
+			// A. If already authorised, ask the device
+			if node.state == "device" {
+				c := exec.CommandContext(ctx, a.adbPath, "-s", node.id, "shell", "getprop ro.serialno")
 				out, err := c.Output()
 				if err == nil {
 					s := strings.TrimSpace(string(out))
 					if s != "" {
-						serial = s
+						node.serial = s
+						return
 					}
 				}
 			}
 
-			mu.Lock()
-			d, exists := deviceMap[serial]
-			isWireless := strings.Contains(r.id, ":")
-
-			if !exists {
-				dType := "wired"
-				wifiAddr := ""
-				if isWireless {
-					dType = "wireless"
-					wifiAddr = r.id
-				}
-
-				d = &Device{
-					ID:       r.id, // Current ADB ID
-					Serial:   serial,
-					State:    r.state,
-					Type:     dType,
-					IDs:      []string{r.id},
-					WifiAddr: wifiAddr,
-					Model:    r.props["model"],
-				}
-
-				// Try to restore brand/model from history if empty
-				if d.Model == "" {
-					if hd, ok := historyBySerial[serial]; ok {
-						d.Brand = hd.Brand
-						d.Model = hd.Model
-					}
-				}
-
-				deviceMap[serial] = d
-				finalDevices = append(finalDevices, d)
-			} else {
-				// Merge records
-				d.IDs = append(d.IDs, r.id)
-				if isWireless {
-					d.WifiAddr = r.id
-					if d.Type == "wired" {
-						d.Type = "both"
-					} else {
-						d.Type = "wireless"
-					}
-				} else {
-					// Prefer wired ID as main communication ID
-					d.ID = r.id
-					if d.Type == "wireless" {
-						d.Type = "both"
-					} else {
-						d.Type = "wired"
-					}
-				}
-				// Update state if one is "device"
-				if r.state == "device" {
-					d.State = r.state
+			// B. Extract from mDNS ID if possible (format: adb-SERIAL-...)
+			if node.isMDNS {
+				matches := mdnsRe.FindStringSubmatch(node.id)
+				if len(matches) > 1 {
+					node.serial = matches[1]
+					return
 				}
 			}
-			mu.Unlock()
-		}(rd)
+
+			// C. Try History by current ID
+			if h, ok := historyByID[node.id]; ok && h.Serial != "" {
+				node.serial = h.Serial
+				return
+			}
+
+			// D. Fallback: use ID as serial for non-wireless or unknown
+			if !node.isWireless {
+				node.serial = node.id
+			}
+		}(n)
 	}
 	wg.Wait()
 
-	// Fetch detailed brand/model in parallel for grouped devices
+	// 5. Phase 2: Grouping by resolved Serial
+	deviceMap := make(map[string]*Device)
+	var finalDevices []*Device
+
+	// We sort current nodes to ensure stable primary ID selection (prefer wired)
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].hasUSB != nodes[j].hasUSB {
+			return nodes[i].hasUSB // Wired first
+		}
+		if nodes[i].state != nodes[j].state {
+			return nodes[i].state == "device" // Online first
+		}
+		return !nodes[i].isMDNS // Prefer IP over mDNS
+	})
+
+	for _, n := range nodes {
+		serialKey := n.serial
+		if serialKey == "" {
+			serialKey = n.id // Last resort
+		}
+
+		d, exists := deviceMap[serialKey]
+		if !exists {
+			d = &Device{
+				ID:     n.id, // Primary ID for commands
+				Serial: serialKey,
+				State:  n.state,
+				IDs:    []string{n.id},
+				Model:  strings.TrimSpace(strings.ReplaceAll(n.model, "_", " ")),
+			}
+			if n.isWireless {
+				d.Type = "wireless"
+				d.WifiAddr = n.id
+			} else {
+				d.Type = "wired"
+			}
+			deviceMap[serialKey] = d
+			finalDevices = append(finalDevices, d)
+		} else {
+			// Update existing record
+			d.IDs = append(d.IDs, n.id)
+			// Upgrade state or primary ID if preferred (prefer wired/USB for primary ID)
+			if n.state == "device" {
+				if d.State != "device" || n.hasUSB {
+					d.State = "device"
+					d.ID = n.id
+				}
+			}
+			// Handle Connection Type
+			if n.isWireless {
+				// Prefer IP:Port over mDNS for WifiAddr field display
+				if !strings.Contains(d.WifiAddr, ":") || strings.Contains(n.id, ":") {
+					d.WifiAddr = n.id
+				}
+				if d.Type == "wired" {
+					d.Type = "both"
+				} else if d.Type == "" {
+					d.Type = "wireless"
+				}
+			} else if n.hasUSB {
+				if d.Type == "wireless" {
+					d.Type = "both"
+				} else if d.Type == "" {
+					d.Type = "wired"
+				}
+			}
+		}
+	}
+
+	// 6. Phase 3: Final Polishing (Metadata & History)
 	for i := range finalDevices {
-		if finalDevices[i].State == "device" {
+		dev := finalDevices[i]
+
+		// Normalize model (e.g. Pixel_7a -> Pixel 7a)
+		dev.Model = strings.TrimSpace(strings.ReplaceAll(dev.Model, "_", " "))
+
+		// Stability: if WifiAddr is an mDNS name, try to restore last known IP from history
+		if (dev.Type == "wireless" || dev.Type == "both") && !strings.Contains(dev.WifiAddr, ":") {
+			if h, ok := historyBySerial[dev.Serial]; ok && strings.Contains(h.WifiAddr, ":") {
+				dev.WifiAddr = h.WifiAddr
+			}
+		}
+
+		// Fill missing metadata from history
+		if dev.Brand == "" || dev.Model == "" {
+			// A. Match by Serial
+			if h, ok := historyBySerial[dev.Serial]; ok {
+				if dev.Brand == "" {
+					dev.Brand = h.Brand
+				}
+				if dev.Model == "" {
+					dev.Model = h.Model
+				}
+			}
+			// B. Match by common IDs or WifiAddr if serial failed
+			if dev.Brand == "" || dev.Model == "" {
+				for _, hid := range dev.IDs {
+					if h, ok := historyByID[hid]; ok {
+						if dev.Brand == "" {
+							dev.Brand = h.Brand
+						}
+						if dev.Model == "" {
+							dev.Model = h.Model
+						}
+					}
+				}
+			}
+		}
+
+		// Fetch fresh metadata if online (faster timeout for responsiveness)
+		if dev.State == "device" {
 			wg.Add(1)
-			go func(idx int) {
+			go func(d *Device) {
 				defer wg.Done()
-				d := finalDevices[idx]
-				cmd := exec.CommandContext(ctx, a.adbPath, "-s", d.ID, "shell", "getprop ro.product.manufacturer; getprop ro.product.model")
+				pCtx, pCancel := context.WithTimeout(ctx, 3*time.Second) // Shorter timeout for properties
+				defer pCancel()
+				cmd := exec.CommandContext(pCtx, a.adbPath, "-s", d.ID, "shell", "getprop ro.product.manufacturer; getprop ro.product.model")
 				out, err := cmd.Output()
 				if err == nil {
 					parts := strings.Split(string(out), "\n")
-					if len(parts) >= 1 {
-						brand := strings.TrimSpace(parts[0])
-						if brand != "" {
-							d.Brand = brand
-						}
+					if len(parts) >= 1 && strings.TrimSpace(parts[0]) != "" {
+						d.Brand = strings.TrimSpace(parts[0])
 					}
-					if len(parts) >= 2 {
-						refinedModel := strings.TrimSpace(parts[1])
-						if refinedModel != "" {
-							d.Model = refinedModel
-						}
+					if len(parts) >= 2 && strings.TrimSpace(parts[1]) != "" {
+						m := strings.TrimSpace(parts[1])
+						d.Model = strings.ReplaceAll(m, "_", " ")
 					}
 				}
-			}(i)
+			}(dev)
 		}
 	}
 	wg.Wait()
 
-	// Convert result to slice and update history
-	result := make([]Device, len(finalDevices))
-	for i, d := range finalDevices {
-		result[i] = *d
-		if result[i].State == "device" {
-			go a.addToHistory(result[i])
+	// Sync to history
+	for _, d := range finalDevices {
+		if d.State == "device" {
+			go a.addToHistory(*d)
 		}
 	}
 
+	// Return flat slice
+	result := make([]Device, len(finalDevices))
+	for i, d := range finalDevices {
+		result[i] = *d
+	}
 	return result, nil
 }
 
