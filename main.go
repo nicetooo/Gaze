@@ -3,7 +3,11 @@ package main
 import (
 	"context"
 	"embed"
+	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"time"
 
@@ -63,14 +67,17 @@ func main() {
 					go func() {
 						ticker := time.NewTicker(2 * time.Second)
 						var lastDevices []Device
+						lastRecordingStates := make(map[string]bool)
+
 						for {
 							select {
 							case <-ctx.Done():
 								return
 							case <-ticker.C:
 								currentDevices, _ := app.GetDevices()
-								// Simple check if devices changed (count or IDs)
 								changed := false
+
+								// Check devices
 								if len(lastDevices) != len(currentDevices) {
 									changed = true
 								} else {
@@ -82,8 +89,19 @@ func main() {
 									}
 								}
 
+								// Check recording states
+								currentRecordingStates := make(map[string]bool)
+								for _, d := range currentDevices {
+									isRec := app.IsRecording(d.ID)
+									currentRecordingStates[d.ID] = isRec
+									if lastRecordingStates[d.ID] != isRec {
+										changed = true
+									}
+								}
+
 								if changed {
 									lastDevices = currentDevices
+									lastRecordingStates = currentRecordingStates
 									systray.ResetMenu()
 									updateTrayMenu(ctx, app)
 								}
@@ -136,74 +154,177 @@ func main() {
 var shouldQuit bool
 
 func updateTrayMenu(ctx context.Context, app *App) {
-	devices, _ := app.GetDevices()
 
-	if len(devices) > 0 {
-		systray.AddMenuItem("Connected Devices:", "").Disable()
-		for _, dev := range devices {
-			name := dev.Model
-			if name == "" {
-				name = dev.ID
-			}
-			// Truncate if too long
-			if len(name) > 30 {
-				name = name[:27] + "..."
-			}
+	// 1. Get all devices
+	connectedDevices, _ := app.GetDevices()
+	historyDevices := app.GetHistoryDevices()
 
-			devItem := systray.AddMenuItem(name, "")
+	systray.AddMenuItem("Devices:", "").Disable()
 
-			// Submenus
-			mMirror := devItem.AddSubMenuItem("Screen Mirror", "")
-			d := dev // Capture loop variable
-			mMirror.Click(func() {
+	hasDevices := false
+	seenSerials := make(map[string]bool)
+
+	// Process Connected Devices
+	for _, dev := range connectedDevices {
+		hasDevices = true
+		// Track seen devices
+		key := dev.Serial
+		if key == "" {
+			key = dev.ID
+		}
+		seenSerials[key] = true
+
+		name := dev.Model
+		if name == "" {
+			name = dev.ID
+		}
+		// Truncate if too long
+		if len(name) > 30 {
+			name = name[:27] + "..."
+		}
+
+		devItem := systray.AddMenuItem(name, "")
+
+		// Submenus for connected devices
+		mMirror := devItem.AddSubMenuItem("Screen Mirror", "")
+		d := dev // Capture loop variable
+		mMirror.Click(func() {
+			go func() {
+				// Default config for tray launch
+				config := ScrcpyConfig{
+					BitRate:    8,
+					MaxFps:     60,
+					StayAwake:  true,
+					VideoCodec: "h264",
+					AudioCodec: "opus",
+				}
+				app.StartScrcpy(d.ID, config)
+			}()
+		})
+
+		// Recording
+		if app.IsRecording(d.ID) {
+			mRecord := devItem.AddSubMenuItem("Stop Recording", "")
+			mRecord.Click(func() {
 				go func() {
-					// Default config for tray launch
-					config := ScrcpyConfig{
-						BitRate:    8,
-						MaxFps:     60,
-						StayAwake:  true,
-						VideoCodec: "h264",
-						AudioCodec: "opus",
+					app.StopRecording(d.ID)
+				}()
+			})
+		} else {
+			mRecord := devItem.AddSubMenuItem("Start Recording", "")
+			mRecord.Click(func() {
+				go func() {
+					home, _ := os.UserHomeDir()
+					// Default to Downloads
+					saveDir := filepath.Join(home, "Downloads")
+					if _, err := os.Stat(saveDir); err != nil {
+						saveDir = home // Fallback
 					}
-					app.StartScrcpy(d.ID, config)
-				}()
-			})
 
-			mLogcat := devItem.AddSubMenuItem("Logcat", "")
-			mLogcat.Click(func() {
-				go func() {
-					wailsRuntime.WindowShow(ctx)
-					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
-						"view":     "logcat",
-						"deviceId": d.ID,
-					})
-				}()
-			})
+					filename := fmt.Sprintf("adbGUI_record_%s_%s.mp4",
+						strings.ReplaceAll(d.Model, " ", "_"),
+						time.Now().Format("20060102_150405"))
+					savePath := filepath.Join(saveDir, filename)
 
-			mShell := devItem.AddSubMenuItem("Shell", "")
-			mShell.Click(func() {
-				go func() {
-					wailsRuntime.WindowShow(ctx)
-					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
-						"view":     "shell",
-						"deviceId": d.ID,
-					})
-				}()
-			})
-
-			mFiles := devItem.AddSubMenuItem("Files", "")
-			mFiles.Click(func() {
-				go func() {
-					wailsRuntime.WindowShow(ctx)
-					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
-						"view":     "files",
-						"deviceId": d.ID,
-					})
+					// Use default nice settings
+					config := ScrcpyConfig{
+						RecordPath: savePath,
+						MaxSize:    0, // nominal
+						BitRate:    8, // 8Mbps
+						MaxFps:     60,
+						VideoCodec: "h264",
+						NoAudio:    false,
+					}
+					app.StartRecording(d.ID, config)
 				}()
 			})
 		}
-	} else {
-		systray.AddMenuItem("No devices connected", "").Disable()
+
+		mLogcat := devItem.AddSubMenuItem("Logcat", "")
+		mLogcat.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+					"view":     "logcat",
+					"deviceId": d.ID,
+				})
+			}()
+		})
+
+		mShell := devItem.AddSubMenuItem("Shell", "")
+		mShell.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+					"view":     "shell",
+					"deviceId": d.ID,
+				})
+			}()
+		})
+
+		mFiles := devItem.AddSubMenuItem("Files", "")
+		mFiles.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+					"view":     "files",
+					"deviceId": d.ID,
+				})
+			}()
+		})
+	}
+
+	// Process History (Connectable) Devices
+	for _, hDev := range historyDevices {
+		// Skip if no wireless IP
+		if hDev.WifiAddr == "" {
+			continue
+		}
+
+		// Skip if already connected (check Serial and WifiAddr/ID)
+		if seenSerials[hDev.Serial] {
+			continue
+		}
+
+		// Additional check: is this IP already connected?
+		alreadyConnected := false
+		for _, cDev := range connectedDevices {
+			if cDev.ID == hDev.WifiAddr {
+				alreadyConnected = true
+				break
+			}
+		}
+		if alreadyConnected {
+			continue
+		}
+
+		hasDevices = true
+
+		name := hDev.Model
+		if name == "" {
+			name = hDev.ID
+		}
+		name = fmt.Sprintf("%s (Offline)", name)
+
+		if len(name) > 30 {
+			name = name[:27] + "..."
+		}
+
+		devItem := systray.AddMenuItem(name, "")
+
+		// Submenu for connectable device
+		mConnect := devItem.AddSubMenuItem("Wireless Connect", "")
+		ip := hDev.WifiAddr
+		mConnect.Click(func() {
+			go func() {
+				_, _ = app.AdbConnect(ip)
+				// The ticker will pick up the new connection automatically
+			}()
+		})
+	}
+
+	if !hasDevices {
+		systray.AddMenuItem("No devices available", "").Disable()
 	}
 
 	systray.AddSeparator()

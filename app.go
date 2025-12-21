@@ -1750,6 +1750,14 @@ func (a *App) StopRecording(deviceId string) error {
 	return nil
 }
 
+// IsRecording checks if a recording process is running for the device
+func (a *App) IsRecording(deviceId string) bool {
+	a.scrcpyMu.Lock()
+	defer a.scrcpyMu.Unlock()
+	_, exists := a.scrcpyRecordCmd[deviceId]
+	return exists
+}
+
 // OpenPath opens a file or directory in the default system browser
 func (a *App) OpenPath(path string) error {
 	var cmd *exec.Cmd

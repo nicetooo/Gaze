@@ -86,6 +86,10 @@ export function InstallAPK(arg1, arg2) {
   return window['go']['main']['App']['InstallAPK'](arg1, arg2);
 }
 
+export function IsRecording(arg1) {
+  return window['go']['main']['App']['IsRecording'](arg1);
+}
+
 export function ListFiles(arg1, arg2) {
   return window['go']['main']['App']['ListFiles'](arg1, arg2);
 }
