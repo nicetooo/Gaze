@@ -130,6 +130,10 @@ export function SelectRecordPath(arg1) {
   return window['go']['main']['App']['SelectRecordPath'](arg1);
 }
 
+export function Shutdown(arg1) {
+  return window['go']['main']['App']['Shutdown'](arg1);
+}
+
 export function StartActivity(arg1, arg2) {
   return window['go']['main']['App']['StartActivity'](arg1, arg2);
 }

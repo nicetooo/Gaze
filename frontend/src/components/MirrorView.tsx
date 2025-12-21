@@ -141,9 +141,6 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 
   const handleStopScrcpy = async (deviceId: string) => {
     try {
-      if (currentRecordStatus.isRecording) {
-        await StopRecording(deviceId);
-      }
       await StopScrcpy(deviceId);
       message.success(t("app.scrcpy_stopped"));
     } catch (err) {

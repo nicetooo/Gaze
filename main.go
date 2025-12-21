@@ -145,6 +145,9 @@ func main() {
 				start()
 			}
 		},
+		OnShutdown: func(ctx context.Context) {
+			app.Shutdown(ctx)
+		},
 		WindowStartState: options.Normal,
 		DragAndDrop: &options.DragAndDrop{
 			EnableFileDrop:     true,

@@ -158,6 +158,25 @@ func (a *App) startup(ctx context.Context) {
 	a.initPersistentCache()
 }
 
+// Shutdown is called when the application is closing
+func (a *App) Shutdown(ctx context.Context) {
+	a.scrcpyMu.Lock()
+	for id, cmd := range a.scrcpyCmds {
+		if cmd.Process != nil {
+			os.Stderr.WriteString(fmt.Sprintf("\n[SHUTDOWN] Killing mirroring for %s\n", id))
+			_ = cmd.Process.Kill()
+		}
+	}
+	for id, cmd := range a.scrcpyRecordCmd {
+		if cmd.Process != nil {
+			os.Stderr.WriteString(fmt.Sprintf("\n[SHUTDOWN] Killing recording for %s\n", id))
+			_ = cmd.Process.Kill()
+		}
+	}
+	a.scrcpyMu.Unlock()
+	a.StopLogcat()
+}
+
 func (a *App) initPersistentCache() {
 	// Use application config directory for persistent cache
 	configDir, err := os.UserConfigDir()
@@ -1533,7 +1552,8 @@ func (a *App) GetDevices() ([]Device, error) {
 	// Sync to history
 	for _, d := range finalDevices {
 		if d.State == "device" {
-			go a.addToHistory(*d)
+			deviceCopy := *d
+			go a.addToHistory(deviceCopy)
 		}
 	}
 
@@ -1682,7 +1702,6 @@ func (a *App) StartRecording(deviceId string, config ScrcpyConfig) error {
 	}
 	a.scrcpyMu.Unlock()
 
-	// Use the same args as StartScrcpy but add --no-window and --record
 	args := []string{"-s", deviceId, "--no-window", "--record", config.RecordPath}
 
 	if config.MaxSize > 0 {
@@ -1926,7 +1945,7 @@ func (a *App) StopScrcpy(deviceId string) error {
 	defer a.scrcpyMu.Unlock()
 
 	if cmd, exists := a.scrcpyCmds[deviceId]; exists && cmd.Process != nil {
-		// For mirroring window, force kill is better for immediate response
+		// Mirroring windows can be killed immediately for better responsiveness
 		return cmd.Process.Kill()
 	}
 	return nil

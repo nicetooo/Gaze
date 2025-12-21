@@ -187,7 +187,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.state"),
       dataIndex: "state",
       key: "state",
-      width: 100,
+      width: 120,
       render: (state: string, record: Device) => {
         const isBusy = busyDevices.has(record.id) || busyDevices.has(record.serial);
         const mirrorStatus = mirrorStatuses[record.id] || mirrorStatuses[record.serial];
@@ -201,25 +201,32 @@ const DevicesView: React.FC<DevicesViewProps> = ({
               unauthorized: { color: "red", icon: <CloseCircleOutlined />, text: t("devices.unauthorized") },
             }[state] || { color: "red", icon: <CloseCircleOutlined />, text: state };
 
+        const formatDuration = (seconds: number) => {
+          return new Date(seconds * 1000).toISOString().substr(11, 8);
+        };
+
         return (
-          <Space>
+          <Space size={4}>
             <Tooltip title={config.text}>
               <Tag color={config.color} icon={config.icon} style={{ marginRight: 0, paddingInline: 8 }} />
             </Tooltip>
             {mirrorStatus?.isMirroring && (
-              <Tooltip title="Mirroring">
-                <Tag color="processing" icon={<DesktopOutlined />} style={{ marginRight: 0, paddingInline: 8 }} />
+              <Tooltip title={`${t("mirror.active_session")}: ${formatDuration(mirrorStatus.duration)}`}>
+                <Tag color="cyan" icon={<DesktopOutlined />} style={{ marginRight: 0, paddingInline: 8 }} />
               </Tooltip>
             )}
             {recordStatus?.isRecording && (
-              <Tooltip title="Recording">
-                <Tag color="error" icon={<DownloadOutlined />} style={{ marginRight: 0, paddingInline: 8 }} />
+              <Tooltip title={`${t("mirror.recording")}: ${formatDuration(recordStatus.duration)}`}>
+                <Tag color="error" style={{ marginRight: 0, paddingInline: 8, display: 'inline-flex', alignItems: 'center' }}>
+                  <div className="record-dot" style={{ margin: 0 }} />
+                </Tag>
               </Tooltip>
             )}
           </Space>
         );
       },
     },
+
 
     {
       title: t("devices.action"),
