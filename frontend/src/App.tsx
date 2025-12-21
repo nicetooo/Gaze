@@ -1168,6 +1168,11 @@ function App() {
                   icon: <MobileOutlined />,
                   label: t("menu.devices"),
                 },
+                {
+                  key: "5",
+                  icon: <DesktopOutlined />,
+                  label: t("menu.mirror"),
+                },
                 { key: "2", icon: <AppstoreOutlined />, label: t("menu.apps") },
                 { key: "6", icon: <FolderOutlined />, label: t("menu.files") },
                 { key: "3", icon: <CodeOutlined />, label: t("menu.shell") },
@@ -1175,11 +1180,6 @@ function App() {
                   key: "4",
                   icon: <FileTextOutlined />,
                   label: t("menu.logcat"),
-                },
-                {
-                  key: "5",
-                  icon: <DesktopOutlined />,
-                  label: t("menu.mirror"),
                 },
               ]}
             />
