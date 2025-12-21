@@ -192,10 +192,92 @@ func updateTrayMenu(ctx context.Context, app *App) {
 	connectedDevices, _ := app.GetDevices()
 	historyDevices := app.GetHistoryDevices()
 
-	systray.AddMenuItem("Devices:", "").Disable()
-
 	hasDevices := false
 	seenSerials := make(map[string]bool)
+
+	// A. Promote Primary Device Section to Top Level
+	if len(connectedDevices) > 0 {
+		d := connectedDevices[0]
+		name := d.Model
+		if name == "" {
+			name = d.ID
+		}
+
+		// Section Header (Device Name)
+		systray.AddMenuItem(name+":", "").Disable()
+
+		// 1. Mirror
+		mMirrorTop := systray.AddMenuItem("  Screen Mirror", "")
+		mMirrorTop.Click(func() {
+			go func() {
+				config := ScrcpyConfig{BitRate: 8, MaxFps: 60, StayAwake: true, VideoCodec: "h264", AudioCodec: "opus"}
+				app.StartScrcpy(d.ID, config)
+			}()
+		})
+
+		// 2. Screenshot
+		mScreenshotTop := systray.AddMenuItem("  Take Screenshot", "")
+		mScreenshotTop.Click(func() {
+			go func() {
+				savePath, err := app.SelectScreenshotPath(d.Model)
+				if err == nil && savePath != "" {
+					_, _ = app.TakeScreenshot(d.ID, savePath)
+				}
+			}()
+		})
+
+		// 3. Recording
+		if app.IsRecording(d.ID) {
+			mRecordTop := systray.AddMenuItem("  Stop Recording", "")
+			mRecordTop.Click(func() { go app.StopRecording(d.ID) })
+		} else {
+			mRecordTop := systray.AddMenuItem("  Start Recording", "")
+			mRecordTop.Click(func() {
+				go func() {
+					home, _ := os.UserHomeDir()
+					saveDir := filepath.Join(home, "Downloads")
+					if _, err := os.Stat(saveDir); err != nil {
+						saveDir = home
+					}
+					filename := fmt.Sprintf("adbGUI_record_%s_%s.mp4", strings.ReplaceAll(d.Model, " ", "_"), time.Now().Format("20060102_150405"))
+					savePath := filepath.Join(saveDir, filename)
+					config := ScrcpyConfig{RecordPath: savePath, MaxSize: 0, BitRate: 8, MaxFps: 60, VideoCodec: "h264", NoAudio: false}
+					app.StartRecording(d.ID, config)
+				}()
+			})
+		}
+
+		// 4. Logcat
+		mLogcatTop := systray.AddMenuItem("  Logcat", "")
+		mLogcatTop.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{"view": "logcat", "deviceId": d.ID})
+			}()
+		})
+
+		// 5. Shell
+		mShellTop := systray.AddMenuItem("  Shell", "")
+		mShellTop.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{"view": "shell", "deviceId": d.ID})
+			}()
+		})
+
+		// 6. Files
+		mFilesTop := systray.AddMenuItem("  Files", "")
+		mFilesTop.Click(func() {
+			go func() {
+				wailsRuntime.WindowShow(ctx)
+				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{"view": "files", "deviceId": d.ID})
+			}()
+		})
+
+		systray.AddSeparator()
+	}
+
+	systray.AddMenuItem("Devices:", "").Disable()
 
 	// Process Connected Devices
 	for _, dev := range connectedDevices {
