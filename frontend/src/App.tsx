@@ -88,10 +88,13 @@ const { Content, Sider } = Layout;
 
 interface Device {
   id: string;
+  serial: string;
   state: string;
   model: string;
   brand: string;
   type: string;
+  ids: string[];
+  wifiAddr: string;
 }
 
 function App() {

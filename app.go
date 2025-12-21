@@ -67,19 +67,23 @@ type App struct {
 }
 
 type HistoryDevice struct {
-	ID        string    `json:"id"`
-	Model     string    `json:"model"`
-	Brand     string    `json:"brand"`
-	Type      string    `json:"type"`
-	LastSeen  time.Time `json:"lastSeen"`
+	ID       string    `json:"id"`
+	Serial   string    `json:"serial"`
+	Model    string    `json:"model"`
+	Brand    string    `json:"brand"`
+	Type     string    `json:"type"`
+	LastSeen time.Time `json:"lastSeen"`
 }
 
 type Device struct {
-	ID    string `json:"id"`
-	State string `json:"state"`
-	Model string `json:"model"`
-	Brand string `json:"brand"`
-	Type  string `json:"type"` // "wired" or "wireless"
+	ID       string   `json:"id"`
+	Serial   string   `json:"serial"`
+	State    string   `json:"state"`
+	Model    string   `json:"model"`
+	Brand    string   `json:"brand"`
+	Type     string   `json:"type"` // "wired", "wireless", or "both"
+	IDs      []string `json:"ids"`  // Store all adb IDs (e.g. [serial, 192.168.1.1:5555])
+	WifiAddr string   `json:"wifiAddr"`
 }
 
 type DeviceInfo struct {
@@ -199,11 +203,14 @@ func (a *App) addToHistory(device Device) {
 	history := a.loadHistory()
 	found := false
 	for i, d := range history {
-		if d.ID == device.ID {
+		// Group by Serial if available, fallback to ID
+		if (device.Serial != "" && d.Serial == device.Serial) || d.ID == device.ID {
 			history[i].LastSeen = time.Now()
 			history[i].Model = device.Model
 			history[i].Brand = device.Brand
 			history[i].Type = device.Type
+			history[i].Serial = device.Serial
+			history[i].ID = device.ID // Update to latest ID
 			found = true
 			break
 		}
@@ -212,6 +219,7 @@ func (a *App) addToHistory(device Device) {
 	if !found {
 		history = append(history, HistoryDevice{
 			ID:       device.ID,
+			Serial:   device.Serial,
 			Model:    device.Model,
 			Brand:    device.Brand,
 			Type:     device.Type,
@@ -240,7 +248,7 @@ func (a *App) RemoveHistoryDevice(deviceId string) {
 	history := a.loadHistory()
 	var newHistory []HistoryDevice
 	for _, d := range history {
-		if d.ID != deviceId {
+		if d.ID != deviceId && d.Serial != deviceId {
 			newHistory = append(newHistory, d)
 		}
 	}
@@ -1109,7 +1117,7 @@ func (a *App) StartWirelessServer() (string, error) {
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		
+
 		var title, statusClass, message, hint, nextSteps string
 		if success {
 			title = "连接成功"
@@ -1231,8 +1239,26 @@ func (a *App) GetDevices() ([]Device, error) {
 		return nil, fmt.Errorf("failed to run adb devices: %w (output: %s)", err, string(output))
 	}
 
+	// Load history to help with device identification and metadata preservation
+	historyDevices := a.loadHistory()
+	historyByID := make(map[string]HistoryDevice)
+	historyBySerial := make(map[string]HistoryDevice)
+	for _, hd := range historyDevices {
+		if hd.ID != "" {
+			historyByID[hd.ID] = hd
+		}
+		if hd.Serial != "" {
+			historyBySerial[hd.Serial] = hd
+		}
+	}
+
 	lines := strings.Split(string(output), "\n")
-	var devices []Device
+	type rawDevice struct {
+		id    string
+		state string
+		props map[string]string
+	}
+	var rawDevices []rawDevice
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1241,42 +1267,128 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
-			deviceType := "wired"
-			if strings.Contains(parts[0], ":") {
-				deviceType = "wireless"
+			rd := rawDevice{
+				id:    parts[0],
+				state: parts[1],
+				props: make(map[string]string),
 			}
-			device := Device{
-				ID:    parts[0],
-				State: parts[1],
-				Type:  deviceType,
-			}
-			// Try to parse basic model from -l
-			for _, p := range parts {
-				if strings.HasPrefix(p, "model:") {
-					device.Model = strings.TrimPrefix(p, "model:")
+			for _, p := range parts[2:] {
+				if strings.Contains(p, ":") {
+					kv := strings.SplitN(p, ":", 2)
+					rd.props[kv[0]] = kv[1]
 				}
 			}
-			devices = append(devices, device)
+			rawDevices = append(rawDevices, rd)
 		}
 	}
 
-	// Fetch details in parallel for authorized devices
+	// Unify devices by serial number
+	deviceMap := make(map[string]*Device)
+	var finalDevices []*Device
+
 	var wg sync.WaitGroup
-	for i := range devices {
-		if devices[i].State == "device" {
+	var mu sync.Mutex
+
+	for _, rd := range rawDevices {
+		wg.Add(1)
+		go func(r rawDevice) {
+			defer wg.Done()
+
+			// 1. Initial serial guess from history or ID
+			serial := r.id
+			if hd, ok := historyByID[r.id]; ok && hd.Serial != "" {
+				serial = hd.Serial
+			}
+
+			// 2. Try to get real hardware serial via shell if "device" state
+			if r.state == "device" {
+				c := exec.CommandContext(ctx, a.adbPath, "-s", r.id, "shell", "getprop ro.serialno")
+				out, err := c.Output()
+				if err == nil {
+					s := strings.TrimSpace(string(out))
+					if s != "" {
+						serial = s
+					}
+				}
+			}
+
+			mu.Lock()
+			d, exists := deviceMap[serial]
+			isWireless := strings.Contains(r.id, ":")
+
+			if !exists {
+				dType := "wired"
+				wifiAddr := ""
+				if isWireless {
+					dType = "wireless"
+					wifiAddr = r.id
+				}
+
+				d = &Device{
+					ID:       r.id, // Current ADB ID
+					Serial:   serial,
+					State:    r.state,
+					Type:     dType,
+					IDs:      []string{r.id},
+					WifiAddr: wifiAddr,
+					Model:    r.props["model"],
+				}
+
+				// Try to restore brand/model from history if empty
+				if d.Model == "" {
+					if hd, ok := historyBySerial[serial]; ok {
+						d.Brand = hd.Brand
+						d.Model = hd.Model
+					}
+				}
+
+				deviceMap[serial] = d
+				finalDevices = append(finalDevices, d)
+			} else {
+				// Merge records
+				d.IDs = append(d.IDs, r.id)
+				if isWireless {
+					d.WifiAddr = r.id
+					if d.Type == "wired" {
+						d.Type = "both"
+					} else {
+						d.Type = "wireless"
+					}
+				} else {
+					// Prefer wired ID as main communication ID
+					d.ID = r.id
+					if d.Type == "wireless" {
+						d.Type = "both"
+					} else {
+						d.Type = "wired"
+					}
+				}
+				// Update state if one is "device"
+				if r.state == "device" {
+					d.State = r.state
+				}
+			}
+			mu.Unlock()
+		}(rd)
+	}
+	wg.Wait()
+
+	// Fetch detailed brand/model in parallel for grouped devices
+	for i := range finalDevices {
+		if finalDevices[i].State == "device" {
 			wg.Add(1)
 			go func(idx int) {
 				defer wg.Done()
-				d := &devices[idx]
-
-				// Fetch manufacturer and model in one shell command to reduce overhead
-				// Format: manufacturer;model
+				d := finalDevices[idx]
 				cmd := exec.CommandContext(ctx, a.adbPath, "-s", d.ID, "shell", "getprop ro.product.manufacturer; getprop ro.product.model")
 				out, err := cmd.Output()
 				if err == nil {
 					parts := strings.Split(string(out), "\n")
 					if len(parts) >= 1 {
-						d.Brand = strings.TrimSpace(parts[0])
+						brand := strings.TrimSpace(parts[0])
+						if brand != "" {
+							d.Brand = brand
+						}
 					}
 					if len(parts) >= 2 {
 						refinedModel := strings.TrimSpace(parts[1])
@@ -1290,14 +1402,16 @@ func (a *App) GetDevices() ([]Device, error) {
 	}
 	wg.Wait()
 
-	// Add to history after fetching device details (to have complete info)
-	for i := range devices {
-		if devices[i].State == "device" {
-			go a.addToHistory(devices[i]) // Run async to avoid blocking
+	// Convert result to slice and update history
+	result := make([]Device, len(finalDevices))
+	for i, d := range finalDevices {
+		result[i] = *d
+		if result[i].State == "device" {
+			go a.addToHistory(result[i])
 		}
 	}
 
-	return devices, nil
+	return result, nil
 }
 
 // GetDeviceInfo returns detailed information about a device

@@ -36,10 +36,13 @@ export namespace main {
 	}
 	export class Device {
 	    id: string;
+	    serial: string;
 	    state: string;
 	    model: string;
 	    brand: string;
 	    type: string;
+	    ids: string[];
+	    wifiAddr: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Device(source);
@@ -48,10 +51,13 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.serial = source["serial"];
 	        this.state = source["state"];
 	        this.model = source["model"];
 	        this.brand = source["brand"];
 	        this.type = source["type"];
+	        this.ids = source["ids"];
+	        this.wifiAddr = source["wifiAddr"];
 	    }
 	}
 	export class DeviceInfo {
@@ -112,6 +118,7 @@ export namespace main {
 	}
 	export class HistoryDevice {
 	    id: string;
+	    serial: string;
 	    model: string;
 	    brand: string;
 	    type: string;
@@ -125,6 +132,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.id = source["id"];
+	        this.serial = source["serial"];
 	        this.model = source["model"];
 	        this.brand = source["brand"];
 	        this.type = source["type"];

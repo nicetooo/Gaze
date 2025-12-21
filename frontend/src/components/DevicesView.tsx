@@ -14,18 +14,25 @@ import {
   DisconnectOutlined,
   DeleteOutlined,
   LinkOutlined,
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 
 interface Device {
   id: string;
+  serial: string;
   state: string;
   model: string;
   brand: string;
   type: string;
+  ids: string[];
+  wifiAddr: string;
 }
 
 interface HistoryDevice {
   id: string;
+  serial: string;
   model: string;
   brand: string;
   type: string;
@@ -72,13 +79,18 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   // Merge history devices that are not currently active
   const allDevices = [...devices];
   historyDevices.forEach(hd => {
-    if (!devices.find(d => d.id === hd.id)) {
+    // Check if device is already in active list by serial (preferred) or id
+    const isActive = devices.some(d => (hd.serial && d.serial === hd.serial) || d.id === hd.id || d.ids?.includes(hd.id));
+    if (!isActive) {
       allDevices.push({
         id: hd.id,
+        serial: hd.serial,
         state: "offline",
         model: hd.model,
         brand: hd.brand,
-        type: hd.type
+        type: hd.type,
+        ids: [hd.id],
+        wifiAddr: hd.type === "wireless" ? hd.id : ""
       });
     }
   });
@@ -88,6 +100,21 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.id"),
       dataIndex: "id",
       key: "id",
+      render: (_: string, record: Device) => {
+        const displayId = record.serial || record.id;
+        return (
+          <div>
+            <div style={{ fontWeight: record.state === 'device' ? 500 : 'normal' }}>
+              {displayId}
+            </div>
+            {record.wifiAddr && record.wifiAddr !== displayId && (
+              <div style={{ fontSize: '11px', color: '#8c8c8c', marginTop: '2px' }}>
+                {record.wifiAddr}
+              </div>
+            )}
+          </div>
+        );
+      }
     },
     {
       title: t("devices.brand"),
@@ -104,17 +131,22 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.connection_type"),
       dataIndex: "type",
       key: "type",
-      width: 120,
-      render: (type: string) => (
+      width: 100,
+      render: (type: string, record: Device) => (
         <Space>
-          {type === "wireless" ? (
-            <Tag icon={<WifiOutlined />} color="blue">
-              {t("devices.wireless")}
-            </Tag>
-          ) : (
-            <Tag icon={<UsbOutlined />} color="orange">
-              {t("devices.wired")}
-            </Tag>
+          {record.state !== "offline" && (
+            <>
+              {(type === "wired" || type === "both") && (
+                <Tooltip title={t("devices.wired")}>
+                  <Tag icon={<UsbOutlined />} color="orange" style={{ marginRight: 0, paddingInline: 8 }} />
+                </Tooltip>
+              )}
+              {(type === "wireless" || type === "both") && (
+                <Tooltip title={t("devices.wireless")}>
+                  <Tag icon={<WifiOutlined />} color="blue" style={{ marginRight: 0, paddingInline: 8 }} />
+                </Tooltip>
+              )}
+            </>
           )}
         </Space>
       ),
@@ -123,12 +155,20 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.state"),
       dataIndex: "state",
       key: "state",
-      width: 130,
-      render: (state: string) => (
-        <Tag color={state === "device" ? "green" : state === "offline" ? "default" : "red"}>
-          {state === "device" ? t("devices.online") : state === "offline" ? t("devices.offline") : t("devices.unauthorized")}
-        </Tag>
-      ),
+      width: 100,
+      render: (state: string) => {
+        const config = {
+          device: { color: "green", icon: <CheckCircleOutlined />, text: t("devices.online") },
+          offline: { color: "default", icon: <StopOutlined />, text: t("devices.offline") },
+          unauthorized: { color: "red", icon: <CloseCircleOutlined />, text: t("devices.unauthorized") },
+        }[state] || { color: "red", icon: <CloseCircleOutlined />, text: state };
+
+        return (
+          <Tooltip title={config.text}>
+            <Tag color={config.color} icon={config.icon} style={{ marginRight: 0, paddingInline: 8 }} />
+          </Tooltip>
+        );
+      },
     },
     {
       title: t("devices.action"),
@@ -194,22 +234,22 @@ const DevicesView: React.FC<DevicesViewProps> = ({
                 />
               </Tooltip>
               {record.type === "wired" && (
-                <Tooltip title={t("devices.switch_to_wireless")}>
+                <Tooltip title={t("devices.connect_with_wireless")}>
                   <Button
                     size="small"
-                    icon={<WifiOutlined />}
+                    icon={<LinkOutlined />}
                     onClick={() => handleSwitchToWireless(record.id)}
                     style={{ color: "#1677ff" }}
                   />
                 </Tooltip>
               )}
-              {record.type === "wireless" && (
-                <Tooltip title={t("devices.disconnect")}>
+              {(record.type === "wireless" || record.type === "both") && (
+                <Tooltip title={t("devices.disconnect_wireless")}>
                   <Button
                     size="small"
                     danger
                     icon={<DisconnectOutlined />}
-                    onClick={() => handleAdbDisconnect(record.id)}
+                    onClick={() => handleAdbDisconnect(record.wifiAddr || record.id)}
                   />
                 </Tooltip>
               )}
