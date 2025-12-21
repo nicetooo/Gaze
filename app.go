@@ -15,6 +15,8 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -54,6 +56,22 @@ type App struct {
 
 	openFileCmds map[string]*exec.Cmd
 	openFileMu   sync.Mutex
+
+	// Wireless Server
+	httpServer *http.Server
+	localAddr  string
+
+	// History
+	historyPath string
+	historyMu   sync.Mutex
+}
+
+type HistoryDevice struct {
+	ID        string    `json:"id"`
+	Model     string    `json:"model"`
+	Brand     string    `json:"brand"`
+	Type      string    `json:"type"`
+	LastSeen  time.Time `json:"lastSeen"`
 }
 
 type Device struct {
@@ -61,6 +79,7 @@ type Device struct {
 	State string `json:"state"`
 	Model string `json:"model"`
 	Brand string `json:"brand"`
+	Type  string `json:"type"` // "wired" or "wireless"
 }
 
 type DeviceInfo struct {
@@ -142,8 +161,90 @@ func (a *App) initPersistentCache() {
 	appConfigDir := filepath.Join(configDir, "adbGUI")
 	_ = os.MkdirAll(appConfigDir, 0755)
 	a.cachePath = filepath.Join(appConfigDir, "aapt_cache.json")
+	a.historyPath = filepath.Join(appConfigDir, "history.json")
 
 	a.loadCache()
+}
+
+func (a *App) loadHistory() []HistoryDevice {
+	var history []HistoryDevice
+	if a.historyPath == "" {
+		return history
+	}
+	data, err := os.ReadFile(a.historyPath)
+	if err != nil {
+		// File doesn't exist yet, return empty history
+		return history
+	}
+	if err := json.Unmarshal(data, &history); err != nil {
+		// Invalid JSON, return empty history
+		fmt.Printf("Error unmarshaling history: %v\n", err)
+		return []HistoryDevice{}
+	}
+	return history
+}
+
+func (a *App) saveHistory(history []HistoryDevice) {
+	data, err := json.Marshal(history)
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(a.historyPath, data, 0644)
+}
+
+func (a *App) addToHistory(device Device) {
+	a.historyMu.Lock()
+	defer a.historyMu.Unlock()
+
+	history := a.loadHistory()
+	found := false
+	for i, d := range history {
+		if d.ID == device.ID {
+			history[i].LastSeen = time.Now()
+			history[i].Model = device.Model
+			history[i].Brand = device.Brand
+			history[i].Type = device.Type
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		history = append(history, HistoryDevice{
+			ID:       device.ID,
+			Model:    device.Model,
+			Brand:    device.Brand,
+			Type:     device.Type,
+			LastSeen: time.Now(),
+		})
+	}
+
+	// Keep only last 20 devices
+	if len(history) > 20 {
+		history = history[len(history)-20:]
+	}
+
+	a.saveHistory(history)
+}
+
+func (a *App) GetHistoryDevices() []HistoryDevice {
+	a.historyMu.Lock()
+	defer a.historyMu.Unlock()
+	return a.loadHistory()
+}
+
+func (a *App) RemoveHistoryDevice(deviceId string) {
+	a.historyMu.Lock()
+	defer a.historyMu.Unlock()
+
+	history := a.loadHistory()
+	var newHistory []HistoryDevice
+	for _, d := range history {
+		if d.ID != deviceId {
+			newHistory = append(newHistory, d)
+		}
+	}
+	a.saveHistory(newHistory)
 }
 
 func (a *App) loadCache() {
@@ -874,6 +975,248 @@ func (a *App) Greet(name string) string {
 	return fmt.Sprintf("Hello %s, It's show time!", name)
 }
 
+// AdbPair pairs a device using the given address and code
+func (a *App) AdbPair(address string, code string) (string, error) {
+	if address == "" || code == "" {
+		return "", fmt.Errorf("address and pairing code are required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.adbPath, "pair", address, code)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("pairing failed: %w, output: %s", err, string(output))
+	}
+	return string(output), nil
+}
+
+// AdbConnect connects to a device using the given address
+func (a *App) AdbConnect(address string) (string, error) {
+	if address == "" {
+		return "", fmt.Errorf("address is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.adbPath, "connect", address)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("connection failed: %w, output: %s", err, string(output))
+	}
+	return string(output), nil
+}
+
+// GetDeviceIP gets the local IP address of the device
+func (a *App) GetDeviceIP(deviceId string) (string, error) {
+	if deviceId == "" {
+		return "", fmt.Errorf("no device specified")
+	}
+
+	// Try to get IP from ip addr show wlan0
+	cmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "ip addr show wlan0 | grep 'inet ' | awk '{print $2}' | cut -d/ -f1")
+	output, err := cmd.CombinedOutput()
+	ip := strings.TrimSpace(string(output))
+
+	if err != nil || ip == "" {
+		// Fallback: try getprop
+		cmd = exec.Command(a.adbPath, "-s", deviceId, "shell", "getprop dhcp.wlan0.ipaddress")
+		output, err = cmd.CombinedOutput()
+		ip = strings.TrimSpace(string(output))
+	}
+
+	if ip == "" {
+		return "", fmt.Errorf("could not find device IP (ensure Wi-Fi is on)")
+	}
+	return ip, nil
+}
+
+// SwitchToWireless enables TCP/IP mode on the device and connects to it
+func (a *App) SwitchToWireless(deviceId string) (string, error) {
+	// 1. Get the IP first while still connected via USB
+	ip, err := a.GetDeviceIP(deviceId)
+	if err != nil {
+		return "", err
+	}
+
+	// 2. Enable TCP mode on port 5555
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, a.adbPath, "-s", deviceId, "tcpip", "5555")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return string(out), fmt.Errorf("failed to enable tcpip mode: %w", err)
+	}
+
+	// 3. Wait a bit for the daemon to restart
+	time.Sleep(1 * time.Second)
+
+	// 4. Connect wirelessly
+	return a.AdbConnect(ip + ":5555")
+}
+
+// GetLocalIP returns the first non-loopback local IPv4 address
+func (a *App) GetLocalIP() string {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ""
+	}
+	for _, address := range addrs {
+		if ipnet, ok := address.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				return ipnet.IP.String()
+			}
+		}
+	}
+	return ""
+}
+
+// StartWirelessServer starts a temporary http server for QR code connection
+func (a *App) StartWirelessServer() (string, error) {
+	if a.httpServer != nil {
+		return a.localAddr, nil
+	}
+
+	ip := a.GetLocalIP()
+	if ip == "" {
+		return "", fmt.Errorf("could not find local IP")
+	}
+
+	// Find an available port
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return "", err
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	a.localAddr = fmt.Sprintf("http://%s:%d", ip, port)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/c", func(w http.ResponseWriter, r *http.Request) {
+		// Get phone's IP
+		remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
+		fmt.Printf("Wireless connect request from: %s\n", remoteIP)
+
+		// Try to connect (default port 5555)
+		output, err := a.AdbConnect(remoteIP + ":5555")
+		success := err == nil && strings.Contains(output, "connected to")
+
+		if success {
+			wailsRuntime.EventsEmit(a.ctx, "wireless-connected", remoteIP)
+		} else {
+			wailsRuntime.EventsEmit(a.ctx, "wireless-connect-failed", map[string]string{
+				"ip":    remoteIP,
+				"error": output,
+			})
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		
+		var title, statusClass, message, hint, nextSteps string
+		if success {
+			title = "连接成功"
+			statusClass = "success"
+			message = "设备已成功连接到电脑"
+			hint = "现在您可以关闭此页面并在电脑上操作了"
+			nextSteps = ""
+		} else {
+			title = "连接失败"
+			statusClass = "error"
+			message = "无法连接到 ADB 服务"
+			hint = "错误信息: " + strings.ReplaceAll(output, "\n", " ")
+			nextSteps = `
+				<div class="next-steps">
+					<h3>后续操作建议：</h3>
+					<ul>
+						<li>检查手机 <b>无线调试</b> 是否已开启</li>
+						<li>确保手机和电脑在 <b>同一个局域网</b></li>
+						<li>如果手机使用了 <b>随机端口</b> (非 5555)，请在电脑上使用“无线配对”功能</li>
+						<li>尝试重新扫码</li>
+					</ul>
+				</div>
+			`
+		}
+
+		fmt.Fprintf(w, `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta charset="utf-8">
+				<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+				<style>
+					body {
+						display: flex;
+						flex-direction: column;
+						align-items: center;
+						justify-content: center;
+						min-height: 100vh;
+						margin: 0;
+						font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+						background-color: #f5f5f5;
+						color: #333;
+					}
+					.card {
+						background: white;
+						padding: 2rem;
+						border-radius: 12px;
+						box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+						text-align: center;
+						width: 85%%;
+						max-width: 400px;
+					}
+					h1 { margin-bottom: 1rem; font-size: 1.5rem; }
+					.success h1 { color: #52c41a; }
+					.error h1 { color: #ff4d4f; }
+					p { font-size: 1.1rem; line-height: 1.5; margin: 0.5rem 0; }
+					.ip-badge {
+						display: inline-block;
+						background: #e6f4ff;
+						color: #0958d9;
+						padding: 0.2rem 0.6rem;
+						border-radius: 4px;
+						font-family: monospace;
+						font-weight: bold;
+					}
+					.hint { font-size: 0.9rem; color: #666; margin-top: 1rem; padding: 10px; background: #fafafa; border-radius: 4px; }
+					.next-steps { text-align: left; margin-top: 1.5rem; border-top: 1px solid #eee; padding-top: 1rem; }
+					.next-steps h3 { font-size: 1rem; margin-bottom: 0.5rem; }
+					.next-steps ul { padding-left: 1.2rem; font-size: 0.9rem; color: #555; }
+					.next-steps li { margin-bottom: 0.5rem; }
+				</style>
+			</head>
+			<body class="%s">
+				<div class="card">
+					<h1>%s</h1>
+					<p>手机 IP: <span class="ip-badge">%s</span></p>
+					<p>%s</p>
+					<div class="hint">%s</div>
+					%s
+				</div>
+			</body>
+			</html>
+		`, statusClass, title, remoteIP, message, hint, nextSteps)
+	})
+
+	a.httpServer = &http.Server{Handler: mux}
+	go a.httpServer.Serve(listener)
+
+	return a.localAddr, nil
+}
+
+// AdbDisconnect disconnects from a wireless device
+func (a *App) AdbDisconnect(address string) (string, error) {
+	if address == "" {
+		return "", fmt.Errorf("address is required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, a.adbPath, "disconnect", address)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(output), fmt.Errorf("disconnection failed: %w, output: %s", err, string(output))
+	}
+	return string(output), nil
+}
+
 // GetDevices returns a list of connected ADB devices
 func (a *App) GetDevices() ([]Device, error) {
 	a.mu.Lock()
@@ -898,9 +1241,14 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
+			deviceType := "wired"
+			if strings.Contains(parts[0], ":") {
+				deviceType = "wireless"
+			}
 			device := Device{
 				ID:    parts[0],
 				State: parts[1],
+				Type:  deviceType,
 			}
 			// Try to parse basic model from -l
 			for _, p := range parts {
@@ -941,6 +1289,13 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 	}
 	wg.Wait()
+
+	// Add to history after fetching device details (to have complete info)
+	for i := range devices {
+		if devices[i].State == "device" {
+			go a.addToHistory(devices[i]) // Run async to avoid blocking
+		}
+	}
 
 	return devices, nil
 }

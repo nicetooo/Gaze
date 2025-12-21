@@ -9,6 +9,11 @@ import {
   FolderOutlined,
   DesktopOutlined,
   InfoCircleOutlined,
+  WifiOutlined,
+  UsbOutlined,
+  DisconnectOutlined,
+  DeleteOutlined,
+  LinkOutlined,
 } from "@ant-design/icons";
 
 interface Device {
@@ -16,10 +21,20 @@ interface Device {
   state: string;
   model: string;
   brand: string;
+  type: string;
+}
+
+interface HistoryDevice {
+  id: string;
+  model: string;
+  brand: string;
+  type: string;
+  lastSeen: string;
 }
 
 interface DevicesViewProps {
   devices: Device[];
+  historyDevices: HistoryDevice[];
   loading: boolean;
   fetchDevices: () => Promise<void>;
   setSelectedKey: (key: string) => void;
@@ -28,10 +43,16 @@ interface DevicesViewProps {
   fetchFiles: (path: string) => Promise<void>;
   handleStartScrcpy: (id: string) => Promise<void>;
   handleFetchDeviceInfo: (id: string) => Promise<void>;
+  onShowWirelessConnect: () => void;
+  handleSwitchToWireless: (id: string) => Promise<void>;
+  handleAdbDisconnect: (address: string) => Promise<void>;
+  handleAdbConnect: (address: string) => Promise<void>;
+  handleRemoveHistoryDevice: (id: string) => Promise<void>;
 }
 
 const DevicesView: React.FC<DevicesViewProps> = ({
   devices,
+  historyDevices,
   loading,
   fetchDevices,
   setSelectedKey,
@@ -40,8 +61,28 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   fetchFiles,
   handleStartScrcpy,
   handleFetchDeviceInfo,
+  onShowWirelessConnect,
+  handleSwitchToWireless,
+  handleAdbDisconnect,
+  handleAdbConnect,
+  handleRemoveHistoryDevice,
 }) => {
   const { t } = useTranslation();
+
+  // Merge history devices that are not currently active
+  const allDevices = [...devices];
+  historyDevices.forEach(hd => {
+    if (!devices.find(d => d.id === hd.id)) {
+      allDevices.push({
+        id: hd.id,
+        state: "offline",
+        model: hd.model,
+        brand: hd.brand,
+        type: hd.type
+      });
+    }
+  });
+
   const deviceColumns = [
     {
       title: t("devices.id"),
@@ -60,77 +101,141 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       key: "model",
     },
     {
+      title: t("devices.connection_type"),
+      dataIndex: "type",
+      key: "type",
+      width: 120,
+      render: (type: string) => (
+        <Space>
+          {type === "wireless" ? (
+            <Tag icon={<WifiOutlined />} color="blue">
+              {t("devices.wireless")}
+            </Tag>
+          ) : (
+            <Tag icon={<UsbOutlined />} color="orange">
+              {t("devices.wired")}
+            </Tag>
+          )}
+        </Space>
+      ),
+    },
+    {
       title: t("devices.state"),
       dataIndex: "state",
       key: "state",
       width: 130,
       render: (state: string) => (
-        <Tag color={state === "device" ? "green" : "red"}>
-          {state === "device" ? t("devices.online") : t("devices.offline")}
+        <Tag color={state === "device" ? "green" : state === "offline" ? "default" : "red"}>
+          {state === "device" ? t("devices.online") : state === "offline" ? t("devices.offline") : t("devices.unauthorized")}
         </Tag>
       ),
     },
     {
       title: t("devices.action"),
       key: "action",
-      width: 280,
+      width: 320,
       render: (_: any, record: Device) => (
         <Space size="small">
-          <Tooltip title={t("device_info.title")}>
-            <Button
-              size="small"
-              icon={<InfoCircleOutlined />}
-              onClick={() => handleFetchDeviceInfo(record.id)}
-            />
-          </Tooltip>
-          <Tooltip title={t("menu.shell")}>
-            <Button
-              size="small"
-              icon={<CodeOutlined />}
-              onClick={() => {
-                setShellCmd(`-s ${record.id} shell ls -l`);
-                setSelectedKey("3");
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={t("menu.apps")}>
-            <Button
-              size="small"
-              icon={<AppstoreOutlined />}
-              onClick={() => {
-                setSelectedDevice(record.id);
-                setSelectedKey("2");
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={t("menu.logcat")}>
-            <Button
-              size="small"
-              icon={<FileTextOutlined />}
-              onClick={() => {
-                setSelectedDevice(record.id);
-                setSelectedKey("4");
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={t("menu.files")}>
-            <Button
-              size="small"
-              icon={<FolderOutlined />}
-              onClick={() => {
-                setSelectedDevice(record.id);
-                setSelectedKey("6");
-                fetchFiles("/");
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={t("devices.mirror_screen")}>
-            <Button
-              icon={<DesktopOutlined />}
-              size="small"
-              onClick={() => handleStartScrcpy(record.id)}
-            />
-          </Tooltip>
+          {record.state === "device" ? (
+            <>
+              <Tooltip title={t("device_info.title")}>
+                <Button
+                  size="small"
+                  icon={<InfoCircleOutlined />}
+                  onClick={() => handleFetchDeviceInfo(record.id)}
+                />
+              </Tooltip>
+              <Tooltip title={t("menu.shell")}>
+                <Button
+                  size="small"
+                  icon={<CodeOutlined />}
+                  onClick={() => {
+                    setShellCmd(`-s ${record.id} shell ls -l`);
+                    setSelectedKey("3");
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title={t("menu.apps")}>
+                <Button
+                  size="small"
+                  icon={<AppstoreOutlined />}
+                  onClick={() => {
+                    setSelectedDevice(record.id);
+                    setSelectedKey("2");
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title={t("menu.logcat")}>
+                <Button
+                  size="small"
+                  icon={<FileTextOutlined />}
+                  onClick={() => {
+                    setSelectedDevice(record.id);
+                    setSelectedKey("4");
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title={t("menu.files")}>
+                <Button
+                  size="small"
+                  icon={<FolderOutlined />}
+                  onClick={() => {
+                    setSelectedDevice(record.id);
+                    setSelectedKey("6");
+                    fetchFiles("/");
+                  }}
+                />
+              </Tooltip>
+              <Tooltip title={t("devices.mirror_screen")}>
+                <Button
+                  icon={<DesktopOutlined />}
+                  size="small"
+                  onClick={() => handleStartScrcpy(record.id)}
+                />
+              </Tooltip>
+              {record.type === "wired" && (
+                <Tooltip title={t("devices.switch_to_wireless")}>
+                  <Button
+                    size="small"
+                    icon={<WifiOutlined />}
+                    onClick={() => handleSwitchToWireless(record.id)}
+                    style={{ color: "#1677ff" }}
+                  />
+                </Tooltip>
+              )}
+              {record.type === "wireless" && (
+                <Tooltip title={t("devices.disconnect")}>
+                  <Button
+                    size="small"
+                    danger
+                    icon={<DisconnectOutlined />}
+                    onClick={() => handleAdbDisconnect(record.id)}
+                  />
+                </Tooltip>
+              )}
+            </>
+          ) : (
+            <>
+              {record.type === "wireless" && (
+                <Tooltip title={t("devices.reconnect")}>
+                  <Button
+                    size="small"
+                    type="primary"
+                    icon={<LinkOutlined />}
+                    onClick={() => handleAdbConnect(record.id)}
+                  />
+                </Tooltip>
+              )}
+              <Tooltip title={t("devices.remove_history")}>
+                <Button
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => handleRemoveHistoryDevice(record.id)}
+                />
+              </Tooltip>
+            </>
+          )}
         </Space>
       ),
     },
@@ -156,13 +261,18 @@ const DevicesView: React.FC<DevicesViewProps> = ({
         }}
       >
         <h2 style={{ margin: 0 }}>{t("devices.title")}</h2>
-        <Button
-          icon={<ReloadOutlined />}
-          onClick={fetchDevices}
-          loading={loading}
-        >
-          {t("common.refresh")}
-        </Button>
+        <Space>
+          <Button icon={<WifiOutlined />} onClick={onShowWirelessConnect}>
+            {t("devices.wireless_connect")}
+          </Button>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={fetchDevices}
+            loading={loading}
+          >
+            {t("common.refresh")}
+          </Button>
+        </Space>
       </div>
       <div
         className="selectable"
@@ -179,7 +289,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       >
         <Table
           columns={deviceColumns}
-          dataSource={devices}
+          dataSource={allDevices}
           rowKey="id"
           loading={loading}
           pagination={false}

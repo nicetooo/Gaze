@@ -19,6 +19,7 @@ import MirrorView from "./components/MirrorView";
 import AppInfoModal from "./components/AppInfoModal";
 import DeviceInfoModal from "./components/DeviceInfoModal";
 import AboutModal from "./components/AboutModal";
+import WirelessConnectModal from "./components/WirelessConnectModal";
 import {
   MobileOutlined,
   AppstoreOutlined,
@@ -30,6 +31,7 @@ import {
   BugOutlined,
   InfoCircleOutlined,
   TranslationOutlined,
+  WifiOutlined,
 } from "@ant-design/icons";
 import "./App.css";
 // @ts-ignore
@@ -67,6 +69,12 @@ import {
   DownloadFile,
   GetThumbnail,
   GetDeviceInfo,
+  AdbPair,
+  AdbConnect,
+  AdbDisconnect,
+  SwitchToWireless,
+  GetHistoryDevices,
+  RemoveHistoryDevice,
 } from "../wailsjs/go/main/App";
 // @ts-ignore
 import { main } from "../wailsjs/go/models";
@@ -83,12 +91,14 @@ interface Device {
   state: string;
   model: string;
   brand: string;
+  type: string;
 }
 
 function App() {
   const { t, i18n } = useTranslation();
   const [selectedKey, setSelectedKey] = useState("1");
   const [devices, setDevices] = useState<Device[]>([]);
+  const [historyDevices, setHistoryDevices] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Device Info state
@@ -99,6 +109,9 @@ function App() {
 
   // About state
   const [aboutVisible, setAboutVisible] = useState(false);
+
+  // Wireless Connect state
+  const [wirelessConnectVisible, setWirelessConnectVisible] = useState(false);
 
   // Shell state
   const [shellOutput, setShellOutput] = useState("");
@@ -165,6 +178,7 @@ function App() {
   // Refs for event listeners to avoid stale closures
   const isRecordingRef = useRef(false);
   const recordPathRef = useRef("");
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     isRecordingRef.current = isRecording;
@@ -174,18 +188,34 @@ function App() {
     recordPathRef.current = scrcpyConfig.recordPath;
   }, [scrcpyConfig.recordPath]);
 
-  const fetchDevices = async () => {
-    setLoading(true);
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  const fetchDevices = async (silent: boolean = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const res = await GetDevices();
       setDevices(res || []);
+      
+      // Try to load history, but don't fail if it errors
+      try {
+        const history = await GetHistoryDevices();
+        setHistoryDevices(history || []);
+      } catch (historyErr) {
+        console.warn("Failed to load device history:", historyErr);
+        setHistoryDevices([]);
+      }
+
       if (res && res.length > 0) {
         const deviceId = res[0].id;
         if (!selectedDevice) {
           setSelectedDevice(deviceId);
         }
-        // Automatically fetch user packages when device is connected
-        if (deviceId) {
+        // Automatically fetch user packages when device is connected (only for non-silent refresh)
+        if (deviceId && !silent) {
           // Use setTimeout to avoid blocking the UI update
           setTimeout(() => {
             fetchPackages("user", deviceId);
@@ -193,9 +223,14 @@ function App() {
         }
       }
     } catch (err) {
-      message.error(t("app.fetch_devices_failed") + ": " + String(err));
+      // Only show error message for non-silent refreshes
+      if (!silent) {
+        message.error(t("app.fetch_devices_failed") + ": " + String(err));
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -209,6 +244,54 @@ function App() {
       message.error(t("app.fetch_device_info_failed") + ": " + String(err));
     } finally {
       setDeviceInfoLoading(false);
+    }
+  };
+
+  const handleAdbConnect = async (address: string) => {
+    try {
+      const res = await AdbConnect(address);
+      if (res.includes("connected to")) {
+        fetchDevices();
+      } else {
+        throw new Error(res);
+      }
+    } catch (err) {
+      message.error(t("app.connect_failed") + ": " + String(err));
+      throw err;
+    }
+  };
+
+  const handleAdbPair = async (address: string, code: string) => {
+    try {
+      const res = await AdbPair(address, code);
+      if (res.includes("Successfully paired")) {
+        // Pairing success often means we can now connect
+        // But the user might need to enter the connect port (which is different from pair port)
+        message.success(t("app.pairing_success"));
+        fetchDevices();
+      } else {
+        throw new Error(res);
+      }
+    } catch (err) {
+      message.error(t("app.pairing_failed") + ": " + String(err));
+      throw err;
+    }
+  };
+
+  const handleSwitchToWireless = async (deviceId: string) => {
+    const hide = message.loading(t("app.switching_to_wireless"), 0);
+    try {
+      const res = await SwitchToWireless(deviceId);
+      if (res.includes("connected to")) {
+        message.success(t("app.switch_success"));
+        fetchDevices();
+      } else {
+        throw new Error(res);
+      }
+    } catch (err) {
+      message.error(t("app.switch_failed") + ": " + String(err));
+    } finally {
+      hide();
     }
   };
 
@@ -339,6 +422,10 @@ function App() {
   }, [isMirroring, isRecording, mirrorStartTime, recordStartTime]);
 
   useEffect(() => {
+    // When switching to devices tab, auto refresh
+    if (selectedKey === "1") {
+      fetchDevices();
+    }
     // When switching to apps, logcat or files tab, if data is not loaded yet, fetch it
     if (
       (selectedKey === "2" || selectedKey === "4" || selectedKey === "6") &&
@@ -351,6 +438,23 @@ function App() {
       }
     }
   }, [selectedKey, selectedDevice]);
+
+  // Poll devices list when staying on devices tab
+  useEffect(() => {
+    if (selectedKey !== "1") {
+      return; // Don't poll if not on devices tab
+    }
+
+    const pollInterval = setInterval(() => {
+      // Only poll if not currently loading to avoid concurrent requests
+      // Use silent=true to avoid showing loading state
+      if (!loadingRef.current) {
+        fetchDevices(true);
+      }
+    }, 3000); // Poll every 3 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [selectedKey]);
 
   const fetchPackages = async (packageType?: string, deviceId?: string) => {
     const targetDevice = deviceId || selectedDevice;
@@ -863,12 +967,33 @@ function App() {
     }
   };
 
+  const handleAdbDisconnect = async (address: string) => {
+    try {
+      await AdbDisconnect(address);
+      message.success(t("app.disconnect_success"));
+      fetchDevices();
+    } catch (err) {
+      message.error(t("app.disconnect_failed") + ": " + String(err));
+    }
+  };
+
+  const handleRemoveHistoryDevice = async (deviceId: string) => {
+    try {
+      await RemoveHistoryDevice(deviceId);
+      message.success(t("app.remove_success"));
+      fetchDevices();
+    } catch (err) {
+      message.error(t("app.remove_failed") + ": " + String(err));
+    }
+  };
+
   const renderContent = () => {
     switch (selectedKey) {
       case "1":
         return (
           <DevicesView
             devices={devices}
+            historyDevices={historyDevices}
             loading={loading}
             fetchDevices={fetchDevices}
             setSelectedKey={setSelectedKey}
@@ -877,6 +1002,11 @@ function App() {
             fetchFiles={fetchFiles}
             handleStartScrcpy={handleStartScrcpy}
             handleFetchDeviceInfo={handleFetchDeviceInfo}
+            onShowWirelessConnect={() => setWirelessConnectVisible(true)}
+            handleSwitchToWireless={handleSwitchToWireless}
+            handleAdbDisconnect={handleAdbDisconnect}
+            handleAdbConnect={handleAdbConnect}
+            handleRemoveHistoryDevice={handleRemoveHistoryDevice}
           />
         );
       case "6":
@@ -1190,6 +1320,13 @@ function App() {
       <AboutModal
         visible={aboutVisible}
         onCancel={() => setAboutVisible(false)}
+      />
+
+      <WirelessConnectModal
+        visible={wirelessConnectVisible}
+        onCancel={() => setWirelessConnectVisible(false)}
+        onConnect={handleAdbConnect}
+        onPair={handleAdbPair}
       />
     </Layout>
   );
