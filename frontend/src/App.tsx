@@ -413,7 +413,40 @@ function App() {
       EventsOff("scrcpy-record-started");
       EventsOff("scrcpy-record-stopped");
       StopLogcat();
+      EventsOff("tray:navigate");
     };
+  }, []);
+
+  // Listen for tray navigation events from backend
+  useEffect(() => {
+    EventsOn("tray:navigate", (data: any) => {
+      console.log("Tray navigation:", data);
+      if (data.deviceId) {
+        setSelectedDevice(data.deviceId);
+      }
+      if (data.view) {
+        switch (data.view) {
+          case "devices":
+            setSelectedKey("1");
+            break;
+          case "apps":
+            setSelectedKey("2");
+            break;
+          case "shell":
+            setSelectedKey("3");
+            break;
+          case "logcat":
+            setSelectedKey("4");
+            break;
+          case "mirror":
+            setSelectedKey("5");
+            break;
+          case "files":
+            setSelectedKey("6");
+            break;
+        }
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -1122,7 +1155,7 @@ function App() {
         <div
           style={{ display: "flex", flexDirection: "column", height: "100%" }}
         >
-          <div style={{ height: "40px", WebkitAppRegion: "drag", flexShrink: 0 } as any} />
+          <div className="drag-handle" style={{ height: 38, width: "100%", flexShrink: 0 }} />
           <div style={{ flex: 1, overflowY: "auto" }}>
             <Menu
               theme="dark"
@@ -1277,6 +1310,7 @@ function App() {
             flexDirection: "column",
           }}
         >
+          <div className="drag-handle" style={{ height: 38, width: "100%", flexShrink: 0 }} />
           {renderContent()}
         </Content>
       </Layout>

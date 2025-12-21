@@ -5,6 +5,8 @@ import (
 	"embed"
 	"runtime"
 
+	"time"
+
 	"github.com/energye/systray"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -48,22 +50,46 @@ func main() {
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
 			// Initialize system tray
+			// Initialize system tray
 			if runtime.GOOS == "darwin" {
 				start, _ := systray.RunWithExternalLoop(func() {
 					systray.SetIcon(iconData)
 					systray.SetTooltip("adbGUI")
 
-					mShow := systray.AddMenuItem("Open adbGUI", "Show the main window")
-					mShow.Click(func() {
-						wailsRuntime.WindowShow(ctx)
-					})
+					// Initial update
+					updateTrayMenu(ctx, app)
 
-					mQuit := systray.AddMenuItem("Quit", "Quit adbGUI")
-					mQuit.Click(func() {
-						shouldQuit = true
-						systray.Quit()
-						wailsRuntime.Quit(ctx)
-					})
+					// Start ticker to update tray menu
+					go func() {
+						ticker := time.NewTicker(2 * time.Second)
+						var lastDevices []Device
+						for {
+							select {
+							case <-ctx.Done():
+								return
+							case <-ticker.C:
+								currentDevices, _ := app.GetDevices()
+								// Simple check if devices changed (count or IDs)
+								changed := false
+								if len(lastDevices) != len(currentDevices) {
+									changed = true
+								} else {
+									for i, d := range currentDevices {
+										if d.ID != lastDevices[i].ID || d.State != lastDevices[i].State {
+											changed = true
+											break
+										}
+									}
+								}
+
+								if changed {
+									lastDevices = currentDevices
+									systray.ResetMenu()
+									updateTrayMenu(ctx, app)
+								}
+							}
+						}
+					}()
 				}, func() {})
 				start()
 			}
@@ -105,4 +131,92 @@ func main() {
 	if err != nil {
 		println("Error:", err.Error())
 	}
+}
+
+var shouldQuit bool
+
+func updateTrayMenu(ctx context.Context, app *App) {
+	devices, _ := app.GetDevices()
+
+	if len(devices) > 0 {
+		systray.AddMenuItem("Connected Devices:", "").Disable()
+		for _, dev := range devices {
+			name := dev.Model
+			if name == "" {
+				name = dev.ID
+			}
+			// Truncate if too long
+			if len(name) > 30 {
+				name = name[:27] + "..."
+			}
+
+			devItem := systray.AddMenuItem(name, "")
+
+			// Submenus
+			mMirror := devItem.AddSubMenuItem("Screen Mirror", "")
+			d := dev // Capture loop variable
+			mMirror.Click(func() {
+				go func() {
+					// Default config for tray launch
+					config := ScrcpyConfig{
+						BitRate:    8,
+						MaxFps:     60,
+						StayAwake:  true,
+						VideoCodec: "h264",
+						AudioCodec: "opus",
+					}
+					app.StartScrcpy(d.ID, config)
+				}()
+			})
+
+			mLogcat := devItem.AddSubMenuItem("Logcat", "")
+			mLogcat.Click(func() {
+				go func() {
+					wailsRuntime.WindowShow(ctx)
+					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+						"view":     "logcat",
+						"deviceId": d.ID,
+					})
+				}()
+			})
+
+			mShell := devItem.AddSubMenuItem("Shell", "")
+			mShell.Click(func() {
+				go func() {
+					wailsRuntime.WindowShow(ctx)
+					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+						"view":     "shell",
+						"deviceId": d.ID,
+					})
+				}()
+			})
+
+			mFiles := devItem.AddSubMenuItem("Files", "")
+			mFiles.Click(func() {
+				go func() {
+					wailsRuntime.WindowShow(ctx)
+					wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{
+						"view":     "files",
+						"deviceId": d.ID,
+					})
+				}()
+			})
+		}
+	} else {
+		systray.AddMenuItem("No devices connected", "").Disable()
+	}
+
+	systray.AddSeparator()
+
+	mOpen := systray.AddMenuItem("Open adbGUI", "")
+	mOpen.Click(func() {
+		wailsRuntime.WindowShow(ctx)
+	})
+
+	mQuit := systray.AddMenuItem("Quit", "")
+	mQuit.Click(func() {
+		shouldQuit = true
+		systray.Quit()
+		wailsRuntime.Quit(ctx)
+	})
 }

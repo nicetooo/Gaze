@@ -31,3 +31,53 @@
   70% { box-shadow: 0 0 0 10px rgba(255, 77, 79, 0); }
   100% { box-shadow: 0 0 0 0 rgba(255, 77, 79, 0); }
 }
+
+/* Window Dragging Support - Only for macOS/frameless */
+/* Apply global drag ability */
+body {
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Exclude interactive elements from drag */
+button, 
+a, 
+input, 
+textarea, 
+select, 
+.ant-btn, 
+.ant-input, 
+.ant-menu-item, 
+.ant-select, 
+.ant-modal-content, 
+.ant-slider-handle,
+.ant-switch,
+.ant-radio-wrapper,
+.ant-checkbox-wrapper,
+.ant-table-row,
+.ant-tabs-tab,
+.ant-card-head-title, /* Sometimes users want to drag cards? Maybe safer to exclude */
+div[role="button"],
+.ant-tree-treenode,
+.ant-list-item {
+  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+/* Specifically for Ant Design Layout */
+.drag-handle {
+  --wails-draggable: drag;
+  -webkit-app-region: drag;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Ensure content area allows interaction */
+.site-layout .ant-layout-content {
+  -webkit-app-region: no-drag;
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
