@@ -30,9 +30,21 @@ import {
 import DeviceSelector from "./DeviceSelector";
 import AppInfoModal from "./AppInfoModal";
 // @ts-ignore
-import { GetAppInfo, StartActivity } from "../../wailsjs/go/main/App";
+import { 
+  GetAppInfo, 
+  StartActivity, 
+  ListPackages, 
+  UninstallApp, 
+  ClearAppData, 
+  ForceStopApp, 
+  StartApp, 
+  EnableApp, 
+  DisableApp, 
+  ExportAPK,
+  OpenSettings
+} from "../../wailsjs/go/main/App";
 // @ts-ignore
-import { main } from "../wailsjs/go/models";
+import { main } from "../../wailsjs/go/models";
 
 interface Device {
   id: string;
@@ -47,22 +59,6 @@ interface AppsViewProps {
   setSelectedDevice: (id: string) => void;
   fetchDevices: () => Promise<void>;
   loading: boolean;
-  packages: main.AppPackage[];
-  appsLoading: boolean;
-  fetchPackages: (packageType?: string, deviceId?: string) => Promise<void>;
-  packageFilter: string;
-  setPackageFilter: (val: string) => void;
-  typeFilter: string;
-  setTypeFilter: (val: string) => void;
-  handleStartApp: (packageName: string) => Promise<void>;
-  handleAppLogcat: (packageName: string) => Promise<void>;
-  handleExploreAppFiles: (packageName: string) => void;
-  handleExportAPK: (packageName: string) => Promise<void>;
-  handleForceStop: (packageName: string) => Promise<void>;
-  handleToggleState: (packageName: string, currentState: string) => Promise<void>;
-  handleClearData: (packageName: string) => Promise<void>;
-  handleUninstall: (packageName: string) => Promise<void>;
-  handleOpenSettings: (deviceId: string, action?: string, data?: string) => Promise<void>;
 }
 
 const AppsView: React.FC<AppsViewProps> = ({
@@ -71,26 +67,17 @@ const AppsView: React.FC<AppsViewProps> = ({
   setSelectedDevice,
   fetchDevices,
   loading,
-  packages,
-  appsLoading,
-  fetchPackages,
-  packageFilter,
-  setPackageFilter,
-  typeFilter,
-  setTypeFilter,
-  handleStartApp,
-  handleAppLogcat,
-  handleExploreAppFiles,
-  handleExportAPK,
-  handleForceStop,
-  handleToggleState,
-  handleClearData,
-  handleUninstall,
-  handleOpenSettings,
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [tableHeight, setTableHeight] = useState<number>(400);
+
+  // Apps state
+  const [packages, setPackages] = useState<main.AppPackage[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const [packageFilter, setPackageFilter] = useState("");
+  const [typeFilter, setTypeFilter] = useState("user");
+
 
   // App Info state
   const [infoModalVisible, setInfoModalVisible] = React.useState(false);
@@ -98,6 +85,118 @@ const AppsView: React.FC<AppsViewProps> = ({
   const [selectedAppInfo, setSelectedAppInfo] = React.useState<main.AppPackage | null>(null);
   const [permissionSearch, setPermissionSearch] = React.useState("");
   const [activitySearch, setActivitySearch] = React.useState("");
+
+  const fetchPackages = async (packageType?: string, deviceId?: string) => {
+    const targetDevice = deviceId || selectedDevice;
+    if (!targetDevice) return;
+    const typeToFetch = packageType || typeFilter;
+    setAppsLoading(true);
+    try {
+      const res = await ListPackages(targetDevice, typeToFetch);
+      if (typeToFetch === "all") {
+        setPackages(res || []);
+      } else if (typeToFetch === "system") {
+        setPackages((prev) => {
+          const userPackages = prev.filter((p) => p.type === "user");
+          return [...userPackages, ...(res || [])];
+        });
+      } else {
+        setPackages(res || []);
+      }
+    } catch (err) {
+      message.error(t("app.list_packages_failed") + ": " + String(err));
+    } finally {
+      setAppsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDevice) {
+      fetchPackages();
+    }
+  }, [selectedDevice]);
+
+  const handleUninstall = async (packageName: string) => {
+    try {
+      await UninstallApp(selectedDevice, packageName);
+      message.success(t("app.uninstall_success", { name: packageName }));
+      fetchPackages(typeFilter, selectedDevice);
+    } catch (err) {
+      message.error(t("app.uninstall_failed") + ": " + String(err));
+    }
+  };
+
+  const handleClearData = async (packageName: string) => {
+    try {
+      await ClearAppData(selectedDevice, packageName);
+      message.success(t("app.clear_data_success", { name: packageName }));
+    } catch (err) {
+      message.error(t("app.clear_data_failed") + ": " + String(err));
+    }
+  };
+
+  const handleForceStop = async (packageName: string) => {
+    try {
+      await ForceStopApp(selectedDevice, packageName);
+      message.success(t("app.force_stop_success", { name: packageName }));
+    } catch (err) {
+      message.error(t("app.force_stop_failed") + ": " + String(err));
+    }
+  };
+
+  const handleStartApp = async (packageName: string) => {
+    const hide = message.loading(t("app.launching", { name: packageName }), 0);
+    try {
+      await ForceStopApp(selectedDevice, packageName);
+      await StartApp(selectedDevice, packageName);
+      message.success(t("app.start_app_success", { name: packageName }));
+    } catch (err) {
+      message.error(t("app.start_app_failed") + ": " + String(err));
+    } finally {
+      hide();
+    }
+  };
+
+  const handleToggleState = async (packageName: string, currentState: string) => {
+    try {
+      if (currentState === "enabled") {
+        await DisableApp(selectedDevice, packageName);
+        message.success(t("app.disabled_success", { name: packageName }));
+      } else {
+        await EnableApp(selectedDevice, packageName);
+        message.success(t("app.enabled_success", { name: packageName }));
+      }
+      fetchPackages(typeFilter, selectedDevice);
+    } catch (err) {
+      message.error(t("app.change_state_failed") + ": " + String(err));
+    }
+  };
+
+  const handleExportAPK = async (packageName: string) => {
+    const hideMessage = message.loading(t("app.exporting", { name: packageName }), 0);
+    try {
+      const res = await ExportAPK(selectedDevice, packageName);
+      if (res) {
+        message.success(t("app.export_success", { path: res }));
+      }
+    } catch (err) {
+      message.error(t("app.export_failed") + ": " + String(err));
+    } finally {
+      hideMessage();
+    }
+  };
+
+  const handleOpenSettings = async (deviceId: string, action: string = "", data: string = "") => {
+    const hide = message.loading(t("app.opening_settings"), 0);
+    try {
+      await OpenSettings(deviceId, action, data);
+      message.success(t("app.open_settings_success"));
+    } catch (err) {
+      message.error(t("app.open_settings_failed") + ": " + String(err));
+    } finally {
+      hide();
+    }
+  };
 
   const handleFetchAppInfo = async (packageName: string, force: boolean = false) => {
     if (!selectedDevice) return;
@@ -134,7 +233,6 @@ const AppsView: React.FC<AppsViewProps> = ({
   useEffect(() => {
     const updateHeight = () => {
       if (containerRef.current) {
-        // 精确计算：容器总高度 - (顶部标题栏约72px + 过滤栏约44px + 边距约30px)
         const offset = 160; 
         const height = containerRef.current.clientHeight - offset;
         setTableHeight(height > 200 ? height : 400);
@@ -142,7 +240,7 @@ const AppsView: React.FC<AppsViewProps> = ({
     };
 
     updateHeight();
-    const timer = setTimeout(updateHeight, 100); // 延迟执行一次确保布局已完成
+    const timer = setTimeout(updateHeight, 100);
     window.addEventListener("resize", updateHeight);
     return () => {
       window.removeEventListener("resize", updateHeight);
@@ -259,18 +357,13 @@ const AppsView: React.FC<AppsViewProps> = ({
             <Tooltip title={t("apps.app_settings")}>
               <Button size="small" icon={<SettingOutlined />} onClick={() => handleOpenSettings(selectedDevice, "android.settings.APPLICATION_DETAILS_SETTINGS", `package:${record.name}`)} />
             </Tooltip>
-            <Tooltip title={t("menu.logcat")}>
-              <Button size="small" icon={<FileTextOutlined />} onClick={() => handleAppLogcat(record.name)} />
-            </Tooltip>
-            <Tooltip title={t("apps.explore_files")}>
-              <Button size="small" icon={<FolderOpenOutlined />} onClick={() => handleExploreAppFiles(record.name)} />
-            </Tooltip>
             <Tooltip title={t("apps.export")}>
               <Button size="small" icon={<DownloadOutlined />} onClick={() => handleExportAPK(record.name)} />
             </Tooltip>
             <Tooltip title={t("app_info.title")}>
               <Button size="small" icon={<InfoCircleOutlined />} onClick={() => handleFetchAppInfo(record.name)} />
             </Tooltip>
+
             <Dropdown
               menu={{
                 items: [
@@ -366,6 +459,13 @@ const AppsView: React.FC<AppsViewProps> = ({
           <Radio.Button value="user">{t("apps.user")}</Radio.Button>
           <Radio.Button value="system">{t("apps.system")}</Radio.Button>
         </Radio.Group>
+        <Button 
+          icon={<ReloadOutlined />} 
+          onClick={() => fetchPackages()}
+          loading={appsLoading}
+        >
+          {t("common.refresh") || "Refresh"}
+        </Button>
       </Space>
       <div
         className="selectable"
@@ -410,3 +510,4 @@ const AppsView: React.FC<AppsViewProps> = ({
 };
 
 export default AppsView;
+

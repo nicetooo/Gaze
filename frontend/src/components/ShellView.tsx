@@ -1,8 +1,10 @@
-import React from "react";
-import { Button, Space, Input } from "antd";
+import React, { useState } from "react";
+import { Button, Space, Input, message } from "antd";
 import { ClearOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import DeviceSelector from "./DeviceSelector";
+// @ts-ignore
+import { RunAdbCommand } from "../../wailsjs/go/main/App";
 
 interface Device {
   id: string;
@@ -17,11 +19,6 @@ interface ShellViewProps {
   setSelectedDevice: (id: string) => void;
   fetchDevices: () => Promise<void>;
   loading: boolean;
-  shellCmd: string;
-  setShellCmd: (val: string) => void;
-  shellOutput: string;
-  setShellOutput: (val: string) => void;
-  handleShellCommand: () => Promise<void>;
 }
 
 const ShellView: React.FC<ShellViewProps> = ({
@@ -30,13 +27,23 @@ const ShellView: React.FC<ShellViewProps> = ({
   setSelectedDevice,
   fetchDevices,
   loading,
-  shellCmd,
-  setShellCmd,
-  shellOutput,
-  setShellOutput,
-  handleShellCommand,
 }) => {
   const { t } = useTranslation();
+  const [shellCmd, setShellCmd] = useState("");
+  const [shellOutput, setShellOutput] = useState("");
+
+  const handleShellCommand = async () => {
+    if (!shellCmd) return;
+    try {
+      const args = shellCmd.trim().split(/\s+/);
+      const res = await RunAdbCommand(args);
+      setShellOutput(res);
+    } catch (err) {
+      message.error(t("app.command_failed"));
+      setShellOutput(String(err));
+    }
+  };
+
   return (
     <div
       style={{
@@ -99,4 +106,5 @@ const ShellView: React.FC<ShellViewProps> = ({
 };
 
 export default ShellView;
+
 

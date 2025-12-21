@@ -1,5 +1,5 @@
-import React from "react";
-import { Button, Space, Tag, Card, Switch, Tooltip, Slider, Select } from "antd";
+import React, { useState, useEffect } from "react";
+import { Button, Space, Tag, Card, Switch, Tooltip, Slider, Select, message } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   StopOutlined,
@@ -12,8 +12,17 @@ import {
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import DeviceSelector from "./DeviceSelector";
+// @ts-ignore
 import { main } from "../../wailsjs/go/models";
-import { OpenPath } from "../../wailsjs/go/main/App";
+// @ts-ignore
+import { 
+  OpenPath, 
+  StartScrcpy, 
+  StopScrcpy, 
+  StartRecording, 
+  StopRecording, 
+  SelectRecordPath 
+} from "../../wailsjs/go/main/App";
 
 const { Option } = Select;
 
@@ -32,17 +41,8 @@ interface MirrorViewProps {
   loading: boolean;
   isMirroring: boolean;
   mirrorDuration: number;
-  handleStartScrcpy: (deviceId: string) => Promise<void>;
-  handleStopScrcpy: (deviceId: string) => Promise<void>;
-  scrcpyConfig: main.ScrcpyConfig;
-  setScrcpyConfig: (config: main.ScrcpyConfig) => void;
-  updateScrcpyConfig: (newConfig: main.ScrcpyConfig) => Promise<void>;
-  shouldRecord: boolean;
-  setShouldRecord: (val: boolean) => void;
   isRecording: boolean;
   recordDuration: number;
-  handleStartMidSessionRecord: () => Promise<void>;
-  handleStopMidSessionRecord: () => Promise<void>;
 }
 
 const MirrorView: React.FC<MirrorViewProps> = ({
@@ -53,19 +53,104 @@ const MirrorView: React.FC<MirrorViewProps> = ({
   loading,
   isMirroring,
   mirrorDuration,
-  handleStartScrcpy,
-  handleStopScrcpy,
-  scrcpyConfig,
-  setScrcpyConfig,
-  updateScrcpyConfig,
-  shouldRecord,
-  setShouldRecord,
   isRecording,
   recordDuration,
-  handleStartMidSessionRecord,
-  handleStopMidSessionRecord,
 }) => {
   const { t } = useTranslation();
+
+  // Scrcpy local state
+  const [scrcpyConfig, setScrcpyConfig] = useState<main.ScrcpyConfig>({
+    maxSize: 0,
+    bitRate: 8,
+    maxFps: 60,
+    stayAwake: true,
+    turnScreenOff: false,
+    noAudio: false,
+    alwaysOnTop: false,
+    showTouches: false,
+    fullscreen: false,
+    readOnly: false,
+    powerOffOnClose: false,
+    windowBorderless: false,
+    videoCodec: "h264",
+    audioCodec: "opus",
+    recordPath: "",
+  });
+  const [shouldRecord, setShouldRecord] = useState(false);
+
+  const handleStartScrcpy = async (deviceId: string, overrideConfig?: main.ScrcpyConfig) => {
+    try {
+      let currentConfig = { ...(overrideConfig || scrcpyConfig) };
+      await StartScrcpy(deviceId, currentConfig);
+
+      if (shouldRecord && !isRecording) {
+        const path = await SelectRecordPath();
+        if (path) {
+          const recordConfig = { ...currentConfig, recordPath: path };
+          await StartRecording(deviceId, recordConfig);
+        } else {
+          setShouldRecord(false);
+        }
+      }
+
+      if (!overrideConfig) {
+        message.success(
+          shouldRecord
+            ? t("app.scrcpy_started_record")
+            : t("app.scrcpy_started_mirror")
+        );
+      }
+    } catch (err) {
+      message.error(t("app.scrcpy_failed") + ": " + String(err));
+    }
+  };
+
+  const handleStopScrcpy = async (deviceId: string) => {
+    try {
+      if (isRecording) {
+        await StopRecording(deviceId);
+      }
+      await StopScrcpy(deviceId);
+      message.success(t("app.scrcpy_stopped"));
+    } catch (err) {
+      message.error(t("app.scrcpy_stop_failed") + ": " + String(err));
+    }
+  };
+
+  const handleStartMidSessionRecord = async () => {
+    if (!selectedDevice) return;
+    try {
+      const path = await SelectRecordPath();
+      if (!path) {
+        setShouldRecord(false);
+        return;
+      }
+      const config = { ...scrcpyConfig, recordPath: path };
+      await StartRecording(selectedDevice, config);
+      message.success(t("app.record_started"));
+    } catch (err) {
+      setShouldRecord(false);
+      message.error(t("app.record_failed") + ": " + String(err));
+    }
+  };
+
+  const handleStopMidSessionRecord = async () => {
+    if (!selectedDevice) return;
+    try {
+      setShouldRecord(false);
+      await StopRecording(selectedDevice);
+    } catch (err) {
+      message.error(t("app.record_stop_failed") + ": " + String(err));
+    }
+  };
+
+  const updateScrcpyConfig = async (newConfig: main.ScrcpyConfig) => {
+    setScrcpyConfig(newConfig);
+    if (isMirroring && selectedDevice) {
+      await handleStartScrcpy(selectedDevice, newConfig);
+    }
+  };
+
   return (
     <div
       style={{
@@ -602,4 +687,5 @@ const MirrorView: React.FC<MirrorViewProps> = ({
 };
 
 export default MirrorView;
+
 

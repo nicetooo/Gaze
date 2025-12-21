@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from "react";
-import { Button, Input, Select, Space, Checkbox } from "antd";
+import { Button, Input, Select, Space, Checkbox, message } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   PauseOutlined,
@@ -11,6 +11,8 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import DeviceSelector from "./DeviceSelector";
 // @ts-ignore
 import { main } from "../../wailsjs/go/models";
+// @ts-ignore
+import { ListPackages } from "../../wailsjs/go/main/App";
 
 const { Option } = Select;
 
@@ -26,17 +28,10 @@ interface LogcatViewProps {
   selectedDevice: string;
   setSelectedDevice: (device: string) => void;
   fetchDevices?: () => void;
-  packages: main.AppPackage[];
-  selectedPackage: string;
-  setSelectedPackage: (pkg: string) => void;
   isLogging: boolean;
-  toggleLogcat: () => void;
+  toggleLogcat: (pkg: string) => void;
   logs: string[];
   setLogs: (logs: string[]) => void;
-  logFilter: string;
-  setLogFilter: (filter: string) => void;
-  autoScroll: boolean;
-  setAutoScroll: (scroll: boolean) => void;
 }
 
 export default function LogcatView({
@@ -44,25 +39,37 @@ export default function LogcatView({
   selectedDevice,
   setSelectedDevice,
   fetchDevices,
-  packages,
-  selectedPackage,
-  setSelectedPackage,
   isLogging,
   toggleLogcat,
   logs,
   setLogs,
-  logFilter,
-  setLogFilter,
-  autoScroll,
-  setAutoScroll,
 }: LogcatViewProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
   const scrollingRef = useRef(false);
+
+  // Logcat local state
+  const [packages, setPackages] = useState<main.AppPackage[]>([]);
+  const [selectedPackage, setSelectedPackage] = useState<string>("");
+  const [logFilter, setLogFilter] = useState("");
+  const [autoScroll, setAutoScroll] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
   const [matchCase, setMatchCase] = useState(false);
   const [matchWholeWord, setMatchWholeWord] = useState(false);
   const [useRegex, setUseRegex] = useState(false);
+
+  useEffect(() => {
+    const fetchPackageList = async () => {
+      if (!selectedDevice) return;
+      try {
+        const res = await ListPackages(selectedDevice, "user");
+        setPackages(res || []);
+      } catch (err) {
+        console.error("Failed to fetch packages for logcat:", err);
+      }
+    };
+    fetchPackageList();
+  }, [selectedDevice]);
 
   const getLogLevel = (text: string) => {
     if (text.includes(" E/") || text.includes(" F/") || text.startsWith("E/"))
@@ -86,9 +93,7 @@ export default function LogcatView({
         pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       }
 
-      // 如果开启了全词匹配，对模式进行单词边界包裹
       if (matchWholeWord) {
-        // 在正则模式下，我们需要确保单词边界包裹住整个 OR 组
         pattern = `\\b(?:${pattern})\\b`;
       }
 
@@ -109,7 +114,7 @@ export default function LogcatView({
     }
   }, [logFilter, useRegex, matchCase, matchWholeWord]);
 
-  // 2. 强力过滤引擎（极致鲁棒版：改用 match 以避开 test 的状态坑）
+  // 2. 强力过滤引擎
   const filteredLogs = useMemo(() => {
     if (!logFilter && levelFilter.length === 0) return logs;
 
@@ -118,7 +123,6 @@ export default function LogcatView({
     const isRegexMode = useRegex && !invalid && !!regex;
     const simpleFlags = matchCase ? "" : "i";
 
-    // 预编译分词正则：这是解决 Activity|Window 失效的终极保险
     const orParts =
       isRegexMode && logFilter.includes("|")
         ? (logFilter
@@ -147,14 +151,10 @@ export default function LogcatView({
 
       // B. 文本/正则过滤
       if (logFilter && !invalid) {
-        // 剥离控制字符，但不使用 normalize 以保持原始编码
         const line = String(log).replace(/\u001b\[[0-9;]*m/g, "");
 
         if (isRegexMode) {
-          // 1. 优先尝试主正则，使用 match 以增强鲁棒性
           if (line.match(regex!)) return true;
-
-          // 2. 如果主正则由于某些引擎 Bug 没过，强制对分词进行并集校验
           if (orParts.length > 0) {
             for (const r of orParts) {
               if (line.match(r)) return true;
@@ -162,7 +162,6 @@ export default function LogcatView({
           }
           return false;
         } else {
-          // 非正则模式：普通包含
           return line.toLowerCase().includes(logFilter.toLowerCase());
         }
       }
@@ -188,13 +187,10 @@ export default function LogcatView({
   // 自动滚动逻辑
   useEffect(() => {
     if (autoScroll && filteredLogs.length > 0) {
-      // 这里的 scrollToIndex 会触发 handleScroll
-      // 我们需要通过 scrollingRef 来避免它误触发 setAutoScroll(false)
       scrollingRef.current = true;
       virtualizer.scrollToIndex(filteredLogs.length - 1, {
         align: "end",
       });
-      // 给予足够的时间让渲染和滚动完成
       const timer = setTimeout(() => {
         scrollingRef.current = false;
       }, 100);
@@ -203,20 +199,13 @@ export default function LogcatView({
   }, [filteredLogs.length, autoScroll, virtualizer]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    // 如果是程序触发的滚动，不处理逻辑
     if (scrollingRef.current) return;
-
     const target = e.currentTarget;
     const { scrollTop, scrollHeight, clientHeight } = target;
-
-    // 增加容错值到 50px，某些高清屏或缩放情况下会有像素偏移
     const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
-
-    // 只有当用户真的滚离底部时才关闭 autoScroll
     if (!isAtBottom && autoScroll) {
       setAutoScroll(false);
     }
-    // 当用户滚回底部时自动开启 autoScroll
     else if (isAtBottom && !autoScroll) {
       setAutoScroll(true);
     }
@@ -236,16 +225,11 @@ export default function LogcatView({
 
   const getLogColor = (level: string) => {
     switch (level) {
-      case "E":
-        return "#f14c4c";
-      case "W":
-        return "#cca700";
-      case "I":
-        return "#3794ff";
-      case "D":
-        return "#4ec9b0";
-      default:
-        return "#d4d4d4";
+      case "E": return "#f14c4c";
+      case "W": return "#cca700";
+      case "I": return "#3794ff";
+      case "D": return "#4ec9b0";
+      default: return "#d4d4d4";
     }
   };
 
@@ -263,7 +247,6 @@ export default function LogcatView({
       const parts: React.ReactNode[] = [];
       let lastIndex = 0;
       let match;
-
       const activeHighlighter = highlighter;
       activeHighlighter.lastIndex = 0;
 
@@ -271,7 +254,6 @@ export default function LogcatView({
         if (match.index > lastIndex) {
           parts.push(text.substring(lastIndex, match.index));
         }
-
         parts.push(
           <mark
             key={match.index}
@@ -285,7 +267,6 @@ export default function LogcatView({
             {match[0]}
           </mark>
         );
-
         lastIndex = activeHighlighter.lastIndex;
         if (match[0].length === 0) activeHighlighter.lastIndex++;
       }
@@ -353,7 +334,7 @@ export default function LogcatView({
             type={isLogging ? "primary" : "default"}
             danger={isLogging}
             icon={isLogging ? <PauseOutlined /> : <PlayCircleOutlined />}
-            onClick={toggleLogcat}
+            onClick={() => toggleLogcat(selectedPackage)}
           >
             {isLogging ? t("logcat.stop") : t("logcat.start")}
           </Button>
@@ -414,59 +395,35 @@ export default function LogcatView({
                     size="small"
                     type={matchCase ? "primary" : "default"}
                     style={{
-                      fontSize: "11px",
-                      padding: "0 4px",
-                      height: 20,
-                      minWidth: 24,
-                      borderRadius: 2,
-                      backgroundColor: matchCase ? "#1677ff" : "#f5f5f5",
-                      color: matchCase ? "#fff" : "#555",
-                      border: "none",
-                      fontWeight: "bold",
+                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                      backgroundColor: matchCase ? "#1677ff" : "#f5f5f5", color: matchCase ? "#fff" : "#555",
+                      border: "none", fontWeight: "bold",
                     }}
                     onClick={() => setMatchCase(!matchCase)}
                     title={t("logcat.match_case") || "Match Case (Aa)"}
-                  >
-                    Aa
-                  </Button>
+                  > Aa </Button>
                   <Button
                     size="small"
                     type={matchWholeWord ? "primary" : "default"}
                     style={{
-                      fontSize: "11px",
-                      padding: "0 4px",
-                      height: 20,
-                      minWidth: 24,
-                      borderRadius: 2,
-                      backgroundColor: matchWholeWord ? "#1677ff" : "#f5f5f5",
-                      color: matchWholeWord ? "#fff" : "#555",
-                      border: "none",
-                      fontWeight: "bold",
+                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                      backgroundColor: matchWholeWord ? "#1677ff" : "#f5f5f5", color: matchWholeWord ? "#fff" : "#555",
+                      border: "none", fontWeight: "bold",
                     }}
                     onClick={() => setMatchWholeWord(!matchWholeWord)}
                     title={t("logcat.match_whole_word") || "Match Whole Word (W)"}
-                  >
-                    W
-                  </Button>
+                  > W </Button>
                   <Button
                     size="small"
                     type={useRegex ? "primary" : "default"}
                     style={{
-                      fontSize: "11px",
-                      padding: "0 4px",
-                      height: 20,
-                      minWidth: 24,
-                      borderRadius: 2,
-                      backgroundColor: useRegex ? "#1677ff" : "#f5f5f5",
-                      color: useRegex ? "#fff" : "#555",
-                      border: "none",
-                      fontWeight: "bold",
+                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                      backgroundColor: useRegex ? "#1677ff" : "#f5f5f5", color: useRegex ? "#fff" : "#555",
+                      border: "none", fontWeight: "bold",
                     }}
                     onClick={() => setUseRegex(!useRegex)}
                     title={t("logcat.use_regex") || "Use Regular Expression (.*)"}
-                  >
-                    .*
-                  </Button>
+                  > .* </Button>
                 </Space>
               </div>
             }
@@ -474,17 +431,10 @@ export default function LogcatView({
           {logFilter && (
             <div
               style={{
-                position: "absolute",
-                top: "100%",
-                left: 0,
-                fontSize: "10px",
-                color: filterInfo.invalid ? "#f5222d" : "#888",
-                marginTop: 2,
-                fontFamily: "monospace",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                width: "100%",
+                position: "absolute", top: "100%", left: 0, fontSize: "10px",
+                color: filterInfo.invalid ? "#f5222d" : "#888", marginTop: 2,
+                fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden",
+                textOverflow: "ellipsis", width: "100%",
               }}
             >
               {filterInfo.invalid
@@ -495,26 +445,11 @@ export default function LogcatView({
         </div>
         <Checkbox.Group
           options={[
-            {
-              label: <span style={{ color: getLogColor("E") }}>{t("logcat.level.error")}</span>,
-              value: "E",
-            },
-            {
-              label: <span style={{ color: getLogColor("W") }}>{t("logcat.level.warn")}</span>,
-              value: "W",
-            },
-            {
-              label: <span style={{ color: getLogColor("I") }}>{t("logcat.level.info")}</span>,
-              value: "I",
-            },
-            {
-              label: <span style={{ color: getLogColor("D") }}>{t("logcat.level.debug")}</span>,
-              value: "D",
-            },
-            {
-              label: <span style={{ color: getLogColor("V") }}>{t("logcat.level.verbose")}</span>,
-              value: "V",
-            },
+            { label: <span style={{ color: getLogColor("E") }}>{t("logcat.level.error")}</span>, value: "E" },
+            { label: <span style={{ color: getLogColor("W") }}>{t("logcat.level.warn")}</span>, value: "W" },
+            { label: <span style={{ color: getLogColor("I") }}>{t("logcat.level.info")}</span>, value: "I" },
+            { label: <span style={{ color: getLogColor("D") }}>{t("logcat.level.debug")}</span>, value: "D" },
+            { label: <span style={{ color: getLogColor("V") }}>{t("logcat.level.verbose")}</span>, value: "V" },
           ]}
           value={levelFilter}
           onChange={(vals) => setLevelFilter(vals as string[])}
@@ -523,51 +458,28 @@ export default function LogcatView({
 
       <div
         style={{
-          flex: 1,
-          position: "relative",
-          minHeight: 0,
-          backgroundColor: "#1e1e1e",
-          borderRadius: "4px",
-          overflow: "hidden",
-          marginTop: 12,
+          flex: 1, position: "relative", minHeight: 0, backgroundColor: "#1e1e1e",
+          borderRadius: "4px", overflow: "hidden", marginTop: 12,
         }}
       >
         <div
           ref={parentRef}
           onScroll={handleScroll}
           className="selectable"
-          style={{
-            height: "100%",
-            overflow: "auto",
-            userSelect: "text",
-          }}
+          style={{ height: "100%", overflow: "auto", userSelect: "text" }}
         >
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              width: "100%",
-              position: "relative",
-            }}
-          >
+          <div style={{ height: `${virtualizer.getTotalSize()}px`, width: "100%", position: "relative" }}>
             {virtualizer.getVirtualItems().map((virtualItem) => (
               <div
                 key={virtualItem.index}
                 ref={virtualizer.measureElement}
                 data-index={virtualItem.index}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualItem.start}px)`,
-                  padding: "2px 12px",
-                  borderBottom: "1px solid #2d2d2d",
-                  color: "#d4d4d4",
+                  position: "absolute", top: 0, left: 0, width: "100%",
+                  transform: `translateY(${virtualItem.start}px)`, padding: "2px 12px",
+                  borderBottom: "1px solid #2d2d2d", color: "#d4d4d4",
                   fontFamily: '"JetBrains Mono", "Fira Code", monospace',
-                  fontSize: "12px",
-                  lineHeight: "1.5",
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-all",
+                  fontSize: "12px", lineHeight: "1.5", whiteSpace: "pre-wrap", wordBreak: "break-all",
                 }}
               >
                 {renderLogLine(filteredLogs[virtualItem.index])}
@@ -584,11 +496,8 @@ export default function LogcatView({
             size="large"
             onClick={scrollToBottom}
             style={{
-              position: "absolute",
-              bottom: 24,
-              right: 24,
-              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)",
-              zIndex: 100,
+              position: "absolute", bottom: 24, right: 24,
+              boxShadow: "0 4px 12px rgba(0, 0, 0, 0.4)", zIndex: 100,
             }}
           />
         )}
@@ -596,3 +505,4 @@ export default function LogcatView({
     </div>
   );
 }
+

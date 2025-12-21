@@ -5,18 +5,15 @@ import {
   Button,
   message,
   notification,
-  Modal,
   Dropdown,
 } from "antd";
 import { useTranslation } from "react-i18next";
 import LogcatView from "./components/LogcatView";
-import DeviceSelector from "./components/DeviceSelector";
 import DevicesView from "./components/DevicesView";
 import AppsView from "./components/AppsView";
-import FilesView, { FocusInput } from "./components/FilesView";
+import FilesView from "./components/FilesView";
 import ShellView from "./components/ShellView";
 import MirrorView from "./components/MirrorView";
-import AppInfoModal from "./components/AppInfoModal";
 import DeviceInfoModal from "./components/DeviceInfoModal";
 import AboutModal from "./components/AboutModal";
 import WirelessConnectModal from "./components/WirelessConnectModal";
@@ -31,7 +28,6 @@ import {
   BugOutlined,
   InfoCircleOutlined,
   TranslationOutlined,
-  WifiOutlined,
 } from "@ant-design/icons";
 import "./App.css";
 // @ts-ignore
@@ -39,35 +35,8 @@ const BrowserOpenURL = (window as any).runtime.BrowserOpenURL;
 // @ts-ignore
 import {
   GetDevices,
-  RunAdbCommand,
-  ListPackages,
-  GetAppInfo,
-  UninstallApp,
-  ClearAppData,
-  ForceStopApp,
-  StartApp,
-  EnableApp,
-  DisableApp,
-  StartActivity,
-  StartLogcat,
   StopLogcat,
-  StartScrcpy,
-  StopScrcpy,
-  StartRecording,
-  StopRecording,
   OpenPath,
-  SelectRecordPath,
-  InstallAPK,
-  ExportAPK,
-  ListFiles,
-  DeleteFile,
-  MoveFile,
-  CopyFile,
-  Mkdir,
-  OpenFileOnHost,
-  CancelOpenFile,
-  DownloadFile,
-  GetThumbnail,
   GetDeviceInfo,
   AdbPair,
   AdbConnect,
@@ -76,6 +45,7 @@ import {
   GetHistoryDevices,
   RemoveHistoryDevice,
   OpenSettings,
+  StartLogcat,
 } from "../wailsjs/go/main/App";
 // @ts-ignore
 import { main } from "../wailsjs/go/models";
@@ -118,75 +88,21 @@ function App() {
   // Wireless Connect state
   const [wirelessConnectVisible, setWirelessConnectVisible] = useState(false);
 
-  // Shell state
-  const [shellOutput, setShellOutput] = useState("");
-  const [shellCmd, setShellCmd] = useState("");
-
-  // Apps state
+  // Global state for views that need background synchronization
   const [selectedDevice, setSelectedDevice] = useState<string>("");
-  const [packages, setPackages] = useState<main.AppPackage[]>([]);
-  const [appsLoading, setAppsLoading] = useState(false);
-  const [packageFilter, setPackageFilter] = useState("");
-  const [typeFilter, setTypeFilter] = useState("user"); // all, system, user - default to user
-
-  // Files state
-  const [currentPath, setCurrentPath] = useState("/");
-  const [fileList, setFileList] = useState<any[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [clipboard, setClipboard] = useState<{
-    path: string;
-    type: "copy" | "cut";
-  } | null>(null);
-  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
-
-  // Logcat state
   const [logs, setLogs] = useState<string[]>([]);
   const [isLogging, setIsLogging] = useState(false);
-  const [logFilter, setLogFilter] = useState("");
-  const [selectedPackage, setSelectedPackage] = useState<string>("");
-  const [autoScroll, setAutoScroll] = useState(true);
-
-  // Scrcpy state
-  const [scrcpyConfig, setScrcpyConfig] = useState<main.ScrcpyConfig>({
-    maxSize: 0,
-    bitRate: 8,
-    maxFps: 60,
-    stayAwake: true,
-    turnScreenOff: false,
-    noAudio: false,
-    alwaysOnTop: false,
-    showTouches: false,
-    fullscreen: false,
-    readOnly: false,
-    powerOffOnClose: false,
-    windowBorderless: false,
-    videoCodec: "h264",
-    audioCodec: "opus",
-    recordPath: "",
-  });
-
-  // Mirror tracking state
   const [isMirroring, setIsMirroring] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [mirrorStartTime, setMirrorStartTime] = useState<number | null>(null);
   const [recordStartTime, setRecordStartTime] = useState<number | null>(null);
   const [mirrorDuration, setMirrorDuration] = useState(0);
   const [recordDuration, setRecordDuration] = useState(0);
-  const [shouldRecord, setShouldRecord] = useState(false);
 
-  // Refs for event listeners to avoid stale closures
-  const isRecordingRef = useRef(false);
-  const recordPathRef = useRef("");
+  // Refs for event listeners
   const loadingRef = useRef(false);
   const isFetchingRef = useRef(false);
-
-  useEffect(() => {
-    isRecordingRef.current = isRecording;
-  }, [isRecording]);
-
-  useEffect(() => {
-    recordPathRef.current = scrcpyConfig.recordPath;
-  }, [scrcpyConfig.recordPath]);
+  const recordPathRef = useRef("");
 
   useEffect(() => {
     loadingRef.current = loading;
@@ -196,10 +112,7 @@ function App() {
     if (isFetchingRef.current) return;
     isFetchingRef.current = true;
     
-    // If silent is passed from an event (like onClick), it might be an object
-    // Ensure we treat it as a boolean
     const isSilent = silent === true;
-
     if (!isSilent) {
       setLoading(true);
     }
@@ -207,7 +120,6 @@ function App() {
       const res = await GetDevices();
       setDevices(res || []);
       
-      // Try to load history, but don't fail if it errors
       try {
         const history = await GetHistoryDevices();
         setHistoryDevices(history || []);
@@ -217,20 +129,11 @@ function App() {
       }
 
       if (res && res.length > 0) {
-        const deviceId = res[0].id;
         if (!selectedDevice) {
-          setSelectedDevice(deviceId);
-        }
-        // Automatically fetch user packages when device is connected (only for non-silent refresh)
-        if (deviceId && !isSilent) {
-          // Use setTimeout to avoid blocking the UI update
-          setTimeout(() => {
-            fetchPackages("user", deviceId);
-          }, 100);
+          setSelectedDevice(res[0].id);
         }
       }
     } catch (err) {
-      // Only show error message for non-silent refreshes
       if (!isSilent) {
         message.error(t("app.fetch_devices_failed") + ": " + String(err));
       }
@@ -273,8 +176,6 @@ function App() {
     try {
       const res = await AdbPair(address, code);
       if (res.includes("Successfully paired")) {
-        // Pairing success often means we can now connect
-        // But the user might need to enter the connect port (which is different from pair port)
         message.success(t("app.pairing_success"));
         fetchDevices();
       } else {
@@ -309,81 +210,96 @@ function App() {
     }
   };
 
-  const selectedDeviceRef = useRef(selectedDevice);
-  const lastDropTime = useRef(0);
+  const handleAdbDisconnect = async (deviceId: string) => {
+    try {
+      await AdbDisconnect(deviceId);
+      message.success(t("app.disconnect_success"));
+      fetchDevices();
+    } catch (err) {
+      message.error(t("app.disconnect_failed") + ": " + String(err));
+    }
+  };
 
-  useEffect(() => {
-    selectedDeviceRef.current = selectedDevice;
-  }, [selectedDevice]);
+  const handleRemoveHistoryDevice = async (deviceId: string) => {
+    try {
+      await RemoveHistoryDevice(deviceId);
+      message.success(t("app.remove_success"));
+      fetchDevices();
+    } catch (err) {
+      message.error(t("app.remove_failed") + ": " + String(err));
+    }
+  };
+
+  const handleOpenSettings = async (deviceId: string, action: string = "", data: string = "") => {
+    const hide = message.loading(t("app.opening_settings"), 0);
+    try {
+      await OpenSettings(deviceId, action, data);
+      message.success(t("app.open_settings_success"));
+    } catch (err) {
+      message.error(t("app.open_settings_failed") + ": " + String(err));
+    } finally {
+      hide();
+    }
+  };
+
+  const toggleLogcat = async (pkg: string) => {
+    if (!selectedDevice) {
+      message.error(t("app.no_device_selected"));
+      return;
+    }
+    if (isLogging) {
+      await StopLogcat();
+      setIsLogging(false);
+      EventsOff("logcat-line");
+    } else {
+      setLogs([]);
+      setIsLogging(true);
+      EventsOn("logcat-line", (line: string) => {
+        setLogs((prev) => {
+          const next = [...prev, line];
+          return next.slice(-1000); // Keep last 1000 lines
+        });
+      });
+      try {
+        await StartLogcat(selectedDevice, pkg);
+      } catch (err) {
+        message.error(t("app.logcat_failed") + ": " + String(err));
+        setIsLogging(false);
+        EventsOff("logcat-line");
+      }
+    }
+  };
 
   useEffect(() => {
     fetchDevices();
 
-    const handleFileDrop = (...args: any[]) => {
-      // Wails v2 can fire with (x, y, paths) OR just (paths) depending on platform/version
-      let actualPaths: string[] = [];
-      if (args.length === 1 && Array.isArray(args[0])) {
-        actualPaths = args[0];
-      } else if (args.length >= 3 && Array.isArray(args[2])) {
-        actualPaths = args[2];
-      }
-
-      if (actualPaths && actualPaths.length > 0) {
-        const now = Date.now();
-        if (now - lastDropTime.current < 500) return;
-        lastDropTime.current = now;
-
-        const apkFiles = actualPaths.filter(
-          (p) => typeof p === "string" && p.toLowerCase().endsWith(".apk")
-        );
-        if (apkFiles.length > 0) {
-          const currentDevice = selectedDeviceRef.current;
-          if (!currentDevice) {
-            message.error(t("app.select_device"));
-            return;
-          }
-          handleInstallAPKs(currentDevice, apkFiles);
-        }
-      }
-    };
-
-    // Use only ONE listener to start with, or keep both with the debounce
-    EventsOn("wails:file-drop", handleFileDrop);
-
     EventsOn("scrcpy-started", (data: any) => {
       setIsMirroring(true);
-      // Only set start time if it's not already set (prevents reset during config updates)
       setMirrorStartTime((prev) => prev || data.startTime);
       if (data.recording) {
         setIsRecording(true);
-        setShouldRecord(true);
         setRecordStartTime((prev) => prev || data.startTime);
-        setScrcpyConfig((prev) => ({ ...prev, recordPath: data.recordPath }));
+        recordPathRef.current = data.recordPath;
       }
     });
 
-    EventsOn("scrcpy-stopped", (deviceId: string) => {
+    EventsOn("scrcpy-stopped", () => {
       setIsMirroring(false);
       setMirrorStartTime(null);
-      // NOTE: We no longer clean up recording here.
-      // Recording has its own dedicated "scrcpy-record-stopped" event.
     });
 
     EventsOn("scrcpy-record-started", (data: any) => {
       setIsRecording(true);
-      setShouldRecord(true);
       setRecordStartTime(data.startTime);
       setRecordDuration(0);
-      setScrcpyConfig((prev) => ({ ...prev, recordPath: data.recordPath }));
+      recordPathRef.current = data.recordPath;
     });
 
-    EventsOn("scrcpy-record-stopped", (deviceId: string) => {
+    EventsOn("scrcpy-record-stopped", () => {
       const path = recordPathRef.current;
       setIsRecording(false);
-      setShouldRecord(false);
       setRecordStartTime(null);
 
-      // Show notification with action to open folder
       notification.success({
         message: t("app.recording_saved"),
         description: t("app.recording_saved_desc"),
@@ -406,47 +322,33 @@ function App() {
       });
     });
 
-    return () => {
-      EventsOff("wails:file-drop");
-      EventsOff("scrcpy-started");
-      EventsOff("scrcpy-stopped");
-      EventsOff("scrcpy-record-started");
-      EventsOff("scrcpy-record-stopped");
-      StopLogcat();
-      EventsOff("tray:navigate");
-    };
-  }, []);
-
-  // Listen for tray navigation events from backend
-  useEffect(() => {
     EventsOn("tray:navigate", (data: any) => {
-      console.log("Tray navigation:", data);
       if (data.deviceId) {
         setSelectedDevice(data.deviceId);
       }
       if (data.view) {
-        switch (data.view) {
-          case "devices":
-            setSelectedKey("1");
-            break;
-          case "apps":
-            setSelectedKey("2");
-            break;
-          case "shell":
-            setSelectedKey("3");
-            break;
-          case "logcat":
-            setSelectedKey("4");
-            break;
-          case "mirror":
-            setSelectedKey("5");
-            break;
-          case "files":
-            setSelectedKey("6");
-            break;
+        const viewMap: Record<string, string> = {
+          "devices": "1",
+          "apps": "2",
+          "shell": "3",
+          "logcat": "4",
+          "mirror": "5",
+          "files": "6"
+        };
+        if (viewMap[data.view]) {
+          setSelectedKey(viewMap[data.view]);
         }
       }
     });
+
+    return () => {
+      EventsOff("scrcpy-started");
+      EventsOff("scrcpy-stopped");
+      EventsOff("scrcpy-record-started");
+      EventsOff("scrcpy-record-stopped");
+      EventsOff("tray:navigate");
+      StopLogcat();
+    };
   }, []);
 
   useEffect(() => {
@@ -461,30 +363,10 @@ function App() {
         }
       }, 1000);
     }
-
     if (!isMirroring) setMirrorDuration(0);
     if (!isRecording) setRecordDuration(0);
-
     return () => clearInterval(timer);
   }, [isMirroring, isRecording, mirrorStartTime, recordStartTime]);
-
-  useEffect(() => {
-    // When switching to devices tab, auto refresh
-    if (selectedKey === "1") {
-      fetchDevices(true);
-    }
-    // When switching to apps, logcat or files tab, if data is not loaded yet, fetch it
-    if (
-      (selectedKey === "2" || selectedKey === "4" || selectedKey === "6") &&
-      selectedDevice
-    ) {
-      if (selectedKey === "2" && packages.length === 0) {
-        fetchPackages("user", selectedDevice);
-      } else if (selectedKey === "6" && fileList.length === 0) {
-        fetchFiles(currentPath);
-      }
-    }
-  }, [selectedKey, selectedDevice]);
 
   // Poll devices list sequentially after each fetch completes
   useEffect(() => {
@@ -516,495 +398,6 @@ function App() {
     };
   }, [selectedKey]);
 
-  const fetchPackages = async (packageType?: string, deviceId?: string) => {
-    const targetDevice = deviceId || selectedDevice;
-    if (!targetDevice) return;
-    const typeToFetch = packageType || typeFilter;
-    setAppsLoading(true);
-    try {
-      const res = await ListPackages(targetDevice, typeToFetch);
-      if (typeToFetch === "all") {
-        // Replace all packages when fetching all
-        setPackages(res || []);
-      } else if (typeToFetch === "system") {
-        // Merge system packages with existing user packages
-        setPackages((prev) => {
-          const userPackages = prev.filter((p) => p.type === "user");
-          return [...userPackages, ...(res || [])];
-        });
-      } else {
-        // user - replace all with user packages only
-        setPackages(res || []);
-      }
-    } catch (err) {
-      message.error(t("app.list_packages_failed") + ": " + String(err));
-    } finally {
-      setAppsLoading(false);
-    }
-  };
-
-
-  const fetchFiles = async (path: string) => {
-    if (!selectedDevice) return;
-    setFilesLoading(true);
-    try {
-      const res = await ListFiles(selectedDevice, path);
-      setFileList(res || []);
-      setCurrentPath(path);
-    } catch (err) {
-      message.error(t("app.list_files_failed") + ": " + String(err));
-    } finally {
-      setFilesLoading(false);
-    }
-  };
-
-  const handleFileAction = async (action: string, file: any) => {
-    if (!selectedDevice) return;
-    try {
-      switch (action) {
-        case "open":
-          const openKey = `open_${file.path}`;
-          message.loading({
-            content: (
-              <span>
-                {t("app.launching", { name: file.name })}
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={async () => {
-                    await CancelOpenFile(file.path);
-                    message.destroy(openKey);
-                  }}
-                >
-                  {t("common.cancel")}
-                </Button>
-              </span>
-            ),
-            key: openKey,
-            duration: 0,
-          });
-          try {
-            await OpenFileOnHost(selectedDevice, file.path);
-            message.destroy(openKey);
-          } catch (err) {
-            if (String(err).includes("cancelled")) {
-              message.info(t("app.open_cancelled"), 2);
-            } else {
-              message.error(t("app.open_failed") + ": " + String(err), 3);
-            }
-            message.destroy(openKey);
-          }
-          break;
-        case "download":
-          const downloadKey = `download_${file.path}`;
-          try {
-            const savePath = await DownloadFile(selectedDevice, file.path);
-            if (savePath) {
-              message.success(t("app.export_success", { path: savePath }));
-            }
-          } catch (err) {
-            message.error(t("app.export_failed") + ": " + String(err));
-          }
-          break;
-        case "delete":
-          await DeleteFile(selectedDevice, file.path);
-          message.success(t("app.delete_success", { name: file.name }));
-          fetchFiles(currentPath);
-          break;
-        case "copy":
-          setClipboard({ path: file.path, type: "copy" });
-          message.info(t("app.copy_success", { name: file.name }));
-          break;
-        case "cut":
-          setClipboard({ path: file.path, type: "cut" });
-          message.info(t("app.cut_success", { name: file.name }));
-          break;
-        case "paste":
-          if (!clipboard) return;
-          const dest =
-            currentPath +
-            (currentPath.endsWith("/") ? "" : "/") +
-            clipboard.path.split("/").pop();
-          if (clipboard.type === "copy") {
-            await CopyFile(selectedDevice, clipboard.path, dest);
-            message.success(
-              t("app.paste_success", { name: clipboard.path.split("/").pop() })
-            );
-          } else {
-            await MoveFile(selectedDevice, clipboard.path, dest);
-            message.success(
-              t("app.move_success", { name: clipboard.path.split("/").pop() })
-            );
-            setClipboard(null);
-          }
-          fetchFiles(currentPath);
-          break;
-        case "rename":
-          let newName = file.name;
-          Modal.confirm({
-            title: t("common.rename"),
-            okText: t("common.ok"),
-            cancelText: t("common.cancel"),
-            autoFocusButton: null,
-            content: (
-              <FocusInput
-                defaultValue={file.name}
-                onChange={(e: any) => (newName = e.target.value)}
-                placeholder={t("common.enter_new_name")}
-                selectAll={true}
-              />
-            ),
-            onOk: async () => {
-              if (newName && newName !== file.name) {
-                try {
-                  const parentPath = currentPath.endsWith("/")
-                    ? currentPath
-                    : currentPath + "/";
-                  const newPath = parentPath + newName;
-                  await MoveFile(selectedDevice, file.path, newPath);
-                  message.success(t("app.rename_success", { name: newName }));
-                  fetchFiles(currentPath);
-                } catch (err) {
-                  message.error(t("app.rename_failed") + ": " + String(err));
-                  throw err; // Keep modal open
-                }
-              }
-            },
-          });
-          break;
-        case "mkdir":
-          let folderName = "";
-          Modal.confirm({
-            title: t("common.new_directory"),
-            okText: t("common.ok"),
-            cancelText: t("common.cancel"),
-            autoFocusButton: null,
-            content: (
-              <FocusInput
-                onChange={(e: any) => (folderName = e.target.value)}
-                placeholder={t("common.folder_name")}
-              />
-            ),
-            onOk: async () => {
-              if (folderName) {
-                try {
-                  const parentPath = currentPath.endsWith("/")
-                    ? currentPath
-                    : currentPath + "/";
-                  const newPath = parentPath + folderName;
-                  await Mkdir(selectedDevice, newPath);
-                  message.success(t("app.mkdir_success", { name: folderName }));
-                  fetchFiles(currentPath);
-                } catch (err) {
-                  message.error(t("app.mkdir_failed") + ": " + String(err));
-                  throw err; // Keep modal open
-                }
-              }
-            },
-          });
-          break;
-      }
-    } catch (err) {
-      message.error(t("app.command_failed") + ": " + String(err));
-    }
-  };
-
-  const handleExploreAppFiles = (packageName: string) => {
-    const path = `/sdcard/Android/data/${packageName}`;
-    setCurrentPath(path);
-    setSelectedKey("6"); // Switch to Files tab
-    fetchFiles(path);
-  };
-
-  const handleUninstall = async (packageName: string) => {
-    console.log(`Uninstalling ${packageName} from device ${selectedDevice}`);
-    try {
-      await UninstallApp(selectedDevice, packageName);
-      message.success(t("app.uninstall_success", { name: packageName }));
-      fetchPackages(typeFilter, selectedDevice);
-    } catch (err) {
-      console.error("Uninstall error:", err);
-      message.error(t("app.uninstall_failed") + ": " + String(err));
-    }
-  };
-
-  const handleClearData = async (packageName: string) => {
-    try {
-      await ClearAppData(selectedDevice, packageName);
-      message.success(t("app.clear_data_success", { name: packageName }));
-    } catch (err) {
-      message.error(t("app.clear_data_failed") + ": " + String(err));
-    }
-  };
-
-  const handleForceStop = async (packageName: string) => {
-    try {
-      await ForceStopApp(selectedDevice, packageName);
-      message.success(t("app.force_stop_success", { name: packageName }));
-    } catch (err) {
-      message.error(t("app.force_stop_failed") + ": " + String(err));
-    }
-  };
-
-  const handleStartApp = async (packageName: string) => {
-    const hide = message.loading(t("app.launching", { name: packageName }), 0);
-    try {
-      // Force stop first as requested
-      await ForceStopApp(selectedDevice, packageName);
-      // Then start
-      await StartApp(selectedDevice, packageName);
-      message.success(t("app.start_app_success", { name: packageName }));
-    } catch (err) {
-      message.error(t("app.start_app_failed") + ": " + String(err));
-    } finally {
-      hide();
-    }
-  };
-
-
-  const handleOpenSettings = async (deviceId: string, action: string = "", data: string = "") => {
-    const hide = message.loading(t("app.opening_settings"), 0);
-    try {
-      await OpenSettings(deviceId, action, data);
-      message.success(t("app.open_settings_success"));
-    } catch (err) {
-      message.error(t("app.open_settings_failed") + ": " + String(err));
-    } finally {
-      hide();
-    }
-  };
-
-  const handleToggleState = async (
-    packageName: string,
-    currentState: string
-  ) => {
-    try {
-      if (currentState === "enabled") {
-        await DisableApp(selectedDevice, packageName);
-        message.success(t("app.disabled_success", { name: packageName }));
-      } else {
-        await EnableApp(selectedDevice, packageName);
-        message.success(t("app.enabled_success", { name: packageName }));
-      }
-      fetchPackages(typeFilter, selectedDevice);
-    } catch (err) {
-      message.error(t("app.change_state_failed") + ": " + String(err));
-    }
-  };
-
-  const handleShellCommand = async () => {
-    if (!shellCmd) return;
-    try {
-      const args = shellCmd.trim().split(/\s+/);
-      const res = await RunAdbCommand(args);
-      setShellOutput(res);
-    } catch (err) {
-      message.error(t("app.command_failed"));
-      setShellOutput(String(err));
-    }
-  };
-
-  const startLogging = async (device: string, pkg: string) => {
-    setLogs([]);
-    try {
-      await StartLogcat(device, pkg);
-      setIsLogging(true);
-      EventsOn("logcat-data", (data: string) => {
-        setLogs((prev) => {
-          const next = [...prev, data];
-          if (next.length > 50000) {
-            return next.slice(next.length - 50000);
-          }
-          return next;
-        });
-      });
-    } catch (err) {
-      message.error(t("app.start_logcat_failed") + ": " + String(err));
-    }
-  };
-
-  const toggleLogcat = async () => {
-    if (isLogging) {
-      await StopLogcat();
-      setIsLogging(false);
-      EventsOff("logcat-data");
-    } else {
-      if (!selectedDevice) {
-        message.error(t("app.no_device_selected"));
-        return;
-      }
-      startLogging(selectedDevice, selectedPackage);
-    }
-  };
-
-  const handleAppLogcat = async (pkgName: string) => {
-    if (isLogging) {
-      await StopLogcat();
-      EventsOff("logcat-data");
-      setIsLogging(false);
-    }
-    setSelectedPackage(pkgName);
-    setSelectedKey("4");
-    startLogging(selectedDevice, pkgName);
-  };
-
-  const handleStartScrcpy = async (
-    deviceId: string,
-    overrideConfig?: main.ScrcpyConfig
-  ) => {
-    try {
-      let currentConfig = { ...(overrideConfig || scrcpyConfig) };
-
-      await StartScrcpy(deviceId, currentConfig);
-
-      // Separate recording launch if enabled
-      if (shouldRecord && !isRecordingRef.current) {
-        const path = await SelectRecordPath();
-        if (path) {
-          const recordConfig = { ...currentConfig, recordPath: path };
-          await StartRecording(deviceId, recordConfig);
-        } else {
-          setShouldRecord(false);
-        }
-      }
-
-      if (!overrideConfig) {
-        message.success(
-          shouldRecord
-            ? t("app.scrcpy_started_record")
-            : t("app.scrcpy_started_mirror")
-        );
-      }
-    } catch (err) {
-      message.error(t("app.scrcpy_failed") + ": " + String(err));
-    }
-  };
-
-  const handleStopScrcpy = async (deviceId: string) => {
-    try {
-      if (isRecordingRef.current) {
-        await StopRecording(deviceId);
-      }
-      await StopScrcpy(deviceId);
-      message.success(t("app.scrcpy_stopped"));
-    } catch (err) {
-      message.error(t("app.scrcpy_stop_failed") + ": " + String(err));
-    }
-  };
-
-  const handleStartMidSessionRecord = async () => {
-    if (!selectedDevice) return;
-    try {
-      const path = await SelectRecordPath();
-      if (!path) {
-        setShouldRecord(false);
-        return;
-      }
-
-      const config = { ...scrcpyConfig, recordPath: path };
-      await StartRecording(selectedDevice, config);
-      // setShouldRecord(true); // Should already be true from switch
-      setIsRecording(true);
-      message.success(t("app.record_started"));
-    } catch (err) {
-      setIsRecording(false);
-      setShouldRecord(false);
-      message.error(t("app.record_failed") + ": " + String(err));
-    }
-  };
-
-  const handleStopMidSessionRecord = async () => {
-    if (!selectedDevice) return;
-    try {
-      setIsRecording(false);
-      setShouldRecord(false);
-      await StopRecording(selectedDevice);
-    } catch (err) {
-      message.error(t("app.record_stop_failed") + ": " + String(err));
-    }
-  };
-
-  const updateScrcpyConfig = async (newConfig: main.ScrcpyConfig) => {
-    setScrcpyConfig(newConfig);
-    if (isMirroring && selectedDevice) {
-      // Use setTimeout to allow state to propagate or just pass config directly
-      await handleStartScrcpy(selectedDevice, newConfig);
-    }
-  };
-
-  const handleInstallAPKs = async (deviceId: string, paths: string[]) => {
-    if (!deviceId) {
-      message.error(t("app.select_device"));
-      return;
-    }
-
-    // Immediately switch to Apps tab and ensure correct device is selected
-    setSelectedKey("2");
-    if (selectedDevice !== deviceId) {
-      setSelectedDevice(deviceId);
-    }
-
-    for (const path of paths) {
-      const fileName = path.split(/[\\/]/).pop();
-      const hideMessage = message.loading(
-        t("app.installing", { name: fileName }),
-        0
-      );
-      try {
-        await InstallAPK(deviceId, path);
-        message.success(t("app.install_success", { name: fileName }));
-
-        // Refresh the list if we are on the correct device
-        if (selectedDevice === deviceId) {
-          fetchPackages(typeFilter, selectedDevice);
-        }
-      } catch (err) {
-        message.error(
-          t("app.install_failed", { name: fileName }) + ": " + String(err)
-        );
-      } finally {
-        hideMessage();
-      }
-    }
-  };
-
-  const handleExportAPK = async (packageName: string) => {
-    const hideMessage = message.loading(
-      t("app.exporting", { name: packageName }),
-      0
-    );
-    try {
-      const res = await ExportAPK(selectedDevice, packageName);
-      if (res) {
-        message.success(t("app.export_success", { path: res }));
-      }
-    } catch (err) {
-      message.error(t("app.export_failed") + ": " + String(err));
-    } finally {
-      hideMessage();
-    }
-  };
-
-  const handleAdbDisconnect = async (address: string) => {
-    try {
-      await AdbDisconnect(address);
-      message.success(t("app.disconnect_success"));
-      fetchDevices();
-    } catch (err) {
-      message.error(t("app.disconnect_failed") + ": " + String(err));
-    }
-  };
-
-  const handleRemoveHistoryDevice = async (deviceId: string) => {
-    try {
-      await RemoveHistoryDevice(deviceId);
-      message.success(t("app.remove_success"));
-      fetchDevices();
-    } catch (err) {
-      message.error(t("app.remove_failed") + ": " + String(err));
-    }
-  };
-
   const renderContent = () => {
     switch (selectedKey) {
       case "1":
@@ -1017,14 +410,15 @@ function App() {
             busyDevices={busyDevices}
             setSelectedKey={setSelectedKey}
             setSelectedDevice={setSelectedDevice}
-            setShellCmd={setShellCmd}
-            fetchFiles={fetchFiles}
-            handleStartScrcpy={handleStartScrcpy}
+            handleStartScrcpy={async (deviceId) => {
+              setSelectedDevice(deviceId);
+              setSelectedKey("5");
+            }}
             handleFetchDeviceInfo={handleFetchDeviceInfo}
             onShowWirelessConnect={() => setWirelessConnectVisible(true)}
             handleSwitchToWireless={handleSwitchToWireless}
-            handleAdbDisconnect={handleAdbDisconnect}
             handleAdbConnect={handleAdbConnect}
+            handleAdbDisconnect={handleAdbDisconnect}
             handleRemoveHistoryDevice={handleRemoveHistoryDevice}
             handleOpenSettings={handleOpenSettings}
           />
@@ -1037,15 +431,6 @@ function App() {
             setSelectedDevice={setSelectedDevice}
             fetchDevices={fetchDevices}
             loading={loading}
-            currentPath={currentPath}
-            setCurrentPath={setCurrentPath}
-            fileList={fileList}
-            filesLoading={filesLoading}
-            fetchFiles={fetchFiles}
-            showHiddenFiles={showHiddenFiles}
-            setShowHiddenFiles={setShowHiddenFiles}
-            clipboard={clipboard}
-            handleFileAction={handleFileAction}
           />
         );
       case "2":
@@ -1056,22 +441,6 @@ function App() {
             setSelectedDevice={setSelectedDevice}
             fetchDevices={fetchDevices}
             loading={loading}
-            packages={packages}
-            appsLoading={appsLoading}
-            fetchPackages={fetchPackages}
-            packageFilter={packageFilter}
-            setPackageFilter={setPackageFilter}
-            typeFilter={typeFilter}
-            setTypeFilter={setTypeFilter}
-            handleStartApp={handleStartApp}
-            handleAppLogcat={handleAppLogcat}
-            handleExploreAppFiles={handleExploreAppFiles}
-            handleExportAPK={handleExportAPK}
-            handleForceStop={handleForceStop}
-            handleToggleState={handleToggleState}
-            handleClearData={handleClearData}
-            handleUninstall={handleUninstall}
-            handleOpenSettings={handleOpenSettings}
           />
         );
       case "3":
@@ -1082,11 +451,6 @@ function App() {
             setSelectedDevice={setSelectedDevice}
             fetchDevices={fetchDevices}
             loading={loading}
-            shellCmd={shellCmd}
-            setShellCmd={setShellCmd}
-            shellOutput={shellOutput}
-            setShellOutput={setShellOutput}
-            handleShellCommand={handleShellCommand}
           />
         );
       case "4":
@@ -1096,17 +460,10 @@ function App() {
             selectedDevice={selectedDevice}
             setSelectedDevice={setSelectedDevice}
             fetchDevices={fetchDevices}
-            packages={packages}
-            selectedPackage={selectedPackage}
-            setSelectedPackage={setSelectedPackage}
             isLogging={isLogging}
             toggleLogcat={toggleLogcat}
             logs={logs}
             setLogs={setLogs}
-            logFilter={logFilter}
-            setLogFilter={setLogFilter}
-            autoScroll={autoScroll}
-            setAutoScroll={setAutoScroll}
           />
         );
       case "5":
@@ -1119,17 +476,8 @@ function App() {
             loading={loading}
             isMirroring={isMirroring}
             mirrorDuration={mirrorDuration}
-            handleStartScrcpy={handleStartScrcpy}
-            handleStopScrcpy={handleStopScrcpy}
-            scrcpyConfig={scrcpyConfig}
-            setScrcpyConfig={setScrcpyConfig}
-            updateScrcpyConfig={updateScrcpyConfig}
-            shouldRecord={shouldRecord}
-            setShouldRecord={setShouldRecord}
             isRecording={isRecording}
             recordDuration={recordDuration}
-            handleStartMidSessionRecord={handleStartMidSessionRecord}
-            handleStopMidSessionRecord={handleStopMidSessionRecord}
           />
         );
       default:
@@ -1163,24 +511,12 @@ function App() {
               mode="inline"
               onClick={({ key }) => setSelectedKey(key)}
               items={[
-                {
-                  key: "1",
-                  icon: <MobileOutlined />,
-                  label: t("menu.devices"),
-                },
-                {
-                  key: "5",
-                  icon: <DesktopOutlined />,
-                  label: t("menu.mirror"),
-                },
+                { key: "1", icon: <MobileOutlined />, label: t("menu.devices") },
+                { key: "5", icon: <DesktopOutlined />, label: t("menu.mirror") },
                 { key: "2", icon: <AppstoreOutlined />, label: t("menu.apps") },
                 { key: "6", icon: <FolderOutlined />, label: t("menu.files") },
                 { key: "3", icon: <CodeOutlined />, label: t("menu.shell") },
-                {
-                  key: "4",
-                  icon: <FileTextOutlined />,
-                  label: t("menu.logcat"),
-                },
+                { key: "4", icon: <FileTextOutlined />, label: t("menu.logcat") },
               ]}
             />
           </div>
@@ -1197,31 +533,11 @@ function App() {
             <Dropdown
               menu={{
                 items: [
-                  {
-                    key: "en",
-                    label: "English",
-                    onClick: () => i18n.changeLanguage("en"),
-                  },
-                  {
-                    key: "zh",
-                    label: "简体中文",
-                    onClick: () => i18n.changeLanguage("zh"),
-                  },
-                  {
-                    key: "zh-TW",
-                    label: "繁體中文 (台灣)",
-                    onClick: () => i18n.changeLanguage("zh-TW"),
-                  },
-                  {
-                    key: "ja",
-                    label: "日本語",
-                    onClick: () => i18n.changeLanguage("ja"),
-                  },
-                  {
-                    key: "ko",
-                    label: "한국어",
-                    onClick: () => i18n.changeLanguage("ko"),
-                  },
+                  { key: "en", label: "English", onClick: () => i18n.changeLanguage("en") },
+                  { key: "zh", label: "简体中文", onClick: () => i18n.changeLanguage("zh") },
+                  { key: "zh-TW", label: "繁體中文 (台灣)", onClick: () => i18n.changeLanguage("zh-TW") },
+                  { key: "ja", label: "日本語", onClick: () => i18n.changeLanguage("ja") },
+                  { key: "ko", label: "한국어", onClick: () => i18n.changeLanguage("ko") },
                 ],
                 selectedKeys: [i18n.language],
               }}
@@ -1230,70 +546,34 @@ function App() {
               <Button
                 type="text"
                 size="small"
-                icon={
-                  <TranslationOutlined
-                    style={{
-                      fontSize: "16px",
-                      color: "rgba(255,255,255,0.45)",
-                    }}
-                  />
-                }
+                icon={<TranslationOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
                 title={t("app.change_language")}
               />
             </Dropdown>
             <Button
               type="text"
               size="small"
-              icon={
-                <InfoCircleOutlined
-                  style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }}
-                />
-              }
+              icon={<InfoCircleOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
               onClick={() => setAboutVisible(true)}
               title={t("app.about")}
             />
             <Button
               type="text"
               size="small"
-              icon={
-                <GithubOutlined
-                  style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }}
-                />
-              }
-              onClick={() =>
-                BrowserOpenURL &&
-                BrowserOpenURL("https://github.com/nicetooo/adbGUI")
-              }
+              icon={<GithubOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
+              onClick={() => BrowserOpenURL && BrowserOpenURL("https://github.com/nicetooo/adbGUI")}
               title={t("app.github")}
             />
             <Button
               type="text"
               size="small"
-              icon={
-                <BugOutlined
-                  style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }}
-                />
-              }
+              icon={<BugOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
               onClick={() => {
                 if (!BrowserOpenURL) return;
-                const currentDevice = devices.find(
-                  (d) => d.id === selectedDevice
-                );
-                const deviceInfo = currentDevice
-                  ? `${currentDevice.brand} ${currentDevice.model} (${
-                      selectedDeviceInfo?.serial === selectedDevice &&
-                      selectedDeviceInfo.androidVer
-                        ? `Android ${selectedDeviceInfo.androidVer}, `
-                        : ""
-                    }ID: ${currentDevice.id})`
-                  : "None";
-
-                const body = encodeURIComponent(
-                  `### Description\n(Please describe the issue here)\n\n### Environment\n- App Version: 1.0.0\n- Device: ${deviceInfo}\n- OS: ${navigator.platform}\n\n### Steps to Reproduce\n1. \n2. \n\n### Expected Behavior\n\n### Actual Behavior`
-                );
-                BrowserOpenURL(
-                  `https://github.com/nicetooo/adbGUI/issues/new?body=${body}`
-                );
+                const currentDevice = devices.find(d => d.id === selectedDevice);
+                const deviceInfo = currentDevice ? `${currentDevice.brand} ${currentDevice.model} (ID: ${currentDevice.id})` : "None";
+                const body = encodeURIComponent(`### Description\n(Please describe the issue here)\n\n### Environment\n- App Version: 1.0.0\n- Device: ${deviceInfo}\n- OS: ${navigator.platform}`);
+                BrowserOpenURL(`https://github.com/nicetooo/adbGUI/issues/new?body=${body}`);
               }}
               title={t("app.feedback")}
             />
@@ -1301,36 +581,21 @@ function App() {
         </div>
       </Sider>
       <Layout className="site-layout" style={{ marginLeft: 200 }}>
-        <Content
-          style={{
-            margin: "0",
-            height: "100vh",
-            overflow: "hidden",
-            display: "flex",
-            flexDirection: "column",
-          }}
-        >
+        <Content style={{ margin: "0", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div className="drag-handle" style={{ height: 38, width: "100%", flexShrink: 0 }} />
           {renderContent()}
         </Content>
       </Layout>
-
 
       <DeviceInfoModal
         visible={deviceInfoVisible}
         onCancel={() => setDeviceInfoVisible(false)}
         deviceInfo={selectedDeviceInfo}
         loading={deviceInfoLoading}
-        onRefresh={() =>
-          selectedDeviceInfo &&
-          handleFetchDeviceInfo(selectedDeviceInfo.serial || selectedDevice)
-        }
+        onRefresh={() => selectedDeviceInfo && handleFetchDeviceInfo(selectedDeviceInfo.serial || selectedDevice)}
       />
 
-      <AboutModal
-        visible={aboutVisible}
-        onCancel={() => setAboutVisible(false)}
-      />
+      <AboutModal visible={aboutVisible} onCancel={() => setAboutVisible(false)} />
 
       <WirelessConnectModal
         visible={wirelessConnectVisible}

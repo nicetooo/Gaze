@@ -48,8 +48,6 @@ interface DevicesViewProps {
   fetchDevices: () => Promise<void>;
   setSelectedKey: (key: string) => void;
   setSelectedDevice: (id: string) => void;
-  setShellCmd: (cmd: string) => void;
-  fetchFiles: (path: string) => Promise<void>;
   handleStartScrcpy: (id: string) => Promise<void>;
   handleFetchDeviceInfo: (id: string) => Promise<void>;
   onShowWirelessConnect: () => void;
@@ -68,8 +66,6 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   fetchDevices,
   setSelectedKey,
   setSelectedDevice,
-  setShellCmd,
-  fetchFiles,
   handleStartScrcpy,
   handleFetchDeviceInfo,
   onShowWirelessConnect,
@@ -153,6 +149,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       title: t("devices.model"),
       dataIndex: "model",
       key: "model",
+      render: (model: string) => model || "-",
     },
     {
       title: t("devices.connection_type"),
@@ -222,7 +219,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
                   size="small"
                   icon={<CodeOutlined />}
                   onClick={() => {
-                    setShellCmd(`-s ${record.id} shell ls -l`);
+                    setSelectedDevice(record.id);
                     setSelectedKey("3");
                   }}
                 />
@@ -254,7 +251,6 @@ const DevicesView: React.FC<DevicesViewProps> = ({
                   onClick={() => {
                     setSelectedDevice(record.id);
                     setSelectedKey("6");
-                    fetchFiles("/");
                   }}
                 />
               </Tooltip>
@@ -386,4 +382,5 @@ const DevicesView: React.FC<DevicesViewProps> = ({
 };
 
 export default DevicesView;
+
 

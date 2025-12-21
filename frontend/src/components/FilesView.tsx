@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   Table,
   Button,
@@ -9,6 +9,7 @@ import {
   Checkbox,
   Dropdown,
   Modal,
+  message,
 } from "antd";
 import { useTranslation } from "react-i18next";
 import {
@@ -26,7 +27,17 @@ import {
   VerticalAlignBottomOutlined,
 } from "@ant-design/icons";
 // @ts-ignore
-import { GetThumbnail } from "../../wailsjs/go/main/App";
+import { 
+  GetThumbnail, 
+  ListFiles, 
+  DeleteFile, 
+  MoveFile, 
+  CopyFile, 
+  Mkdir, 
+  OpenFileOnHost, 
+  CancelOpenFile, 
+  DownloadFile 
+} from "../../wailsjs/go/main/App";
 import DeviceSelector from "./DeviceSelector";
 
 interface Device {
@@ -139,15 +150,7 @@ interface FilesViewProps {
   setSelectedDevice: (id: string) => void;
   fetchDevices: () => Promise<void>;
   loading: boolean;
-  currentPath: string;
-  setCurrentPath: (path: string) => void;
-  fileList: any[];
-  filesLoading: boolean;
-  fetchFiles: (path: string) => Promise<void>;
-  showHiddenFiles: boolean;
-  setShowHiddenFiles: (show: boolean) => void;
-  clipboard: { path: string; type: "copy" | "cut" } | null;
-  handleFileAction: (action: string, file: any) => Promise<void>;
+  initialPath?: string;
 }
 
 const FocusInput = ({
@@ -175,7 +178,6 @@ const FocusInput = ({
       placeholder={placeholder}
       style={{ marginTop: 16 }}
       onPressEnter={() => {
-        // Trigger the OK button of the modal
         const okBtn = document.querySelector(
           ".ant-modal-confirm-btns .ant-btn-primary"
         ) as HTMLButtonElement;
@@ -191,17 +193,196 @@ const FilesView: React.FC<FilesViewProps> = ({
   setSelectedDevice,
   fetchDevices,
   loading,
-  currentPath,
-  setCurrentPath,
-  fileList,
-  filesLoading,
-  fetchFiles,
-  showHiddenFiles,
-  setShowHiddenFiles,
-  clipboard,
-  handleFileAction,
+  initialPath = "/",
 }) => {
   const { t } = useTranslation();
+  
+  // Files state
+  const [currentPath, setCurrentPath] = useState(initialPath);
+  const [fileList, setFileList] = useState<any[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [clipboard, setClipboard] = useState<{
+    path: string;
+    type: "copy" | "cut";
+  } | null>(null);
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
+
+  useEffect(() => {
+    if (initialPath && initialPath !== currentPath) {
+      setCurrentPath(initialPath);
+    }
+  }, [initialPath]);
+
+  const fetchFiles = async (path: string) => {
+    if (!selectedDevice) return;
+    setFilesLoading(true);
+    try {
+      const res = await ListFiles(selectedDevice, path);
+      setFileList(res || []);
+      setCurrentPath(path);
+    } catch (err) {
+      message.error(t("app.list_files_failed") + ": " + String(err));
+    } finally {
+      setFilesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDevice) {
+      fetchFiles(currentPath);
+    }
+  }, [selectedDevice]);
+
+  const handleFileAction = async (action: string, file: any) => {
+    if (!selectedDevice) return;
+    try {
+      switch (action) {
+        case "open":
+          const openKey = `open_${file.path}`;
+          message.loading({
+            content: (
+              <span>
+                {t("app.launching", { name: file.name })}
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={async () => {
+                    await CancelOpenFile(file.path);
+                    message.destroy(openKey);
+                  }}
+                >
+                  {t("common.cancel")}
+                </Button>
+              </span>
+            ),
+            key: openKey,
+            duration: 0,
+          });
+          try {
+            await OpenFileOnHost(selectedDevice, file.path);
+            message.destroy(openKey);
+          } catch (err) {
+            if (String(err).includes("cancelled")) {
+              message.info(t("app.open_cancelled"), 2);
+            } else {
+              message.error(t("app.open_failed") + ": " + String(err), 3);
+            }
+            message.destroy(openKey);
+          }
+          break;
+        case "download":
+          try {
+            const savePath = await DownloadFile(selectedDevice, file.path);
+            if (savePath) {
+              message.success(t("app.export_success", { path: savePath }));
+            }
+          } catch (err) {
+            message.error(t("app.export_failed") + ": " + String(err));
+          }
+          break;
+        case "delete":
+          await DeleteFile(selectedDevice, file.path);
+          message.success(t("app.delete_success", { name: file.name }));
+          fetchFiles(currentPath);
+          break;
+        case "copy":
+          setClipboard({ path: file.path, type: "copy" });
+          message.info(t("app.copy_success", { name: file.name }));
+          break;
+        case "cut":
+          setClipboard({ path: file.path, type: "cut" });
+          message.info(t("app.cut_success", { name: file.name }));
+          break;
+        case "paste":
+          if (!clipboard) return;
+          const dest =
+            currentPath +
+            (currentPath.endsWith("/") ? "" : "/") +
+            clipboard.path.split("/").pop();
+          if (clipboard.type === "copy") {
+            await CopyFile(selectedDevice, clipboard.path, dest);
+            message.success(
+              t("app.paste_success", { name: clipboard.path.split("/").pop() })
+            );
+          } else {
+            await MoveFile(selectedDevice, clipboard.path, dest);
+            message.success(
+              t("app.move_success", { name: clipboard.path.split("/").pop() })
+            );
+            setClipboard(null);
+          }
+          fetchFiles(currentPath);
+          break;
+        case "rename":
+          let newName = file.name;
+          Modal.confirm({
+            title: t("common.rename"),
+            okText: t("common.ok"),
+            cancelText: t("common.cancel"),
+            autoFocusButton: null,
+            content: (
+              <FocusInput
+                defaultValue={file.name}
+                onChange={(e: any) => (newName = e.target.value)}
+                placeholder={t("common.enter_new_name")}
+                selectAll={true}
+              />
+            ),
+            onOk: async () => {
+              if (newName && newName !== file.name) {
+                try {
+                  const parentPath = currentPath.endsWith("/")
+                    ? currentPath
+                    : currentPath + "/";
+                  const newPath = parentPath + newName;
+                  await MoveFile(selectedDevice, file.path, newPath);
+                  message.success(t("app.rename_success", { name: newName }));
+                  fetchFiles(currentPath);
+                } catch (err) {
+                  message.error(t("app.rename_failed") + ": " + String(err));
+                  throw err;
+                }
+              }
+            },
+          });
+          break;
+        case "mkdir":
+          let folderName = "";
+          Modal.confirm({
+            title: t("common.new_directory"),
+            okText: t("common.ok"),
+            cancelText: t("common.cancel"),
+            autoFocusButton: null,
+            content: (
+              <FocusInput
+                onChange={(e: any) => (folderName = e.target.value)}
+                placeholder={t("common.folder_name")}
+              />
+            ),
+            onOk: async () => {
+              if (folderName) {
+                try {
+                  const parentPath = currentPath.endsWith("/")
+                    ? currentPath
+                    : currentPath + "/";
+                  const newPath = parentPath + folderName;
+                  await Mkdir(selectedDevice, newPath);
+                  message.success(t("app.mkdir_success", { name: folderName }));
+                  fetchFiles(currentPath);
+                } catch (err) {
+                  message.error(t("app.mkdir_failed") + ": " + String(err));
+                  throw err;
+                }
+              }
+            },
+          });
+          break;
+      }
+    } catch (err) {
+      message.error(t("app.command_failed") + ": " + String(err));
+    }
+  };
+
   const fileColumns = [
     {
       title: t("files.name"),
@@ -447,3 +628,4 @@ const FilesView: React.FC<FilesViewProps> = ({
 
 export { FocusInput };
 export default FilesView;
+
