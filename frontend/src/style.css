@@ -31,7 +31,13 @@ input, textarea {
 .ant-menu, 
 .ant-layout-header,
 .ant-modal-header,
-.ant-tabs-nav {
+.ant-tabs-nav,
+button,
+.ant-btn,
+div[role="button"],
+.selectable button,
+.selectable .ant-btn,
+.selectable div[role="button"] {
     user-select: none !important;
     -webkit-user-select: none !important;
 }
