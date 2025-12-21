@@ -239,12 +239,22 @@ const AppsView: React.FC<AppsViewProps> = ({
     {
       title: t("apps.action"),
       key: "action",
-      width: 320,
+      width: 380,
       render: (_: any, record: main.AppPackage) => {
         return (
           <Space size={4}>
             <Tooltip title={t("apps.launch_app")}>
               <Button size="small" icon={<PlayCircleOutlined />} onClick={() => handleStartApp(record.name)} />
+            </Tooltip>
+            <Tooltip title={t("apps.force_stop")}>
+              <Button size="small" icon={<StopOutlined />} onClick={() => handleForceStop(record.name)} />
+            </Tooltip>
+            <Tooltip title={record.state === "enabled" ? t("apps.disable") : t("apps.enable")}>
+              <Button 
+                size="small" 
+                icon={record.state === "enabled" ? <CloseCircleOutlined /> : <CheckCircleOutlined />} 
+                onClick={() => handleToggleState(record.name, record.state)} 
+              />
             </Tooltip>
             <Tooltip title={t("apps.app_settings")}>
               <Button size="small" icon={<SettingOutlined />} onClick={() => handleOpenSettings(selectedDevice, "android.settings.APPLICATION_DETAILS_SETTINGS", `package:${record.name}`)} />
@@ -264,19 +274,6 @@ const AppsView: React.FC<AppsViewProps> = ({
             <Dropdown
               menu={{
                 items: [
-                  {
-                    key: "stop",
-                    icon: <StopOutlined />,
-                    label: t("apps.force_stop"),
-                    onClick: () => handleForceStop(record.name),
-                  },
-                  {
-                    key: "state",
-                    icon: record.state === "enabled" ? <CloseCircleOutlined /> : <CheckCircleOutlined />,
-                    label: record.state === "enabled" ? t("apps.disable") : t("apps.enable"),
-                    onClick: () => handleToggleState(record.name, record.state),
-                  },
-                  { type: "divider" },
                   {
                     key: "clear",
                     icon: <ClearOutlined />,
