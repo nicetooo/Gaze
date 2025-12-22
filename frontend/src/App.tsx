@@ -17,6 +17,7 @@ import MirrorView from "./components/MirrorView";
 import DeviceInfoModal from "./components/DeviceInfoModal";
 import AboutModal from "./components/AboutModal";
 import WirelessConnectModal from "./components/WirelessConnectModal";
+import FeedbackModal from "./components/FeedbackModal";
 import {
   MobileOutlined,
   AppstoreOutlined,
@@ -91,6 +92,9 @@ function App() {
 
   // Wireless Connect state
   const [wirelessConnectVisible, setWirelessConnectVisible] = useState(false);
+
+  // Feedback state
+  const [feedbackVisible, setFeedbackVisible] = useState(false);
 
   // Global state for views that need background synchronization
   const [selectedDevice, setSelectedDevice] = useState<string>("");
@@ -626,7 +630,7 @@ function App() {
                 ],
                 selectedKeys: [i18n.language],
               }}
-              placement="topCenter"
+              placement="top"
             >
               <Button
                 type="text"
@@ -653,13 +657,7 @@ function App() {
               type="text"
               size="small"
               icon={<BugOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
-              onClick={() => {
-                if (!BrowserOpenURL) return;
-                const currentDevice = devices.find(d => d.id === selectedDevice);
-                const deviceInfo = currentDevice ? `${currentDevice.brand} ${currentDevice.model} (ID: ${currentDevice.id})` : "None";
-                const body = encodeURIComponent(`### Description\n(Please describe the issue here)\n\n### Environment\n- App Version: ${appVersion || "Unknown"}\n- Device: ${deviceInfo}\n- OS: ${navigator.platform}`);
-                BrowserOpenURL(`https://github.com/nicetooo/adbGUI/issues/new?body=${body}`);
-              }}
+              onClick={() => setFeedbackVisible(true)}
               title={t("app.feedback")}
             />
           </div>
@@ -687,6 +685,13 @@ function App() {
         onCancel={() => setWirelessConnectVisible(false)}
         onConnect={handleAdbConnect}
         onPair={handleAdbPair}
+      />
+
+      <FeedbackModal
+        visible={feedbackVisible}
+        onCancel={() => setFeedbackVisible(false)}
+        appVersion={appVersion}
+        deviceInfo={devices.find(d => d.id === selectedDevice) ? `${devices.find(d => d.id === selectedDevice)?.brand} ${devices.find(d => d.id === selectedDevice)?.model} (ID: ${selectedDevice})` : "None"}
       />
     </Layout>
   );

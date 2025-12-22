@@ -111,7 +111,14 @@
     "remove_failed": "移除失败",
     "opening_settings": "正在打开系统设置...",
     "open_settings_success": "成功打开设置",
-    "open_settings_failed": "打开设置失败"
+    "open_settings_failed": "打开设置失败",
+    "submit_to_github": "提交到 GitHub",
+    "feedback_description": "请描述您的问题或建议：",
+    "feedback_placeholder": "发生了什么？如何重现该问题？",
+    "feedback_note": "点击提交后将打开 GitHub Issue 页面，并包含您的描述和选中的日志。",
+    "backend_logs": "后端日志 (Go)",
+    "frontend_logs": "前端日志 (JS)",
+    "select_all": "全选"
   },
   "app_info": {
     "title": "应用信息",

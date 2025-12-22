@@ -41,8 +41,8 @@ const AppInfoModal: React.FC<AppInfoModalProps> = ({
       styles={{
         wrapper: { position: "absolute", overflow: "hidden" },
         mask: { position: "absolute" },
+        body: { overflowY: "auto", maxHeight: "calc(80vh - 120px)" }
       }}
-      bodyStyle={{ overflowY: "auto", maxHeight: "calc(80vh - 120px)" }}
       title={
         <div
           style={{

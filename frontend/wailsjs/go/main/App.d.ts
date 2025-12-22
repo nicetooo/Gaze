@@ -31,6 +31,8 @@ export function GetAppInfo(arg1:string,arg2:string,arg3:boolean):Promise<main.Ap
 
 export function GetAppVersion():Promise<string>;
 
+export function GetBackendLogs():Promise<Array<string>>;
+
 export function GetDeviceIP(arg1:string):Promise<string>;
 
 export function GetDeviceInfo(arg1:string):Promise<main.DeviceInfo>;
@@ -52,6 +54,8 @@ export function IsRecording(arg1:string):Promise<boolean>;
 export function ListFiles(arg1:string,arg2:string):Promise<Array<main.FileInfo>>;
 
 export function ListPackages(arg1:string,arg2:string):Promise<Array<main.AppPackage>>;
+
+export function Log(arg1:string,arg2:Array<any>):Promise<void>;
 
 export function Mkdir(arg1:string,arg2:string):Promise<void>;
 

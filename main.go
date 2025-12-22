@@ -45,7 +45,6 @@ func main() {
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 		sig := <-sigChan
 		os.Stderr.WriteString(fmt.Sprintf("\n[SIGNAL RECEIVED: %v]\n", sig))
-		shouldQuit = true
 		wailsRuntime.Quit(app.ctx)
 		time.Sleep(200 * time.Millisecond)
 		os.Exit(0)
@@ -64,7 +63,6 @@ func main() {
 		customAppMenu.Append(menu.Separator())
 		customAppMenu.Append(menu.Text("Quit adbGUI", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 			os.Stderr.WriteString("\n[MENU QUIT CLICKED]\n")
-			shouldQuit = true
 			wailsRuntime.Quit(app.ctx)
 		}))
 
@@ -145,7 +143,6 @@ func main() {
 					}()
 				}, func() {
 					os.Stderr.WriteString("\n[SYSTRAY EXITING]\n")
-					shouldQuit = true
 					os.Exit(0)
 				})
 				start()
@@ -187,7 +184,6 @@ func main() {
 }
 
 // package-level variable to track if we should really quit
-var shouldQuit bool
 
 func updateTrayMenu(ctx context.Context, app *App) {
 
@@ -503,7 +499,6 @@ func updateTrayMenu(ctx context.Context, app *App) {
 
 	mQuit := systray.AddMenuItem("Quit", "")
 	mQuit.Click(func() {
-		shouldQuit = true
 		systray.Quit()
 		wailsRuntime.Quit(ctx)
 	})

@@ -37,6 +37,7 @@ const AboutModal: React.FC<AboutModalProps> = ({ visible, onCancel }) => {
       ]}
       width={450}
       centered
+      styles={{ body: { maxHeight: "calc(80vh - 100px)", overflowY: "auto" } }}
       title={
         <Space>
           <InfoCircleOutlined style={{ color: "#1890ff" }} />

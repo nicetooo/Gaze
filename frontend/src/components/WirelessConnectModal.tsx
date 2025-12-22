@@ -146,9 +146,10 @@ const WirelessConnectModal: React.FC<WirelessConnectModalProps> = ({
       onCancel={onCancel}
       onOk={handleSubmit}
       confirmLoading={loading}
-      destroyOnClose
+      destroyOnHidden
       width={400}
-      okText={t("common.ok")}
+      centered
+      styles={{ body: { maxHeight: "calc(80vh - 100px)", overflowY: "auto" } }}
     >
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
     </Modal>

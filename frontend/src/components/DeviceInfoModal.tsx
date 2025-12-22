@@ -78,7 +78,7 @@ const DeviceInfoModal: React.FC<DeviceInfoModalProps> = ({
         </Button>,
       ]}
       width={700}
-      bodyStyle={{ padding: "12px 24px 24px" }}
+      styles={{ body: { padding: "12px 24px 24px", maxHeight: "calc(80vh - 100px)", overflowY: "auto" } }}
     >
       {loading && !deviceInfo ? (
         <div style={{ padding: "60px 0", textAlign: "center" }}>

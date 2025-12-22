@@ -58,6 +58,10 @@ export function GetAppVersion() {
   return window['go']['main']['App']['GetAppVersion']();
 }
 
+export function GetBackendLogs() {
+  return window['go']['main']['App']['GetBackendLogs']();
+}
+
 export function GetDeviceIP(arg1) {
   return window['go']['main']['App']['GetDeviceIP'](arg1);
 }
@@ -100,6 +104,10 @@ export function ListFiles(arg1, arg2) {
 
 export function ListPackages(arg1, arg2) {
   return window['go']['main']['App']['ListPackages'](arg1, arg2);
+}
+
+export function Log(arg1, arg2) {
+  return window['go']['main']['App']['Log'](arg1, arg2);
 }
 
 export function Mkdir(arg1, arg2) {

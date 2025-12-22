@@ -74,6 +74,9 @@ type App struct {
 
 	pinnedSerial string
 	pinnedMu     sync.RWMutex
+
+	runtimeLogs []string
+	logsMu      sync.Mutex
 }
 
 type HistoryDevice struct {
@@ -254,7 +257,7 @@ func (a *App) loadHistory() []HistoryDevice {
 	}
 	if err := json.Unmarshal(data, &history); err != nil {
 		// Invalid JSON, return empty history
-		fmt.Printf("Error unmarshaling history: %v\n", err)
+		a.Log("Error unmarshaling history: %v", err)
 		return []HistoryDevice{}
 	}
 	return history
@@ -347,22 +350,30 @@ func (a *App) saveCache() {
 	a.aaptCacheMu.RUnlock()
 
 	if err != nil {
-		fmt.Printf("Error marshaling cache: %v\n", err)
+		a.Log("Error marshaling cache: %v", err)
 		return
 	}
 
 	err = os.WriteFile(a.cachePath, data, 0644)
 	if err != nil {
-		fmt.Printf("Error saving cache to %s: %v\n", a.cachePath, err)
+		a.Log("Error saving cache to %s: %v", a.cachePath, err)
 	}
 }
 
 func (a *App) setupBinaries() {
-	tempDir := filepath.Join(os.TempDir(), "adb-gui-bin")
-	_ = os.MkdirAll(tempDir, 0755)
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		configDir = os.TempDir()
+	}
+	appBinDir := filepath.Join(configDir, "adbGUI", "bin")
+	_ = os.MkdirAll(appBinDir, 0755)
 
 	extract := func(name string, data []byte) string {
-		path := filepath.Join(tempDir, name)
+		if len(data) == 0 {
+			return ""
+		}
+
+		path := filepath.Join(appBinDir, name)
 		if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") && name != "scrcpy-server" {
 			path += ".exe"
 		}
@@ -375,6 +386,16 @@ func (a *App) setupBinaries() {
 				fmt.Printf("Error extracting %s: %v\n", name, err)
 			}
 		}
+
+		// Ensure executable permissions on Unix-like systems
+		if runtime.GOOS != "windows" {
+			_ = os.Chmod(path, 0755)
+			// Remove macOS quarantine attribute if it exists
+			if runtime.GOOS == "darwin" {
+				_ = exec.Command("xattr", "-d", "com.apple.quarantine", path).Run()
+			}
+		}
+
 		return path
 	}
 
@@ -382,16 +403,54 @@ func (a *App) setupBinaries() {
 	a.scrcpyPath = extract("scrcpy", scrcpyBinary)
 	a.serverPath = extract("scrcpy-server", scrcpyServerBinary)
 
+	// Fallback for adb: if bundled one doesn't work or isn't extracted, try system adb
+	if a.adbPath != "" {
+		cmd := exec.Command(a.adbPath, "version")
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("Bundled adb failed, looking for system adb...\n")
+			if path, err := exec.LookPath("adb"); err == nil {
+				a.adbPath = path
+				fmt.Printf("Using system adb at: %s\n", a.adbPath)
+			}
+		}
+	} else {
+		if path, err := exec.LookPath("adb"); err == nil {
+			a.adbPath = path
+			fmt.Printf("Using system adb as bundled adb is missing: %s\n", a.adbPath)
+		}
+	}
+
 	// Extract aapt if available (may be empty placeholder)
 	if len(aaptBinary) > 0 {
 		a.aaptPath = extract("aapt", aaptBinary)
 		fmt.Printf("AAPT setup at: %s\n", a.aaptPath)
-	} else {
-		fmt.Printf("Warning: aapt binary not embedded. App icons and names may not be available.\n")
-		fmt.Printf("Please run scripts/download_aapt.sh to download aapt binaries.\n")
 	}
 
-	fmt.Printf("Binaries setup at: %s\n", tempDir)
+	a.Log("Binaries setup at: %s", appBinDir)
+	a.Log("Final ADB path: %s", a.adbPath)
+}
+
+// Log adds a message to the runtime logs
+func (a *App) Log(format string, args ...interface{}) {
+	a.logsMu.Lock()
+	defer a.logsMu.Unlock()
+	msg := fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), fmt.Sprintf(format, args...))
+	a.runtimeLogs = append(a.runtimeLogs, msg)
+	if len(a.runtimeLogs) > 1000 {
+		a.runtimeLogs = a.runtimeLogs[len(a.runtimeLogs)-1000:]
+	}
+	// Also print to console
+	fmt.Println(msg)
+}
+
+// GetBackendLogs returns the captured backend logs
+func (a *App) GetBackendLogs() []string {
+	a.logsMu.Lock()
+	defer a.logsMu.Unlock()
+	// Return a copy to avoid data races
+	logs := make([]string, len(a.runtimeLogs))
+	copy(logs, a.runtimeLogs)
+	return logs
 }
 
 // normalizeActivityName ensures activity name is in format "package/full.class.Name"
@@ -1206,7 +1265,7 @@ func (a *App) StartWirelessServer() (string, error) {
 	mux.HandleFunc("/c", func(w http.ResponseWriter, r *http.Request) {
 		// Get phone's IP
 		remoteIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-		fmt.Printf("Wireless connect request from: %s\n", remoteIP)
+		a.Log("Wireless connect request from: %s", remoteIP)
 
 		// Try to connect (default port 5555)
 		output, err := a.AdbConnect(remoteIP + ":5555")
@@ -1353,14 +1412,18 @@ func (a *App) GetDevices() ([]Device, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	if a.adbPath == "" {
+		return nil, fmt.Errorf("ADB path is not initialized")
+	}
 
 	// 1. Get raw output from adb devices -l
 	cmd := exec.CommandContext(ctx, a.adbPath, "devices", "-l")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run adb devices: %w", err)
+		return nil, fmt.Errorf("failed to run adb devices (path: %s): %w, output: %s", a.adbPath, err, string(output))
 	}
 
 	// Load history to help with device identification and metadata preservation
@@ -1878,7 +1941,7 @@ func (a *App) StartRecording(deviceId string, config ScrcpyConfig) error {
 		"ADB="+a.adbPath,
 	)
 
-	fmt.Printf("Starting recording process: %s %v\n", a.scrcpyPath, cmd.Args)
+	a.Log("Starting recording process: %s %v", a.scrcpyPath, cmd.Args)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start recording: %w", err)
@@ -2055,7 +2118,7 @@ func (a *App) StartScrcpy(deviceId string, config ScrcpyConfig) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	fmt.Printf("Starting scrcpy: %s %v\n", a.scrcpyPath, cmd.Args)
+	a.Log("Starting scrcpy: %s %v", a.scrcpyPath, cmd.Args)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start scrcpy: %w", err)
@@ -2381,7 +2444,7 @@ func (a *App) UninstallApp(deviceId, packageName string) (string, error) {
 		return "", fmt.Errorf("no device specified")
 	}
 
-	fmt.Printf("Uninstalling %s from %s\n", packageName, deviceId)
+	a.Log("Uninstalling %s from %s", packageName, deviceId)
 
 	// Try standard uninstall first
 	cmd := exec.Command(a.adbPath, "-s", deviceId, "uninstall", packageName)
@@ -2479,7 +2542,7 @@ func (a *App) InstallAPK(deviceId string, path string) (string, error) {
 		return "", fmt.Errorf("no device selected")
 	}
 
-	fmt.Printf("Installing APK %s to device %s\n", path, deviceId)
+	a.Log("Installing APK %s to device %s", path, deviceId)
 
 	cmd := exec.Command(a.adbPath, "-s", deviceId, "install", "-r", path)
 	output, err := cmd.CombinedOutput()

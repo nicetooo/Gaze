@@ -111,7 +111,14 @@
     "remove_failed": "Failed to remove device",
     "opening_settings": "Opening system settings...",
     "open_settings_success": "Settings opened successfully",
-    "open_settings_failed": "Failed to open settings"
+    "open_settings_failed": "Failed to open settings",
+    "submit_to_github": "Submit to GitHub",
+    "feedback_description": "Please describe the issue or your suggestion:",
+    "feedback_placeholder": "What happened? How can we reproduce it?",
+    "feedback_note": "A GitHub issue page will be opened with your description and selected logs.",
+    "backend_logs": "Backend Logs",
+    "frontend_logs": "Frontend Logs",
+    "select_all": "Select All"
   },
   "app_info": {
     "title": "App Information",
