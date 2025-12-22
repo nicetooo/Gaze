@@ -107,7 +107,7 @@ func main() {
 							case <-ctx.Done():
 								return
 							case <-ticker.C:
-								currentDevices, _ := app.GetDevices()
+								currentDevices, _ := app.GetDevices(false)
 								changed := false
 
 								// Check devices
@@ -188,7 +188,7 @@ func main() {
 func updateTrayMenu(ctx context.Context, app *App) {
 
 	// 1. Get all devices
-	connectedDevices, _ := app.GetDevices()
+	connectedDevices, _ := app.GetDevices(false)
 	historyDevices := app.GetHistoryDevices()
 
 	// Check for any active recording

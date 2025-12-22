@@ -70,8 +70,8 @@ export function GetDeviceInfo(arg1) {
   return window['go']['main']['App']['GetDeviceInfo'](arg1);
 }
 
-export function GetDevices() {
-  return window['go']['main']['App']['GetDevices']();
+export function GetDevices(arg1) {
+  return window['go']['main']['App']['GetDevices'](arg1);
 }
 
 export function GetHistoryDevices() {

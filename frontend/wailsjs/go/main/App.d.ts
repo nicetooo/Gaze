@@ -37,7 +37,7 @@ export function GetDeviceIP(arg1:string):Promise<string>;
 
 export function GetDeviceInfo(arg1:string):Promise<main.DeviceInfo>;
 
-export function GetDevices():Promise<Array<main.Device>>;
+export function GetDevices(arg1:boolean):Promise<Array<main.Device>>;
 
 export function GetHistoryDevices():Promise<Array<main.HistoryDevice>>;
 

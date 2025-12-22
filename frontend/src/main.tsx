@@ -22,7 +22,7 @@ const captureLog = (type: string, ...args: any[]) => {
     }
   }).join(' ')}`;
   (window as any).runtimeLogs.push(msg);
-  if ((window as any).runtimeLogs.length > 500) (window as any).runtimeLogs.shift();
+  if ((window as any).runtimeLogs.length > 1000) (window as any).runtimeLogs.shift();
 };
 
 console.log = (...args) => { originalLog(...args); captureLog('LOG', ...args); };

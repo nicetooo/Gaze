@@ -50,7 +50,7 @@ interface DevicesViewProps {
   devices: Device[];
   historyDevices: HistoryDevice[];
   loading: boolean;
-  fetchDevices: () => Promise<void>;
+  fetchDevices: (silent?: boolean) => Promise<void>;
   setSelectedKey: (key: string) => void;
   setSelectedDevice: (id: string) => void;
   handleStartScrcpy: (id: string) => Promise<void>;
@@ -182,19 +182,15 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       width: 100,
       render: (type: string, record: Device) => (
         <Space>
-          {(record.state !== "offline" || busyDevices.has(record.id) || busyDevices.has(record.serial)) && (
-            <>
-              {(type === "wired" || type === "both") && (
-                <Tooltip title={t("devices.wired")}>
-                  <Tag icon={<UsbOutlined />} color="orange" style={{ marginRight: 0, paddingInline: 8 }} />
-                </Tooltip>
-              )}
-              {(type === "wireless" || type === "both") && (
-                <Tooltip title={t("devices.wireless")}>
-                  <Tag icon={<WifiOutlined />} color="blue" style={{ marginRight: 0, paddingInline: 8 }} />
-                </Tooltip>
-              )}
-            </>
+          {(type === "wired" || type === "both") && (
+            <Tooltip title={t("devices.wired")}>
+              <Tag icon={<UsbOutlined />} color="orange" style={{ marginRight: 0, paddingInline: 8 }} />
+            </Tooltip>
+          )}
+          {(type === "wireless" || type === "both") && (
+            <Tooltip title={t("devices.wireless")}>
+              <Tag icon={<WifiOutlined />} color="blue" style={{ marginRight: 0, paddingInline: 8 }} />
+            </Tooltip>
           )}
         </Space>
       ),
@@ -393,7 +389,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
           </Button>
           <Button
             icon={<ReloadOutlined />}
-            onClick={fetchDevices}
+            onClick={() => fetchDevices(false)}
             loading={loading}
           >
             {t("common.refresh")}

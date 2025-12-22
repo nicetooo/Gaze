@@ -77,6 +77,8 @@ type App struct {
 
 	runtimeLogs []string
 	logsMu      sync.Mutex
+
+	lastDevCount int
 }
 
 type HistoryDevice struct {
@@ -162,7 +164,7 @@ func (a *App) updateLastActive(deviceId string) {
 
 	// Try to find the true serial for this deviceId
 	serial := deviceId
-	devices, _ := a.GetDevices()
+	devices, _ := a.GetDevices(false)
 	for _, d := range devices {
 		if d.ID == deviceId {
 			serial = d.Serial
@@ -245,7 +247,7 @@ func (a *App) initPersistentCache() {
 	a.loadCache()
 }
 
-func (a *App) loadHistory() []HistoryDevice {
+func (a *App) loadHistoryInternal() []HistoryDevice {
 	var history []HistoryDevice
 	if a.historyPath == "" {
 		return history
@@ -263,19 +265,25 @@ func (a *App) loadHistory() []HistoryDevice {
 	return history
 }
 
-func (a *App) saveHistory(history []HistoryDevice) {
+func (a *App) saveHistory(history []HistoryDevice) error {
 	data, err := json.Marshal(history)
 	if err != nil {
-		return
+		a.Log("Failed to marshal history: %v", err)
+		return err
 	}
-	_ = os.WriteFile(a.historyPath, data, 0644)
+	err = os.WriteFile(a.historyPath, data, 0644)
+	if err != nil {
+		a.Log("Failed to write history to %s: %v", a.historyPath, err)
+		return err
+	}
+	return nil
 }
 
 func (a *App) addToHistory(device Device) {
 	a.historyMu.Lock()
 	defer a.historyMu.Unlock()
 
-	history := a.loadHistory()
+	history := a.loadHistoryInternal()
 	found := false
 	for i, d := range history {
 		// Group by Serial if available, fallback to ID
@@ -309,27 +317,33 @@ func (a *App) addToHistory(device Device) {
 		history = history[len(history)-20:]
 	}
 
-	a.saveHistory(history)
+	if err := a.saveHistory(history); err != nil {
+		a.Log("Failed to save history in addToHistory: %v", err)
+	}
 }
 
 func (a *App) GetHistoryDevices() []HistoryDevice {
 	a.historyMu.Lock()
 	defer a.historyMu.Unlock()
-	return a.loadHistory()
+	return a.loadHistoryInternal()
 }
 
-func (a *App) RemoveHistoryDevice(deviceId string) {
+func (a *App) RemoveHistoryDevice(deviceId string) error {
+	// Try to disconnect if it's a wireless device or currently connected
+	// We ignore errors here because it might be a USB device or already disconnected
+	_, _ = a.AdbDisconnect(deviceId)
+
 	a.historyMu.Lock()
 	defer a.historyMu.Unlock()
 
-	history := a.loadHistory()
+	history := a.loadHistoryInternal()
 	var newHistory []HistoryDevice
 	for _, d := range history {
 		if d.ID != deviceId && d.Serial != deviceId {
 			newHistory = append(newHistory, d)
 		}
 	}
-	a.saveHistory(newHistory)
+	return a.saveHistory(newHistory)
 }
 
 func (a *App) loadCache() {
@@ -1408,7 +1422,7 @@ func (a *App) AdbDisconnect(address string) (string, error) {
 }
 
 // GetDevices returns a list of connected ADB devices
-func (a *App) GetDevices() ([]Device, error) {
+func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
@@ -1427,7 +1441,10 @@ func (a *App) GetDevices() ([]Device, error) {
 	}
 
 	// Load history to help with device identification and metadata preservation
-	historyDevices := a.loadHistory()
+	a.historyMu.Lock()
+	historyDevices := a.loadHistoryInternal()
+	a.historyMu.Unlock()
+
 	historyByID := make(map[string]HistoryDevice)
 	historyBySerial := make(map[string]HistoryDevice)
 	for _, hd := range historyDevices {
@@ -1484,6 +1501,8 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 	}
 
+	// a.Log("GetDevices found %d nodes from adb output", len(nodes))
+
 	// Regex for mDNS serial extraction
 	mdnsRe := regexp.MustCompile(`adb-([a-zA-Z0-9]+)-`)
 
@@ -1496,7 +1515,10 @@ func (a *App) GetDevices() ([]Device, error) {
 
 			// A. If already authorised, ask the device
 			if node.state == "device" {
-				c := exec.CommandContext(ctx, a.adbPath, "-s", node.id, "shell", "getprop ro.serialno")
+				// Short timeout for serial fetch to prevent blocking
+				sCtx, sCancel := context.WithTimeout(ctx, 3*time.Second)
+				defer sCancel()
+				c := exec.CommandContext(sCtx, a.adbPath, "-s", node.id, "shell", "getprop ro.serialno")
 				out, err := c.Output()
 				if err == nil {
 					s := strings.TrimSpace(string(out))
@@ -1601,7 +1623,7 @@ func (a *App) GetDevices() ([]Device, error) {
 
 	// 6. Phase 3: Final Polishing (Metadata & History)
 	for i := range finalDevices {
-		dev := finalDevices[i]
+		dev := finalDevices[i] // Capture pointer
 
 		// Normalize model (e.g. Pixel_7a -> Pixel 7a)
 		dev.Model = strings.TrimSpace(strings.ReplaceAll(dev.Model, "_", " "))
@@ -1657,6 +1679,8 @@ func (a *App) GetDevices() ([]Device, error) {
 						m := strings.TrimSpace(parts[1])
 						d.Model = strings.ReplaceAll(m, "_", " ")
 					}
+				} else {
+					a.Log("Failed to fetch props for %s: %v", d.ID, err)
 				}
 			}(dev)
 		}
@@ -1694,6 +1718,10 @@ func (a *App) GetDevices() ([]Device, error) {
 		return finalDevices[i].LastActive > finalDevices[j].LastActive
 	})
 
+	if forceLog || len(finalDevices) != a.lastDevCount {
+		a.Log("GetDevices returning %d devices (prev: %d)", len(finalDevices), a.lastDevCount)
+		a.lastDevCount = len(finalDevices)
+	}
 	// Return flat slice
 	result := make([]Device, len(finalDevices))
 	for i, d := range finalDevices {

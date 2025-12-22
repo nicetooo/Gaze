@@ -134,7 +134,8 @@ function App() {
       setLoading(true);
     }
     try {
-      const res = await GetDevices();
+      // Pass !isSilent as forceLog to backend
+      const res = await GetDevices(!isSilent);
       setDevices(res || []);
       
       try {
