@@ -44,6 +44,7 @@ export namespace main {
 	    ids: string[];
 	    wifiAddr: string;
 	    lastActive: number;
+	    isPinned: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new Device(source);
@@ -60,6 +61,7 @@ export namespace main {
 	        this.ids = source["ids"];
 	        this.wifiAddr = source["wifiAddr"];
 	        this.lastActive = source["lastActive"];
+	        this.isPinned = source["isPinned"];
 	    }
 	}
 	export class DeviceInfo {

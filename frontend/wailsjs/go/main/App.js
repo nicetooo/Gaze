@@ -186,6 +186,10 @@ export function TakeScreenshot(arg1, arg2) {
   return window['go']['main']['App']['TakeScreenshot'](arg1, arg2);
 }
 
+export function TogglePinDevice(arg1) {
+  return window['go']['main']['App']['TogglePinDevice'](arg1);
+}
+
 export function UninstallApp(arg1, arg2) {
   return window['go']['main']['App']['UninstallApp'](arg1, arg2);
 }

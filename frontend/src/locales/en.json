@@ -213,7 +213,9 @@
     "connect_failed": "Connection failed",
     "scan_qr_code": "Scan to Connect",
     "scan_qr_desc": "Scan this QR code with your phone to automatically connect",
-    "pairing_guide": "On your phone: Developer options -> Wireless debugging -> Pair device with pairing code"
+    "pairing_guide": "On your phone: Developer options -> Wireless debugging -> Pair device with pairing code",
+    "pin": "Pin to Top",
+    "unpin": "Unpin"
   },
   "files": {
     "title": "Files",

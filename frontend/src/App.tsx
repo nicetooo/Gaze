@@ -47,6 +47,7 @@ import {
   OpenSettings,
   StartLogcat,
   GetAppVersion,
+  TogglePinDevice,
 } from "../wailsjs/go/main/App";
 // @ts-ignore
 import { main } from "../wailsjs/go/models";
@@ -67,6 +68,7 @@ interface Device {
   type: string;
   ids: string[];
   wifiAddr: string;
+  isPinned: boolean;
 }
 
 function App() {
@@ -250,6 +252,15 @@ function App() {
       message.error(t("app.open_settings_failed") + ": " + String(err));
     } finally {
       hide();
+    }
+  };
+  
+  const handleTogglePin = async (serial: string) => {
+    try {
+      await TogglePinDevice(serial);
+      await fetchDevices(true);
+    } catch (err) {
+      message.error(String(err));
     }
   };
 
@@ -493,6 +504,7 @@ function App() {
             handleAdbDisconnect={handleAdbDisconnect}
             handleRemoveHistoryDevice={handleRemoveHistoryDevice}
             handleOpenSettings={handleOpenSettings}
+            handleTogglePin={handleTogglePin}
             mirrorStatuses={mirrorStatuses}
             recordStatuses={recordStatuses}
           />

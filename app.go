@@ -71,6 +71,9 @@ type App struct {
 	// Last active tracking
 	lastActive   map[string]int64
 	lastActiveMu sync.RWMutex
+
+	pinnedSerial string
+	pinnedMu     sync.RWMutex
 }
 
 type HistoryDevice struct {
@@ -93,6 +96,7 @@ type Device struct {
 	IDs        []string `json:"ids"`  // Store all adb IDs (e.g. [serial, 192.168.1.1:5555])
 	WifiAddr   string   `json:"wifiAddr"`
 	LastActive int64    `json:"lastActive"`
+	IsPinned   bool     `json:"isPinned"`
 }
 
 type DeviceInfo struct {
@@ -166,6 +170,17 @@ func (a *App) updateLastActive(deviceId string) {
 	a.lastActiveMu.Lock()
 	defer a.lastActiveMu.Unlock()
 	a.lastActive[serial] = time.Now().Unix()
+}
+
+// TogglePinDevice pins/unpins a device by its serial. Only one device can be pinned.
+func (a *App) TogglePinDevice(serial string) {
+	a.pinnedMu.Lock()
+	defer a.pinnedMu.Unlock()
+	if a.pinnedSerial == serial {
+		a.pinnedSerial = ""
+	} else {
+		a.pinnedSerial = serial
+	}
 }
 
 // GetAppVersion returns the application version
@@ -1593,18 +1608,26 @@ func (a *App) GetDevices() ([]Device, error) {
 		}
 	}
 
-	// 7. Populating LastActive and Sorting
+	// 7. Populating Metadata and Sorting
 	a.lastActiveMu.RLock()
+	a.pinnedMu.RLock()
 	for i := range finalDevices {
 		d := finalDevices[i]
 		if ts, ok := a.lastActive[d.Serial]; ok {
 			d.LastActive = ts
 		}
+		if d.Serial == a.pinnedSerial {
+			d.IsPinned = true
+		}
 	}
+	a.pinnedMu.RUnlock()
 	a.lastActiveMu.RUnlock()
 
-	// Sort by LastActive descending
+	// Sort: Pinned first, then by LastActive descending
 	sort.SliceStable(finalDevices, func(i, j int) bool {
+		if finalDevices[i].IsPinned != finalDevices[j].IsPinned {
+			return finalDevices[i].IsPinned
+		}
 		return finalDevices[i].LastActive > finalDevices[j].LastActive
 	})
 

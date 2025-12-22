@@ -20,6 +20,8 @@ import {
   CloseCircleOutlined,
   StopOutlined,
   SettingOutlined,
+  PushpinOutlined,
+  PushpinFilled,
 } from "@ant-design/icons";
 
 interface Device {
@@ -31,6 +33,7 @@ interface Device {
   type: string;
   ids: string[];
   wifiAddr: string;
+  isPinned?: boolean;
 }
 
 interface HistoryDevice {
@@ -58,6 +61,7 @@ interface DevicesViewProps {
   handleAdbConnect: (address: string) => Promise<void>;
   handleRemoveHistoryDevice: (id: string) => Promise<void>;
   handleOpenSettings: (id: string, action?: string, data?: string) => Promise<void>;
+  handleTogglePin: (serial: string) => Promise<void>;
   busyDevices?: Set<string>;
   mirrorStatuses?: Record<string, { isMirroring: boolean; duration: number }>;
   recordStatuses?: Record<string, { isRecording: boolean; duration: number }>;
@@ -79,6 +83,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
   handleAdbConnect,
   handleRemoveHistoryDevice,
   handleOpenSettings,
+  handleTogglePin,
   busyDevices = new Set(),
   mirrorStatuses = {},
   recordStatuses = {},
@@ -134,15 +139,26 @@ const DevicesView: React.FC<DevicesViewProps> = ({
       render: (_: string, record: Device) => {
         const displayId = record.serial || record.id;
         return (
-          <div>
-            <div style={{ fontWeight: record.state === 'device' ? 500 : 'normal' }}>
-              {displayId}
-            </div>
-            {record.wifiAddr && record.wifiAddr !== displayId && (
-              <div style={{ fontSize: '11px', color: '#8c8c8c', marginTop: '2px' }}>
-                {record.wifiAddr}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Tooltip title={record.isPinned ? t("devices.unpin") : t("devices.pin")}>
+              <Button
+                type="text"
+                size="small"
+                icon={record.isPinned ? <PushpinFilled style={{ color: '#1677ff' }} /> : <PushpinOutlined />}
+                onClick={() => handleTogglePin(record.serial || record.id)}
+                style={{ padding: 0, width: '20px' }}
+              />
+            </Tooltip>
+            <div>
+              <div style={{ fontWeight: record.state === 'device' ? 500 : 'normal' }}>
+                {displayId}
               </div>
-            )}
+              {record.wifiAddr && record.wifiAddr !== displayId && (
+                <div style={{ fontSize: '11px', color: '#8c8c8c', marginTop: '2px' }}>
+                  {record.wifiAddr}
+                </div>
+              )}
+            </div>
           </div>
         );
       }
