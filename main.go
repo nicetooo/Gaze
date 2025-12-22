@@ -26,6 +26,9 @@ import (
 //go:embed build/icon.svg
 var iconData []byte
 
+//go:embed build/icon_recording.svg
+var iconRecordingData []byte
+
 //go:embed all:frontend/dist
 var assets embed.FS
 
@@ -192,6 +195,21 @@ func updateTrayMenu(ctx context.Context, app *App) {
 	connectedDevices, _ := app.GetDevices()
 	historyDevices := app.GetHistoryDevices()
 
+	// Check for any active recording
+	anyRecording := false
+	for _, dev := range connectedDevices {
+		if app.IsRecording(dev.ID) {
+			anyRecording = true
+			break
+		}
+	}
+
+	if anyRecording {
+		systray.SetIcon(iconRecordingData)
+	} else {
+		systray.SetIcon(iconData)
+	}
+
 	hasDevices := false
 	seenSerials := make(map[string]bool)
 
@@ -202,9 +220,12 @@ func updateTrayMenu(ctx context.Context, app *App) {
 		if name == "" {
 			name = d.ID
 		}
-
+		if app.IsRecording(d.ID) {
+			name = "⏺️ " + name
+		}
 		// Section Header (Device Name)
-		systray.AddMenuItem(name+":", "").Disable()
+		mHeader := systray.AddMenuItem(name+":", "")
+		mHeader.Disable()
 
 		// 1. Mirror
 		mMirrorTop := systray.AddMenuItem("  Screen Mirror", "")
@@ -296,6 +317,10 @@ func updateTrayMenu(ctx context.Context, app *App) {
 		// Truncate if too long
 		if len(name) > 30 {
 			name = name[:27] + "..."
+		}
+
+		if app.IsRecording(dev.ID) {
+			name = "⏺️ " + name
 		}
 
 		devItem := systray.AddMenuItem(name, "")
