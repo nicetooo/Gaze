@@ -304,7 +304,21 @@
     "turn_screen_off": "画面をオフにする",
     "turn_screen_off_desc": "ミラーリング中にデバイスの画面をオフにする",
     "power_off_on_close": "終了時に電源オフ",
-    "power_off_on_close_desc": "ミラーリング終了時にデバイスの電源をオフにする"
+    "power_off_on_close_desc": "ミラーリング終了時にデバイスの電源をオフにする",
+    "no_power_on": "起動時に画面をオンにしない",
+    "advanced_settings": "詳細設定",
+    "video_source": "ビデオソース",
+    "display": "ディスプレイ",
+    "camera": "カメラ",
+    "camera_id": "カメラ ID",
+    "camera_size": "カメラ解像度",
+    "display_id": "ディスプレイ ID",
+    "display_orientation": "画面の向き",
+    "keyboard_mode": "キーボードモード",
+    "mouse_mode": "マウスモード",
+    "no_clipboard_sync": "クリップボード同期を無効にする",
+    "show_fps": "FPSを表示 (ログ)",
+    "camera_version_warning": "カメラミラーリングには Android 12 以降が必要です。"
   },
   "shell": {
     "title": "ADB シェル",

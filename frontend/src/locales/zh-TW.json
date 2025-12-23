@@ -304,7 +304,21 @@
     "turn_screen_off": "關閉裝置螢幕",
     "turn_screen_off_desc": "投屏時關閉裝置自帶螢幕",
     "power_off_on_close": "關閉時關機",
-    "power_off_on_close_desc": "關閉投屏時同時關閉裝置電源"
+    "power_off_on_close_desc": "關閉投屏時同時關閉裝置電源",
+    "no_power_on": "啟動時不喚醒螢幕",
+    "advanced_settings": "高級設置",
+    "video_source": "視頻源",
+    "display": "螢幕",
+    "camera": "攝像頭",
+    "camera_id": "攝像頭 ID",
+    "camera_size": "攝像頭解析度",
+    "display_id": "顯示器 ID",
+    "display_orientation": "畫面方向",
+    "keyboard_mode": "鍵盤模式",
+    "mouse_mode": "滑鼠模式",
+    "no_clipboard_sync": "禁用剪貼簿同步",
+    "show_fps": "顯示 FPS (日誌)",
+    "camera_version_warning": "攝像頭投屏需要 Android 12 或更高版本。"
   },
   "shell": {
     "title": "ADB 終端",

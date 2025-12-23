@@ -1456,6 +1456,38 @@ func (a *App) newAdbCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return cmd
 }
 
+// newScrcpyCommand creates an exec.Cmd for scrcpy with a clean environment
+func (a *App) newScrcpyCommand(args ...string) *exec.Cmd {
+	cmd := exec.Command(a.scrcpyPath, args...)
+
+	// Sanitize environment: remove proxies
+	env := os.Environ()
+	newEnv := make([]string, 0, len(env))
+	proxyVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"}
+
+	for _, e := range env {
+		isProxy := false
+		for _, v := range proxyVars {
+			if strings.HasPrefix(e, v+"=") {
+				isProxy = true
+				break
+			}
+		}
+		if !isProxy {
+			newEnv = append(newEnv, e)
+		}
+	}
+
+	// Add scrcpy specific env vars
+	newEnv = append(newEnv,
+		"SCRCPY_SERVER_PATH="+a.serverPath,
+		"ADB="+a.adbPath,
+	)
+
+	cmd.Env = newEnv
+	return cmd
+}
+
 // tryAutoReconnect attempts to reconnect to a wireless device if it's offline or missing
 func (a *App) tryAutoReconnect(address string) {
 	if address == "" || (!strings.Contains(address, ":") && !strings.Contains(address, "._tcp")) {
@@ -2039,18 +2071,35 @@ func (a *App) StartRecording(deviceId string, config ScrcpyConfig) error {
 	if config.VideoCodec != "" {
 		args = append(args, "--video-codec", config.VideoCodec)
 	}
-	if config.AudioCodec != "" {
-		args = append(args, "--audio-codec", config.AudioCodec)
-	}
+
 	if config.NoAudio {
 		args = append(args, "--no-audio")
+	} else if config.AudioCodec != "" {
+		args = append(args, "--audio-codec", config.AudioCodec)
 	}
 
-	cmd := exec.Command(a.scrcpyPath, args...)
-	cmd.Env = append(os.Environ(),
-		"SCRCPY_SERVER_PATH="+a.serverPath,
-		"ADB="+a.adbPath,
-	)
+	// Advanced arguments for recording: strictly separate source-specific flags
+	if config.VideoSource == "camera" {
+		args = append(args, "--video-source", "camera")
+		if config.CameraId != "" {
+			args = append(args, "--camera-id", config.CameraId)
+		}
+		if config.CameraSize != "" {
+			args = append(args, "--camera-size", config.CameraSize)
+		}
+	} else {
+		if config.VideoSource == "display" {
+			args = append(args, "--video-source", "display")
+		}
+		if config.DisplayId > 0 {
+			args = append(args, "--display-id", fmt.Sprintf("%d", config.DisplayId))
+		}
+	}
+	if config.DisplayOrientation != "" && config.DisplayOrientation != "0" {
+		args = append(args, "--display-orientation", config.DisplayOrientation)
+	}
+
+	cmd := a.newScrcpyCommand(args...)
 
 	a.Log("Starting recording process: %s %v", a.scrcpyPath, cmd.Args)
 
@@ -2100,6 +2149,46 @@ func (a *App) IsRecording(deviceId string) bool {
 	defer a.scrcpyMu.Unlock()
 	_, exists := a.scrcpyRecordCmd[deviceId]
 	return exists
+}
+
+// ListCameras returns a list of available cameras for the given device
+func (a *App) ListCameras(deviceId string) ([]string, error) {
+	if deviceId == "" {
+		return nil, fmt.Errorf("no device specified")
+	}
+	cmd := a.newScrcpyCommand("-s", deviceId, "--list-cameras")
+	output, err := cmd.CombinedOutput()
+	a.Log("ListCameras for %s: err=%v, output=%s", deviceId, err, string(output))
+
+	lines := strings.Split(string(output), "\n")
+	var cameras []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "--camera-id=") {
+			cameras = append(cameras, line)
+		}
+	}
+	return cameras, nil
+}
+
+// ListDisplays returns a list of available displays for the given device
+func (a *App) ListDisplays(deviceId string) ([]string, error) {
+	if deviceId == "" {
+		return nil, fmt.Errorf("no device specified")
+	}
+	cmd := a.newScrcpyCommand("-s", deviceId, "--list-displays")
+	output, err := cmd.CombinedOutput()
+	a.Log("ListDisplays for %s: err=%v, output=%s", deviceId, err, string(output))
+
+	lines := strings.Split(string(output), "\n")
+	var displays []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, "--display-id=") {
+			displays = append(displays, line)
+		}
+	}
+	return displays, nil
 }
 
 // OpenPath opens a file or directory in the default system browser
@@ -2153,6 +2242,18 @@ type ScrcpyConfig struct {
 	VideoCodec       string `json:"videoCodec"`
 	AudioCodec       string `json:"audioCodec"`
 	RecordPath       string `json:"recordPath"`
+	// Advanced options
+	DisplayId          int    `json:"displayId"`
+	VideoSource        string `json:"videoSource"` // "display" or "camera"
+	CameraId           string `json:"cameraId"`
+	CameraSize         string `json:"cameraSize"`
+	DisplayOrientation string `json:"displayOrientation"`
+	CaptureOrientation string `json:"captureOrientation"`
+	KeyboardMode       string `json:"keyboardMode"` // "sdk" or "uhid"
+	MouseMode          string `json:"mouseMode"`    // "sdk" or "uhid"
+	NoClipboardSync    bool   `json:"noClipboardSync"`
+	ShowFps            bool   `json:"showFps"`
+	NoPowerOn          bool   `json:"noPowerOn"`
 }
 
 // StartScrcpy starts scrcpy for the given device with custom configuration
@@ -2181,53 +2282,111 @@ func (a *App) StartScrcpy(deviceId string, config ScrcpyConfig) error {
 	if config.MaxFps > 0 {
 		args = append(args, "--max-fps", fmt.Sprintf("%d", config.MaxFps))
 	}
-	if config.StayAwake {
+	isCamera := config.VideoSource == "camera"
+
+	if config.StayAwake && !isCamera {
 		args = append(args, "--stay-awake")
 	}
-	if config.TurnScreenOff {
+	if config.TurnScreenOff && !isCamera {
 		args = append(args, "--turn-screen-off")
 	}
+	if config.VideoCodec != "" {
+		args = append(args, "--video-codec", config.VideoCodec)
+	}
+
 	if config.NoAudio {
 		args = append(args, "--no-audio")
+	} else if config.AudioCodec != "" {
+		args = append(args, "--audio-codec", config.AudioCodec)
 	}
+
 	if config.AlwaysOnTop {
 		args = append(args, "--always-on-top")
 	}
-	if config.ShowTouches {
+	if config.ShowTouches && !isCamera {
 		args = append(args, "--show-touches")
+		// Manually set system setting via ADB to ensure mouse clicks from scrcpy are also visible
+		go a.RunAdbCommand([]string{"-s", deviceId, "shell", "settings", "put", "system", "show_touches", "1"})
+	} else if !isCamera {
+		// Ensure it's off if explicitly requested to be off
+		go a.RunAdbCommand([]string{"-s", deviceId, "shell", "settings", "put", "system", "show_touches", "0"})
 	}
 	if config.Fullscreen {
 		args = append(args, "--fullscreen")
 	}
 	if config.ReadOnly {
-		args = append(args, "--read-only")
+		args = append(args, "--no-control")
 	}
-	if config.PowerOffOnClose {
+	if config.PowerOffOnClose && !isCamera {
 		args = append(args, "--power-off-on-close")
 	}
 	if config.WindowBorderless {
 		args = append(args, "--window-borderless")
 	}
-	if config.VideoCodec != "" {
-		args = append(args, "--video-codec", config.VideoCodec)
+
+	// Advanced arguments: strictly separate source-specific flags
+	if config.VideoSource == "camera" {
+		args = append(args, "--video-source", "camera")
+		if config.CameraId != "" {
+			args = append(args, "--camera-id", config.CameraId)
+		}
+		if config.CameraSize != "" {
+			args = append(args, "--camera-size", config.CameraSize)
+		}
+	} else {
+		// Default or explicit display
+		if config.VideoSource == "display" {
+			args = append(args, "--video-source", "display")
+		}
+		if config.DisplayId > 0 {
+			args = append(args, "--display-id", fmt.Sprintf("%d", config.DisplayId))
+		}
 	}
-	if config.AudioCodec != "" {
-		args = append(args, "--audio-codec", config.AudioCodec)
+	if config.DisplayOrientation != "" && config.DisplayOrientation != "0" {
+		args = append(args, "--display-orientation", config.DisplayOrientation)
+	}
+	if config.CaptureOrientation != "" && config.CaptureOrientation != "0" {
+		args = append(args, "--capture-orientation", config.CaptureOrientation)
+	}
+	if config.KeyboardMode != "" && config.KeyboardMode != "sdk" {
+		args = append(args, "--keyboard", config.KeyboardMode)
+	}
+	if config.MouseMode != "" && config.MouseMode != "sdk" {
+		args = append(args, "--mouse", config.MouseMode)
+	}
+	if config.NoClipboardSync {
+		args = append(args, "--no-clipboard-autosync")
+	}
+	if config.ShowFps {
+		// print-fps is for logs, but some versions support a visual counter or we just enable it
+		args = append(args, "--print-fps")
+	}
+	if config.NoPowerOn {
+		args = append(args, "--no-power-on")
+	}
+
+	// Double check: scrcpy camera mirroring often requires no-audio to start reliably
+	if config.VideoSource == "camera" {
+		foundNoAudio := false
+		for _, arg := range args {
+			if arg == "--no-audio" {
+				foundNoAudio = true
+				break
+			}
+		}
+		if !foundNoAudio {
+			args = append(args, "--no-audio")
+		}
 	}
 
 	args = append(args, "--window-title", "ADB GUI - "+deviceId)
 
-	cmd := exec.Command(a.scrcpyPath, args...)
+	cmd := a.newScrcpyCommand(args...)
 
-	// Use the embedded server and adb
-	cmd.Env = append(os.Environ(),
-		"SCRCPY_SERVER_PATH="+a.serverPath,
-		"ADB="+a.adbPath,
-	)
-
-	// Pipe output to console for debugging
+	// Capture output for error reporting
+	var stderrBuf bytes.Buffer
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuf)
 
 	a.Log("Starting scrcpy: %s %v", a.scrcpyPath, cmd.Args)
 
@@ -2239,24 +2398,40 @@ func (a *App) StartScrcpy(deviceId string, config ScrcpyConfig) error {
 	a.scrcpyCmds[deviceId] = cmd
 	a.scrcpyMu.Unlock()
 
+	startTime := time.Now()
+
 	// Notify frontend that scrcpy has started
 	wailsRuntime.EventsEmit(a.ctx, "scrcpy-started", map[string]interface{}{
 		"deviceId":  deviceId,
-		"startTime": time.Now().Unix(),
+		"startTime": startTime.Unix(),
 	})
 
 	// Wait for process to exit in a goroutine
 	go func() {
-		_ = cmd.Wait()
+		err := cmd.Wait()
+		duration := time.Since(startTime)
+
 		a.scrcpyMu.Lock()
+		defer a.scrcpyMu.Unlock()
+
 		// Only cleanup and emit event if this is still the active command
-		// (Prevents "stopped" events from firing during a configuration restart)
 		if a.scrcpyCmds[deviceId] == cmd {
 			delete(a.scrcpyCmds, deviceId)
-			a.scrcpyMu.Unlock()
-			wailsRuntime.EventsEmit(a.ctx, "scrcpy-stopped", deviceId)
-		} else {
-			a.scrcpyMu.Unlock()
+
+			if err != nil && duration < 5*time.Second {
+				// If it failed quickly, report the error details
+				errorMsg := stderrBuf.String()
+				if errorMsg == "" {
+					errorMsg = err.Error()
+				}
+				a.Log("Scrcpy failed quickly (%v): %s", duration, errorMsg)
+				wailsRuntime.EventsEmit(a.ctx, "scrcpy-failed", map[string]interface{}{
+					"deviceId": deviceId,
+					"error":    errorMsg,
+				})
+			} else {
+				wailsRuntime.EventsEmit(a.ctx, "scrcpy-stopped", deviceId)
+			}
 		}
 	}()
 

@@ -11,6 +11,7 @@ import {
   MobileOutlined,
   FolderOpenOutlined,
   ScissorOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import DeviceSelector from "./DeviceSelector";
 // @ts-ignore
@@ -25,6 +26,9 @@ import {
   SelectRecordPath,
   SelectScreenshotPath,
   TakeScreenshot,
+  ListCameras,
+  ListDisplays,
+  GetDeviceInfo,
 } from "../../wailsjs/go/main/App";
 
 const { Option } = Select;
@@ -88,17 +92,83 @@ const MirrorView: React.FC<MirrorViewProps> = ({
     videoCodec: "h264",
     audioCodec: "opus",
     recordPath: "",
+    displayId: 0,
+    videoSource: "display",
+    cameraId: "",
+    cameraSize: "",
+    displayOrientation: "0",
+    captureOrientation: "0",
+    keyboardMode: "sdk",
+    mouseMode: "sdk",
+    noClipboardSync: false,
+    showFps: false,
+    noPowerOn: false,
   };
 
   // Scrcpy states per device
   const [deviceConfigs, setDeviceConfigs] = useState<Record<string, main.ScrcpyConfig>>({});
   const [deviceShouldRecord, setDeviceShouldRecord] = useState<Record<string, boolean>>({});
+  const [availableCameras, setAvailableCameras] = useState<string[]>([]);
+  const [availableDisplays, setAvailableDisplays] = useState<string[]>([]);
+  const [deviceAndroidVer, setDeviceAndroidVer] = useState<number>(0);
 
   // Helper to get current device's config
   const currentConfig = deviceConfigs[selectedDevice] || defaultConfig;
   const currentShouldRecord = !!deviceShouldRecord[selectedDevice];
   const currentMirrorStatus = mirrorStatuses[selectedDevice] || { isMirroring: false, duration: 0 };
   const currentRecordStatus = recordStatuses[selectedDevice] || { isRecording: false, duration: 0, recordPath: "" };
+
+  useEffect(() => {
+    if (selectedDevice) {
+      fetchDeviceCapabilities();
+    }
+  }, [selectedDevice]);
+
+  useEffect(() => {
+    const handleScrcpyFailed = (data: any) => {
+      if (data.deviceId === selectedDevice || !selectedDevice) {
+        message.error({
+          content: `${t("app.scrcpy_failed")}: ${data.error}`,
+          duration: 10,
+          style: { marginTop: '20vh' }
+        });
+      }
+    };
+
+    EventsOn("scrcpy-failed", handleScrcpyFailed);
+    return () => {
+      EventsOff("scrcpy-failed", handleScrcpyFailed);
+    };
+  }, [selectedDevice, t]);
+
+  const fetchDeviceCapabilities = async () => {
+    if (!selectedDevice) return;
+    try {
+      // Fetch in parallel for better performance and isolation
+      const [info, cameras, displays] = await Promise.all([
+        GetDeviceInfo(selectedDevice).catch(err => {
+          console.error("GetDeviceInfo error:", err);
+          return null;
+        }),
+        ListCameras(selectedDevice).catch(err => {
+          console.error("ListCameras error:", err);
+          return [];
+        }),
+        ListDisplays(selectedDevice).catch(err => {
+          console.error("ListDisplays error:", err);
+          return [];
+        })
+      ]);
+
+      if (info && info.androidVer) {
+        setDeviceAndroidVer(parseInt(info.androidVer));
+      }
+      setAvailableCameras(cameras || []);
+      setAvailableDisplays(displays || []);
+    } catch (err) {
+      console.error("Failed to fetch device capabilities:", err);
+    }
+  };
 
   const setScrcpyConfig = (config: main.ScrcpyConfig) => {
     if (!selectedDevice) return;
@@ -742,6 +812,200 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                       updateScrcpyConfig({
                         ...currentConfig,
                         powerOffOnClose: v,
+                      })
+                    }
+                  />
+                </div>
+                <div className="setting-item" style={{ marginTop: 4 }}>
+                   <span>{t("mirror.no_power_on")}</span>
+                   <Switch
+                    size="small"
+                    checked={currentConfig.noPowerOn}
+                    onChange={(v) =>
+                      updateScrcpyConfig({
+                        ...currentConfig,
+                        noPowerOn: v,
+                      })
+                    }
+                  />
+                </div>
+              </Space>
+            </Card>
+
+            {/* Advanced & experimental */}
+            <Card
+              title={
+                <Space>
+                  <SettingOutlined />
+                  {t("mirror.advanced_settings")}
+                </Space>
+              }
+              extra={
+                <Tooltip title={t("common.refresh")}>
+                  <Button 
+                    type="text" 
+                    size="small" 
+                    icon={<ReloadOutlined />} 
+                    onClick={fetchDeviceCapabilities}
+                  />
+                </Tooltip>
+              }
+              size="small"
+            >
+              <Space direction="vertical" style={{ width: "100%" }}>
+                 <div className="setting-item">
+                  <span>{t("mirror.video_source")}</span>
+                  <Select
+                    size="small"
+                    value={currentConfig.videoSource}
+                    onChange={(v) =>
+                      updateScrcpyConfig({ ...currentConfig, videoSource: v })
+                    }
+                    style={{ width: 100 }}
+                  >
+                    <Option value="display">{t("mirror.display")}</Option>
+                    <Option value="camera">{t("mirror.camera")}</Option>
+                  </Select>
+                </div>
+
+                {currentConfig.videoSource === "camera" && (
+                   <>
+                    {deviceAndroidVer < 12 && (
+                       <div style={{ color: "#ff4d4f", fontSize: "11px", marginBottom: 8 }}>
+                         ⚠️ {t("mirror.camera_version_warning")}
+                       </div>
+                    )}
+                    <div className="setting-item">
+                      <span>{t("mirror.camera_id")}</span>
+                      <Select
+                        size="small"
+                        value={currentConfig.cameraId}
+                        onChange={(v) =>
+                          updateScrcpyConfig({ ...currentConfig, cameraId: v })
+                        }
+                        style={{ width: 120 }}
+                      >
+                         <Option value="">Default</Option>
+                         {availableCameras.map(cam => {
+                            const idMatch = cam.match(/--camera-id=([^ ]+)/);
+                            const id = idMatch ? idMatch[1] : cam;
+                            return <Option key={id} value={id}>{cam.replace("--camera-id=", "")}</Option>;
+                         })}
+                      </Select>
+                    </div>
+                    <div className="setting-item">
+                      <span>{t("mirror.camera_size")}</span>
+                      <Select
+                        size="small"
+                        value={currentConfig.cameraSize}
+                        onChange={(v) =>
+                          updateScrcpyConfig({ ...currentConfig, cameraSize: v })
+                        }
+                        style={{ width: 120 }}
+                      >
+                         <Option value="">Default</Option>
+                         <Option value="1920x1080">1920x1080</Option>
+                         <Option value="1280x720">1280x720</Option>
+                         <Option value="1024x768">1024x768</Option>
+                         <Option value="640x480">640x480</Option>
+                      </Select>
+                    </div>
+                   </>
+                )}
+
+                {currentConfig.videoSource === "display" && (
+                  <div className="setting-item">
+                    <span>{t("mirror.display_id")}</span>
+                    <Select
+                      size="small"
+                      value={currentConfig.displayId}
+                      onChange={(v) =>
+                        updateScrcpyConfig({ ...currentConfig, displayId: v })
+                      }
+                      style={{ width: 120 }}
+                    >
+                      <Option value={0}>0 (Main)</Option>
+                      {availableDisplays.map(disp => {
+                         const idMatch = disp.match(/--display-id=([^ ]+)/);
+                         const id = idMatch ? parseInt(idMatch[1]) : 0;
+                         if (id === 0) return null;
+                         return <Option key={id} value={id}>{disp.replace("--display-id=", "")}</Option>;
+                      }).filter(Boolean)}
+                    </Select>
+                  </div>
+                )}
+
+                <div className="setting-item">
+                  <span>{t("mirror.display_orientation")}</span>
+                  <Select
+                    size="small"
+                    value={currentConfig.displayOrientation}
+                    onChange={(v) =>
+                      updateScrcpyConfig({ ...currentConfig, displayOrientation: v })
+                    }
+                    style={{ width: 100 }}
+                  >
+                    <Option value="0">0°</Option>
+                    <Option value="90">90°</Option>
+                    <Option value="180">180°</Option>
+                    <Option value="270">270°</Option>
+                    <Option value="flip0">Flip 0°</Option>
+                  </Select>
+                </div>
+
+                <div className="setting-item">
+                  <span>{t("mirror.keyboard_mode")}</span>
+                  <Select
+                    size="small"
+                    value={currentConfig.keyboardMode}
+                    onChange={(v) =>
+                      updateScrcpyConfig({ ...currentConfig, keyboardMode: v })
+                    }
+                    style={{ width: 100 }}
+                  >
+                    <Option value="sdk">SDK</Option>
+                    <Option value="uhid">UHID</Option>
+                  </Select>
+                </div>
+
+                <div className="setting-item">
+                  <span>{t("mirror.mouse_mode")}</span>
+                  <Select
+                    size="small"
+                    value={currentConfig.mouseMode}
+                    onChange={(v) =>
+                      updateScrcpyConfig({ ...currentConfig, mouseMode: v })
+                    }
+                    style={{ width: 100 }}
+                  >
+                    <Option value="sdk">SDK</Option>
+                    <Option value="uhid">UHID</Option>
+                  </Select>
+                </div>
+
+                <div className="setting-item">
+                   <span>{t("mirror.no_clipboard_sync")}</span>
+                   <Switch
+                    size="small"
+                    checked={currentConfig.noClipboardSync}
+                    onChange={(v) =>
+                      updateScrcpyConfig({
+                        ...currentConfig,
+                        noClipboardSync: v,
+                      })
+                    }
+                  />
+                </div>
+
+                <div className="setting-item">
+                   <span>{t("mirror.show_fps")}</span>
+                   <Switch
+                    size="small"
+                    checked={currentConfig.showFps}
+                    onChange={(v) =>
+                      updateScrcpyConfig({
+                        ...currentConfig,
+                        showFps: v,
                       })
                     }
                   />

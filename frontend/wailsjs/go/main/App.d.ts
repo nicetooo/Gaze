@@ -51,6 +51,10 @@ export function InstallAPK(arg1:string,arg2:string):Promise<string>;
 
 export function IsRecording(arg1:string):Promise<boolean>;
 
+export function ListCameras(arg1:string):Promise<Array<string>>;
+
+export function ListDisplays(arg1:string):Promise<Array<string>>;
+
 export function ListFiles(arg1:string,arg2:string):Promise<Array<main.FileInfo>>;
 
 export function ListPackages(arg1:string,arg2:string):Promise<Array<main.AppPackage>>;

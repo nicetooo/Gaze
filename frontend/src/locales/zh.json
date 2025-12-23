@@ -304,7 +304,21 @@
     "turn_screen_off": "关闭设备屏幕",
     "turn_screen_off_desc": "投屏时关闭设备自带屏幕",
     "power_off_on_close": "关闭时关机",
-    "power_off_on_close_desc": "关闭投屏时同时关闭设备电源"
+    "power_off_on_close_desc": "关闭投屏时同时关闭设备电源",
+    "no_power_on": "启动时不唤醒屏幕",
+    "advanced_settings": "高级设置",
+    "video_source": "视频源",
+    "display": "屏幕",
+    "camera": "摄像头",
+    "camera_id": "摄像头 ID",
+    "camera_size": "摄像头分辨率",
+    "display_id": "显示器 ID",
+    "display_orientation": "画面方向",
+    "keyboard_mode": "键盘模式",
+    "mouse_mode": "鼠标模式",
+    "no_clipboard_sync": "禁用剪贴板同步",
+    "show_fps": "显示 FPS (日志)",
+    "camera_version_warning": "摄像头投屏需要 Android 12 或更高版本。"
   },
   "shell": {
     "title": "ADB 终端",

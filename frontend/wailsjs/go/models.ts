@@ -179,6 +179,17 @@ export namespace main {
 	    videoCodec: string;
 	    audioCodec: string;
 	    recordPath: string;
+	    displayId: number;
+	    videoSource: string;
+	    cameraId: string;
+	    cameraSize: string;
+	    displayOrientation: string;
+	    captureOrientation: string;
+	    keyboardMode: string;
+	    mouseMode: string;
+	    noClipboardSync: boolean;
+	    showFps: boolean;
+	    noPowerOn: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ScrcpyConfig(source);
@@ -201,6 +212,17 @@ export namespace main {
 	        this.videoCodec = source["videoCodec"];
 	        this.audioCodec = source["audioCodec"];
 	        this.recordPath = source["recordPath"];
+	        this.displayId = source["displayId"];
+	        this.videoSource = source["videoSource"];
+	        this.cameraId = source["cameraId"];
+	        this.cameraSize = source["cameraSize"];
+	        this.displayOrientation = source["displayOrientation"];
+	        this.captureOrientation = source["captureOrientation"];
+	        this.keyboardMode = source["keyboardMode"];
+	        this.mouseMode = source["mouseMode"];
+	        this.noClipboardSync = source["noClipboardSync"];
+	        this.showFps = source["showFps"];
+	        this.noPowerOn = source["noPowerOn"];
 	    }
 	}
 

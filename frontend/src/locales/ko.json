@@ -304,7 +304,21 @@
     "turn_screen_off": "화면 끄기",
     "turn_screen_off_desc": "미러링 중 장치 화면 끄기",
     "power_off_on_close": "닫을 때 전원 끄기",
-    "power_off_on_close_desc": "미러링 종료 시 장치 전원 끄기"
+    "power_off_on_close_desc": "미러링 종료 시 장치 전원 끄기",
+    "no_power_on": "시작 시 화면 켜지 않음",
+    "advanced_settings": "고급 설정",
+    "video_source": "비디오 소스",
+    "display": "디스플레이",
+    "camera": "카메라",
+    "camera_id": "카메라 ID",
+    "camera_size": "카메라 해상도",
+    "display_id": "디스플레이 ID",
+    "display_orientation": "화면 방향",
+    "keyboard_mode": "키보드 모드",
+    "mouse_mode": "마우스 모드",
+    "no_clipboard_sync": "클립보드 동기화 비활성화",
+    "show_fps": "FPS 표시 (로그)",
+    "camera_version_warning": "카메리 미러링은 Android 12 이상이 필요합니다。"
   },
   "shell": {
     "title": "ADB 쉘",
