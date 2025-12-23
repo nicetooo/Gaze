@@ -152,6 +152,20 @@ const WirelessConnectModal: React.FC<WirelessConnectModalProps> = ({
       styles={{ body: { maxHeight: "calc(80vh - 100px)", overflowY: "auto" } }}
     >
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={items} />
+      <div style={{
+        marginTop: 16,
+        padding: '10px 14px',
+        background: 'rgba(250, 173, 20, 0.08)',
+        borderRadius: 10,
+        border: '1px solid rgba(250, 173, 20, 0.2)'
+      }}>
+        <Text type="warning" style={{ fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+          <WifiOutlined style={{ fontSize: '14px' }} /> {t("devices.proxy_tip_title")}
+        </Text>
+        <Text type="secondary" style={{ fontSize: '11px', lineHeight: '1.5', display: 'block' }}>
+          {t("devices.proxy_tip_desc")}
+        </Text>
+      </div>
     </Modal>
   );
 };

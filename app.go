@@ -79,6 +79,10 @@ type App struct {
 	logsMu      sync.Mutex
 
 	lastDevCount int
+
+	// Wireless stability
+	reconnectCooldown map[string]time.Time
+	reconnectMu       sync.Mutex
 }
 
 type HistoryDevice struct {
@@ -145,12 +149,13 @@ type AppPackage struct {
 
 func NewApp(version string) *App {
 	app := &App{
-		aaptCache:       make(map[string]AppPackage),
-		scrcpyCmds:      make(map[string]*exec.Cmd),
-		scrcpyRecordCmd: make(map[string]*exec.Cmd),
-		openFileCmds:    make(map[string]*exec.Cmd),
-		lastActive:      make(map[string]int64),
-		version:         version,
+		aaptCache:         make(map[string]AppPackage),
+		scrcpyCmds:        make(map[string]*exec.Cmd),
+		scrcpyRecordCmd:   make(map[string]*exec.Cmd),
+		openFileCmds:      make(map[string]*exec.Cmd),
+		lastActive:        make(map[string]int64),
+		reconnectCooldown: make(map[string]time.Time),
+		version:           version,
 	}
 	app.initPersistentCache()
 	return app
@@ -1421,6 +1426,62 @@ func (a *App) AdbDisconnect(address string) (string, error) {
 	return "disconnected", nil
 }
 
+// newAdbCommand creates an exec.Cmd with a clean environment to avoid proxy issues
+func (a *App) newAdbCommand(ctx context.Context, args ...string) *exec.Cmd {
+	var cmd *exec.Cmd
+	if ctx != nil {
+		cmd = exec.CommandContext(ctx, a.adbPath, args...)
+	} else {
+		cmd = exec.Command(a.adbPath, args...)
+	}
+
+	// Sanitize environment: remove proxies that might interfere with local ADB communication
+	env := os.Environ()
+	newEnv := make([]string, 0, len(env))
+	proxyVars := []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"}
+
+	for _, e := range env {
+		isProxy := false
+		for _, v := range proxyVars {
+			if strings.HasPrefix(e, v+"=") {
+				isProxy = true
+				break
+			}
+		}
+		if !isProxy {
+			newEnv = append(newEnv, e)
+		}
+	}
+	cmd.Env = newEnv
+	return cmd
+}
+
+// tryAutoReconnect attempts to reconnect to a wireless device if it's offline or missing
+func (a *App) tryAutoReconnect(address string) {
+	if address == "" || (!strings.Contains(address, ":") && !strings.Contains(address, "._tcp")) {
+		return
+	}
+
+	a.reconnectMu.Lock()
+	last, ok := a.reconnectCooldown[address]
+	if ok && time.Since(last) < 30*time.Second {
+		a.reconnectMu.Unlock()
+		return
+	}
+	a.reconnectCooldown[address] = time.Now()
+	a.reconnectMu.Unlock()
+
+	go func() {
+		a.Log("Auto-reconnecting to wireless device: %s", address)
+		// Use a short timeout for the connect command to not block
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := a.newAdbCommand(ctx, "connect", address)
+		// We don't care much about the output here as we're just poking it
+		_ = cmd.Run()
+	}()
+}
+
 // GetDevices returns a list of connected ADB devices
 func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 	a.mu.Lock()
@@ -1434,7 +1495,7 @@ func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 	}
 
 	// 1. Get raw output from adb devices -l
-	cmd := exec.CommandContext(ctx, a.adbPath, "devices", "-l")
+	cmd := a.newAdbCommand(ctx, "devices", "-l")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("failed to run adb devices (path: %s): %w, output: %s", a.adbPath, err, string(output))
@@ -1498,6 +1559,28 @@ func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 			}
 			node.isMDNS = strings.Contains(node.id, "._tcp") || strings.Contains(node.id, "._adb-tls-connect")
 			nodes = append(nodes, node)
+
+			// OPTIMIZATION: If a wireless device is offline, try to reconnect it
+			if node.isWireless && node.state == "offline" {
+				a.tryAutoReconnect(node.id)
+			}
+		}
+	}
+
+	// 3.5. Proactively reconnect to recently active wireless devices missing from the current list
+	// This helps when a proxy switch or network blip causes the device to drop off the adb daemon entirely.
+	for _, hd := range historyDevices {
+		if hd.WifiAddr != "" && time.Since(hd.LastSeen) < 15*time.Minute {
+			found := false
+			for _, n := range nodes {
+				if n.id == hd.WifiAddr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				a.tryAutoReconnect(hd.WifiAddr)
+			}
 		}
 	}
 
@@ -1895,7 +1978,7 @@ func (a *App) RunAdbCommand(args []string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, a.adbPath, args...)
+	cmd := a.newAdbCommand(ctx, args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("command failed: %w, output: %s", err, string(output))

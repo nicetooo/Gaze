@@ -220,7 +220,9 @@
     "connect_failed": "Connection failed",
     "scan_qr_code": "Scan to Connect",
     "scan_qr_desc": "Scan this QR code with your phone to automatically connect",
-    "pairing_guide": "On your phone: Developer options -> Wireless debugging -> Pair device with pairing code",
+    "pairing_guide": "Enter the Pairing Code displayed on your phone.",
+    "proxy_tip_title": "Proxy/VPN Stability Tip",
+    "proxy_tip_desc": "If using a proxy or VPN on Android, please ensure 'Bypass Local Network' is enabled in your proxy app settings to prevent ADB disconnection.",
     "pin": "Pin to Top",
     "unpin": "Unpin"
   },
