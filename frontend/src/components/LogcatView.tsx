@@ -422,6 +422,7 @@ export default function LogcatView({
             onRefresh={fetchDevices || (() => {})}
             loading={false}
           />
+          <span style={{ color: "#888", fontSize: "12px", marginLeft: 8 }}>{t("logcat.package") || "Package"}:</span>
           <Select
             showSearch
             value={selectedPackage}
@@ -465,7 +466,47 @@ export default function LogcatView({
           flexShrink: 0,
         }}
       >
-        {/* Row 1: Real-time View Filter (Most used) */}
+        {/* Row 1: Fixed Pre-Filter (Advanced) - Moved up */}
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, textAlign: "right" }}>{t("logcat.pre_filter") || "Pre-Filter"}:</span>
+          <div style={{ flex: 1 }}>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              placeholder={t("logcat.select_pre_filters") || "Select filters to strictly cache only matching logs (Pre-Filter)"}
+              value={selectedPresetIds}
+              onChange={setSelectedPresetIds}
+              optionLabelProp="filterName"
+              options={savedFilters.map(f => ({ 
+                label: (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>{f.name}</span>
+                    <DeleteOutlined 
+                      className="delete-preset-icon"
+                      style={{ color: "#999", fontSize: '12px' }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "#ff4d4f"}
+                      onMouseLeave={(e) => e.currentTarget.style.color = "#999"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleRemovePreset(f.id);
+                      }}
+                    />
+                  </div>
+                ), 
+                value: f.id,
+                filterName: f.name
+              }))}
+              maxTagCount="responsive"
+              allowClear
+            />
+          </div>
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontSize: "11px", color: "#666" }}>
+             <InfoCircleOutlined /> <span>Only matching logs are buffered</span>
+          </div>
+        </div>
+
+        {/* Row 2: Real-time View Filter (Most used) - Moved down */}
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
           <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, textAlign: "right" }}>{t("logcat.view_filter")}:</span>
           <div style={{ flex: 1, position: "relative" }}>
@@ -584,46 +625,6 @@ export default function LogcatView({
               onChange={(vals) => setLevelFilter(vals as string[])}
               style={{ display: "flex", gap: "4px" }}
             />
-          </div>
-        </div>
-
-        {/* Row 2: Fixed Pre-Filter (Advanced) */}
-        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, textAlign: "right" }}>{t("logcat.pre_filter") || "Pre-Filter"}:</span>
-          <div style={{ flex: 1 }}>
-            <Select
-              mode="multiple"
-              style={{ width: "100%" }}
-              placeholder={t("logcat.select_pre_filters") || "Select filters to strictly cache only matching logs (Pre-Filter)"}
-              value={selectedPresetIds}
-              onChange={setSelectedPresetIds}
-              optionLabelProp="filterName"
-              options={savedFilters.map(f => ({ 
-                label: (
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{f.name}</span>
-                    <DeleteOutlined 
-                      className="delete-preset-icon"
-                      style={{ color: "#999", fontSize: '12px' }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = "#ff4d4f"}
-                      onMouseLeave={(e) => e.currentTarget.style.color = "#999"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        handleRemovePreset(f.id);
-                      }}
-                    />
-                  </div>
-                ), 
-                value: f.id,
-                filterName: f.name
-              }))}
-              maxTagCount="responsive"
-              allowClear
-            />
-          </div>
-          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontSize: "11px", color: "#666" }}>
-             <InfoCircleOutlined /> <span>Only matching logs are buffered</span>
           </div>
         </div>
       </div>

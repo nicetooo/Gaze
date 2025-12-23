@@ -2470,8 +2470,8 @@ func (a *App) StartLogcat(deviceId, packageName string) error {
 		a.StopLogcat()
 	}
 
-	// Clear buffer first
-	exec.Command(a.adbPath, "-s", deviceId, "logcat", "-c").Run()
+	// Don't clear buffer by default, users usually want to see recent logs (history)
+	// exec.Command(a.adbPath, "-s", deviceId, "logcat", "-c").Run()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	a.logcatCancel = cancel
@@ -2492,11 +2492,25 @@ func (a *App) StartLogcat(deviceId, packageName string) error {
 		return fmt.Errorf("failed to start logcat: %w", err)
 	}
 
-	// PID management
-	var currentPid string
+	// PID and UID management
+	var currentPids []string
+	var currentUid string
 	var pidMutex sync.RWMutex
 
-	// Poller goroutine to update PID if packageName is provided
+	// Try to find UID for more robust filtering on Android 7+
+	if packageName != "" {
+		uidCmd := exec.Command(a.adbPath, "-s", deviceId, "shell", "pm list packages -U "+packageName)
+		uidOut, _ := uidCmd.Output()
+		uidStr := string(uidOut)
+		if strings.Contains(uidStr, "uid:") {
+			parts := strings.Split(uidStr, "uid:")
+			if len(parts) > 1 {
+				currentUid = strings.TrimSpace(strings.Fields(parts[1])[0])
+			}
+		}
+	}
+
+	// Poller goroutine to update PIDs if packageName is provided
 	if packageName != "" {
 		go func() {
 			ticker := time.NewTicker(2 * time.Second) // Check every 2 seconds
@@ -2504,22 +2518,56 @@ func (a *App) StartLogcat(deviceId, packageName string) error {
 
 			// Function to check and update PID
 			checkPid := func() {
-				c := exec.Command(a.adbPath, "-s", deviceId, "shell", "pidof", packageName)
-				out, _ := c.Output() // Ignore error as it returns 1 if not found
-				pid := strings.TrimSpace(string(out))
-				// Handle multiple PIDs (take the first one)
-				parts := strings.Fields(pid)
-				if len(parts) > 0 {
-					pid = parts[0]
+				// 1. Try pgrep (most inclusive for sub-processes)
+				c := exec.Command(a.adbPath, "-s", deviceId, "shell", "pgrep -f", packageName)
+				out, _ := c.Output()
+				raw := strings.TrimSpace(string(out))
+
+				// 2. Fallback to pidof
+				if raw == "" {
+					c2 := exec.Command(a.adbPath, "-s", deviceId, "shell", "pidof", packageName)
+					out2, _ := c2.Output()
+					raw = strings.TrimSpace(string(out2))
 				}
 
+				// 3. Last resort ps -A scan
+				if raw == "" {
+					c3 := exec.Command(a.adbPath, "-s", deviceId, "shell", "ps -A")
+					out3, _ := c3.Output()
+					lines := strings.Split(string(out3), "\n")
+					var matchedPids []string
+					for _, line := range lines {
+						if strings.Contains(line, packageName) {
+							fields := strings.Fields(line)
+							if len(fields) > 1 {
+								matchedPids = append(matchedPids, fields[1])
+							}
+						}
+					}
+					raw = strings.Join(matchedPids, " ")
+				}
+
+				pids := strings.Fields(raw)
+
 				pidMutex.Lock()
-				if pid != currentPid { // Only emit if PID status changes
-					currentPid = pid
-					if pid != "" {
-						wailsRuntime.EventsEmit(a.ctx, "logcat-data", fmt.Sprintf("--- Monitoring process %s (PID: %s) ---", packageName, pid))
+				// Check if PIDs changed
+				changed := len(pids) != len(currentPids)
+				if !changed {
+					for i, p := range pids {
+						if p != currentPids[i] {
+							changed = true
+							break
+						}
+					}
+				}
+
+				if changed {
+					currentPids = pids
+					if len(pids) > 0 {
+						status := fmt.Sprintf("--- Monitoring %s (UID: %s, PIDs: %s) ---", packageName, currentUid, strings.Join(pids, ", "))
+						wailsRuntime.EventsEmit(a.ctx, "logcat-data", status)
 					} else {
-						wailsRuntime.EventsEmit(a.ctx, "logcat-data", fmt.Sprintf("--- Waiting for process %s to start ---", packageName))
+						wailsRuntime.EventsEmit(a.ctx, "logcat-data", fmt.Sprintf("--- Waiting for %s processes... ---", packageName))
 					}
 				}
 				pidMutex.Unlock()
@@ -2550,16 +2598,45 @@ func (a *App) StartLogcat(deviceId, packageName string) error {
 			// Filter logic
 			if packageName != "" {
 				pidMutex.RLock()
-				pid := currentPid
+				pids := currentPids
+				uid := currentUid
 				pidMutex.RUnlock()
 
-				if pid != "" {
-					// If we have a PID, strictly filter by it
-					if !strings.Contains(line, fmt.Sprintf("(%s)", pid)) && !strings.Contains(line, fmt.Sprintf(" %s ", pid)) {
-						continue // Skip lines not matching the PID
+				if len(pids) > 0 {
+					found := false
+					for _, pid := range pids {
+						// Extremely robust PID matching using substring checks for common surrounding patterns
+						// This addresses the " ( 9672):" case where there is leading/trailing whitespace
+
+						// Check for (PID), [PID], /PID, or PID: with optional spaces
+						if strings.Contains(line, "("+pid+")") ||
+							strings.Contains(line, "( "+pid+")") ||
+							strings.Contains(line, "("+pid+" )") ||
+							strings.Contains(line, "["+pid+"]") ||
+							strings.Contains(line, "[ "+pid+"]") ||
+							strings.Contains(line, " "+pid+":") ||
+							strings.Contains(line, "/"+pid+"(") || // For some tag(PID) formats
+							strings.Contains(line, " "+pid+" ") {
+							found = true
+							break
+						}
+
+						// Fallback: search for just " PID)" or " PID:" which is very common in logcat
+						if !found && (strings.Contains(line, " "+pid+"):") || strings.Contains(line, " "+pid+":")) {
+							found = true
+							break
+						}
+					}
+
+					// Also match by UID if present in the log line (some formats include it)
+					if !found && uid != "" && strings.Contains(line, " "+uid+" ") {
+						found = true
+					}
+
+					if !found {
+						continue
 					}
 				} else {
-					// If no PID is found yet, drop lines to avoid noise (waiting for app to start)
 					continue
 				}
 			}
