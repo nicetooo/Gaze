@@ -10,10 +10,11 @@ Một công cụ quản lý Android mạnh mẽ, hiện đại và độc lập 
 ## ✨ Tính năng
 
 ### 📱 Quản lý thiết bị
-- **Danh sách thiết bị hợp nhất**: Quản lý liền mạch các thiết bị vật lý và không dây trong một chế độ xem hợp nhất.
-- **Kết nối không dây**: Kết nối dễ dàng thông qua ghép nối IP/Cổng.
+- **Danh sách thiết bị hợp nhất**: Quản lý liền mạch các thiết bị vật lý và không dây (hợp nhất USB/Wi-Fi) trong một chế độ xem hợp nhất.
+- **Kết nối không dây**: Kết nối dễ dàng thông qua ghép nối IP/Cổng với hỗ trợ mDNS.
 - **Lịch sử thiết bị**: Truy cập nhanh vào các thiết bị ngoại tuyến đã kết nối trước đó.
-- **Thông tin chi tiết**: Xem số liệu thống kê, kiểu máy và ID thiết bị theo thời gian thực.
+- **Ghim thiết bị**: Ghim thiết bị được sử dụng nhiều nhất để luôn ở đầu danh sách.
+- **Làm mới tuần tự**: Cơ chế thăm dò tuần tự thông minh hơn mang lại giao diện ổn định, không bị nhấp nháy.
 
 ### 📦 Quản lý ứng dụng
 - **Kiểm soát gói đầy đủ**: Cài đặt (Kéo & Thả), Gỡ cài đặt, Bật, Tắt, Buộc dừng, Xóa dữ liệu.
@@ -37,6 +38,7 @@ Một công cụ quản lý Android mạnh mẽ, hiện đại và độc lập 
 ### 📜 Logcat nâng cao
 - **Phát trực tuyến thời gian thực**: Trình xem nhật ký trực tiếp với điều khiển tự động cuộn.
 - **Lọc mạnh mẽ**: Lọc theo Mức nhật ký, Thẻ, PID hoặc Regex tùy chỉnh.
+- **Lọc trước (Pre-Filter)**: Khả năng đệm hiệu suất cao chỉ lưu trữ các nhật ký khớp với các quy tắc cụ thể.
 - **Tập trung vào ứng dụng**: Tự động lọc nhật ký cho một ứng dụng cụ thể.
 
 ### 💻 ADB Shell
@@ -45,6 +47,9 @@ Một công cụ quản lý Android mạnh mẽ, hiện đại và độc lập 
 
 ### 🔌 Khay hệ thống
 - **Truy cập nhanh**: Kiểm soát phản chiếu và xem trạng thái thiết bị từ thanh menu/khay hệ thống.
+- **Ghim thiết bị**: Ghim thiết bị chính của bạn để xuất hiện ở đầu danh sách và menu khay.
+- **Chức năng khay**: Truy cập trực tiếp vào Logcat, Shell và Trình quản lý tệp cho các thiết bị đã ghim ngay từ khay.
+- **Chỉ báo ghi âm**: Chỉ báo trực quan "chấm đỏ" trên khay khi đang ghi âm.
 - **Hoạt động nền**: Giữ ứng dụng chạy trong nền để truy cập tức thì.
 
 ---

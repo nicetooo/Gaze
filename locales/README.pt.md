@@ -10,10 +10,11 @@ Uma ferramenta de gerenciamento Android poderosa, moderna e independente, constr
 ## ✨ Recursos
 
 ### 📱 Gerenciamento de Dispositivos
-- **Lista Unificada de Dispositivos**: Gerencie dispositivos físicos e sem fio em uma visualização unificada.
-- **Conexão Sem Fio**: Conecte-se facilmente via emparelhamento IP/Porta.
+- **Lista Unificada de Dispositivos**: Gerencie dispositivos físicos e sem fio (fusão USB/Wi-Fi) em uma visualização unificada.
+- **Conexão Sem Fio**: Conecte-se facilmente via emparelhamento IP/Porta com suporte mDNS.
 - **Histórico de Dispositivos**: Acesso rápido a dispositivos offline conectados anteriormente.
-- **Informações Detalhadas**: Veja estatísticas do dispositivo, modelo e ID em tempo real.
+- **Pin de Dispositivo**: Fixe seu dispositivo mais usado para que ele permaneça sempre no topo da lista.
+- **Atualização Sequencial**: Mecanismo de polling sequencial mais inteligente para uma interface sólida e sem oscilações.
 
 ### 📦 Gerenciamento de Apps
 - **Controle Total de Pacotes**: Instalar (Arrastar e Soltar), Desinstalar, Ativar, Desativar, Forçar Parada, Limpar Dados.
@@ -37,6 +38,7 @@ Uma ferramenta de gerenciamento Android poderosa, moderna e independente, constr
 ### 📜 Logcat Avançado
 - **Streaming em Tempo Real**: Visualizador de logs ao vivo com controle de rolagem automática.
 - **Filtragem Poderosa**: Filtre por Nível de Log, Tag, PID ou Regex personalizado.
+- **Pré-filtragem (Pre-Filter)**: Armazenamento de alto desempenho que guarda apenas logs que correspondem a regras específicas.
 - **Centrado no App**: Filtre automaticamente logs para um aplicativo específico.
 
 ### 💻 ADB Shell
@@ -45,6 +47,9 @@ Uma ferramenta de gerenciamento Android poderosa, moderna e independente, constr
 
 ### 🔌 Bandeja do Sistema
 - **Acesso Rápido**: Controle o espelhamento e veja o status do dispositivo na barra de menu/bandeja do sistema.
+- **Pin de Dispositivo**: Fixe seu dispositivo principal para aparecer no topo da lista e no menu da bandeja.
+- **Funções da Bandeja**: Acesso direto ao Logcat, Shell e Gerenciador de Arquivos para dispositivos fixados a partir da bandeja.
+- **Indicadores de Gravação**: Indicador visual de ponto vermelho na bandeja quando a gravação está ativa.
 - **Operação em Segundo Plano**: Mantenha o aplicativo rodando em segundo plano para acesso instantâneo.
 
 ---

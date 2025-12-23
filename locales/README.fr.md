@@ -10,10 +10,11 @@ Un outil de gestion Android puissant, moderne et autonome, construit avec **Wail
 ## ✨ Caractéristiques
 
 ### 📱 Gestion des Appareils
-- **Liste Unifiée des Appareils**: Gérez de manière transparente les appareils physiques et sans fil dans une vue unifiée.
-- **Connexion Sans Fil**: Connectez-vous sans effort via l'appariement IP/Port.
+- **Liste Unifiée des Appareils**: Gérez de manière transparente les appareils physiques et sans fil (fusion USB/Wi-Fi) dans une vue unifiée.
+- **Connexion Sans Fil**: Connectez-vous sans effort via l'appariement IP/Port avec prise en charge mDNS.
 - **Historique des Appareils**: Accès rapide aux appareils hors ligne précédemment connectés.
-- **Infos Détaillées**: Visualisez les statistiques, le modèle et l'ID de l'appareil en temps réel.
+- **Épinglage d'Appareil**: Épinglez votre appareil le plus utilisé pour qu'il reste toujours en haut de la liste.
+- **Rafraîchissement Séquentiel**: Mécanisme de scrutation séquentiel plus intelligent pour une interface solide et sans scintillement.
 
 ### 📦 Gestion des Applications
 - **Contrôle Total des Paquets**: Installation (Drag & Drop), désinstallation, activation, désactivation, arrêt forcé, effacement des données.
@@ -37,6 +38,7 @@ Un outil de gestion Android puissant, moderne et autonome, construit avec **Wail
 ### 📜 Logcat Avancé
 - **Streaming en Temps Réel**: Visualiseur de journaux en direct avec contrôle du défilement automatique.
 - **Filtrage Puissant**: Filtrer par niveau de journal, Tag, PID ou Regex personnalisé.
+- **Pré-filtrage (Pre-Filter)**: Mise en mémoire tampon haute performance qui ne stocke que les journaux correspondant à des règles spécifiques.
 - **Centré sur l'Application**: Filtrez automatiquement les journaux pour une application spécifique.
 
 ### 💻 ADB Shell
@@ -44,7 +46,10 @@ Un outil de gestion Android puissant, moderne et autonome, construit avec **Wail
 - **Historique des Commandes**: Accès rapide aux commandes précédemment exécutées.
 
 ### 🔌 Barre d'état système
-- **Accès Rapide**: Contrôlez la recopie et affichez l'état de l'appareil depuis la barre de menu / barre d'état système.
+- **Accès Rápide**: Contrôlez la recopie et affichez l'état de l'appareil depuis la barre de menu / barre d'état système.
+- **Épinglage d'Appareil**: Épinglez votre appareil principal pour qu'il apparaisse en haut de la liste et du menu de la barre d'état.
+- **Fonctions de la Barre d'état**: Accès direct au Logcat, au Shell et au Gestionnaire de fichiers pour les appareils épinglés depuis la barre d'état.
+- **Indicateurs d'Enregistrement**: Indicateur visuel "point rouge" dans la barre d'état lorsque l'enregistrement est actif.
 - **Fonctionnement en Arrière-plan**: Gardez l'application en cours d'exécution en arrière-plan pour un accès instantané.
 
 ---

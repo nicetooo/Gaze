@@ -10,10 +10,11 @@ Una herramienta de gestión de Android potente, moderna y autónoma construida c
 ## ✨ Características
 
 ### 📱 Gestión de Dispositivos
-- **Lista Unificada de Dispositivos**: Gestiona dispositivos físicos e inalámbricos sin problemas en una vista unificada.
-- **Conexión Inalámbrica**: Conéctese sin esfuerzo mediante emparejamiento IP/Puerto.
+- **Lista Unificada de Dispositivos**: Gestiona dispositivos físicos e inalámbricos (fusión USB/Wi-Fi) sin problemas en una vista unificada.
+- **Conexión Inalámbrica**: Conéctese sin esfuerzo mediante emparejamiento IP/Puerto con soporte mDNS.
 - **Historial de Dispositivos**: Acceso rápido a dispositivos fuera de línea conectados anteriormente.
-- **Información Detallada**: Vea estadísticas del dispositivo, modelo e ID en tiempo real.
+- **Pin de Dispositivo**: Fije su dispositivo más usado para que permanezca siempre al principio de la lista.
+- **Refresco Secuencial**: Mecanismo de sondeo secuencial más inteligente para una interfaz sólida y sin parpadeos.
 
 ### 📦 Gestión de Aplicaciones
 - **Control Total de Paquetes**: Instalar (Arrastrar y Soltar), Desinstalar, Habilitar, Deshabilitar, Forzar Detención, Borrar Datos.
@@ -37,6 +38,7 @@ Una herramienta de gestión de Android potente, moderna y autónoma construida c
 ### 📜 Logcat Avanzado
 - **Transmisión en Tiempo Real**: Visor de registros en vivo con control de desplazamiento automático.
 - **Filtrado Potente**: Filtrar por Nivel de Registro, Etiqueta, PID o Regex personalizado.
+- **Pre-Filtrado (Pre-Filter)**: Almacenamiento de alto rendimiento que solo guarda registros que coinciden con reglas específicas.
 - **Centrado en la Aplicación**: Filtrar automáticamente registros para una aplicación específica.
 
 ### 💻 ADB Shell
@@ -45,6 +47,9 @@ Una herramienta de gestión de Android potente, moderna y autónoma construida c
 
 ### 🔌 Bandeja del Sistema
 - **Acceso Rápido**: Controle la duplicación y vea el estado del dispositivo desde la barra de menú/bandeja del sistema.
+- **Pin de Dispositivo**: Fije su dispositivo principal para que aparezca al principio de la lista y del menú de la bandeja.
+- **Funciones de Bandeja**: Acceso directo a Logcat, Shell y Administrador de Archivos para dispositivos fijados desde la bandeja.
+- **Indicadores de Grabación**: Indicador visual de punto rojo en la bandeja cuando la grabación está activa.
 - **Operación en Segundo Plano**: Mantenga la aplicación ejecutándose en segundo plano para un acceso instantáneo.
 
 ---

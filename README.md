@@ -34,10 +34,11 @@ A powerful, modern, and self-contained Android management tool built with **Wail
 
 
 ### 📱 Device Management
-- **Unified Device List**: Seamlessly manage unified physical and wireless devices.
-- **Wireless Connection**: Connect effortlessly via IP/Port pairing.
+- **Unified Device List**: Seamlessly manage unified physical and wireless devices (USB/Wi-Fi merging).
+- **Wireless Connection**: Connect effortlessly via IP/Port pairing with mDNS support.
 - **Device History**: Quick access to previously connected offline devices.
-- **Detailed Info**: View real-time device stats, model, and ID.
+- **Device Pinning**: Pin your most used device to always stay at the top of the list.
+- **Sequential Refresh**: Smarter sequential polling mechanism for a rock-solid, flicker-free UI.
 
 ### 📦 App Management
 - **Full Package Control**: Install (Drag & Drop), Uninstall, Enable, Disable, Force Stop, Clear Data.
@@ -61,6 +62,7 @@ A powerful, modern, and self-contained Android management tool built with **Wail
 ### 📜 Advanced Logcat
 - **Real-time Streaming**: Live log viewer with auto-scroll control.
 - **Powerful Filtering**: Filter by Log Level, Tag, PID, or custom Regex.
+- **Pre-Filtering**: High-performance buffering that only stores logs matching specific rules.
 - **App-Centric**: Auto-filter logs for a specific application.
 
 ### 💻 ADB Shell
@@ -69,6 +71,9 @@ A powerful, modern, and self-contained Android management tool built with **Wail
 
 ### 🔌 System Tray
 - **Quick Access**: Control mirroring and view device status from the menu bar/system tray.
+- **Device Pinning**: Pin your primary device to appear at the top of the list and tray menu.
+- **Tray Functions**: Direct access to Logcat, Shell, and File Manager for pinned devices from the tray.
+- **Recording Indicators**: Visual red-dot indicator in the tray when recording is active.
 - **Background Operation**: Keep the app running in the background for instant access.
 
 ---

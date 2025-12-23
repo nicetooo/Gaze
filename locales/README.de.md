@@ -10,10 +10,11 @@ Ein leistungsstarkes, modernes und eigenständiges Android-Verwaltungstool, entw
 ## ✨ Funktionen
 
 ### 📱 Geräteverwaltung
-- **Einheitliche Geräteliste**: Verwalten Sie physische und drahtlose Geräte nahtlos in einer einzigen Ansicht.
-- **Drahtlose Verbindung**: Verbinden Sie sich mühelos per IP/Port-Pairing.
+- **Einheitliche Geräteliste**: Verwalten Sie physische und drahtlose Geräte (USB/Wi-Fi-Merging) nahtlos in einer einzigen Ansicht.
+- **Drahtlose Verbindung**: Verbinden Sie sich mühelos per IP/Port-Pairing mit mDNS-Unterstützung.
 - **Gerätehistorie**: Schneller Zugriff auf zuvor verbundene Offline-Geräte.
-- **Detaillierte Infos**: Sehen Sie Gerätestatus, Modell und ID in Echtzeit ein.
+- **Geräte-Pinning**: Heften Sie Ihr meistgenutztes Gerät an, damit es immer ganz oben in der Liste steht.
+- **Sequentieller Refresh**: Intelligenterer sequentieller Polling-Mechanismus für eine stabile und flimmerfreie UI.
 
 ### 📦 App-Verwaltung
 - **Volle Paketkontrolle**: Installieren (Drag & Drop), Deinstallieren, Aktivieren, Deaktivieren, Stoppen erzwingen, Daten löschen.
@@ -37,6 +38,7 @@ Ein leistungsstarkes, modernes und eigenständiges Android-Verwaltungstool, entw
 ### 📜 Erweitertes Logcat
 - **Echtzeit-Streaming**: Live-Protokollansicht mit automatischer Scroll-Steuerung.
 - **Leistungsstarke Filterung**: Filtern nach Protokollebene, Tag, PID oder benutzerdefiniertem Regex.
+- **Vorfilterung (Pre-Filter)**: Hochleistungs-Buffering, das nur Protokolle speichert, die bestimmten Regeln entsprechen.
 - **App-Zentriert**: Automatisches Filtern von Protokollen für eine bestimmte Anwendung.
 
 ### 💻 ADB Shell
@@ -45,6 +47,9 @@ Ein leistungsstarkes, modernes und eigenständiges Android-Verwaltungstool, entw
 
 ### 🔌 Systemablage
 - **Schnellzugriff**: Steuern Sie die Spiegelung und sehen Sie den Gerätestatus über die Menüleiste / Systemablage.
+- **Geräte-Pinning**: Heften Sie Ihr Hauptgerät an, damit es oben in der Liste und im Menü der Systemablage erscheint.
+- **Tray-Funktionen**: Direkter Zugriff auf Logcat, Shell und Dateimanager für angeheftete Geräte über die Systemablage.
+- **Aufnahme-Indikatoren**: Visueller roter Punkt in der Systemablage, wenn eine Aufnahme aktiv ist.
 - **Hintergrundbetrieb**: Lassen Sie die App im Hintergrund laufen, um sofortigen Zugriff zu erhalten.
 
 ---
