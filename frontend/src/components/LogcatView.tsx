@@ -1,11 +1,13 @@
 import { useRef, useEffect, useState, useMemo } from "react";
-import { Button, Input, Select, Space, Checkbox, message } from "antd";
+import { Button, Input, Select, Space, Checkbox, message, Modal } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   PauseOutlined,
   PlayCircleOutlined,
   ClearOutlined,
   DownOutlined,
+  InfoCircleOutlined,
+  DeleteOutlined,
 } from "@ant-design/icons";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import DeviceSelector from "./DeviceSelector";
@@ -32,6 +34,14 @@ interface LogcatViewProps {
   toggleLogcat: (pkg: string) => void;
   logs: string[];
   setLogs: (logs: string[]) => void;
+  logFilter?: string;
+  setLogFilter?: (filter: string) => void;
+  useRegex?: boolean;
+  setUseRegex?: (use: boolean) => void;
+  preFilter?: string;
+  setPreFilter?: (filter: string) => void;
+  preUseRegex?: boolean;
+  setPreUseRegex?: (use: boolean) => void;
 }
 
 export default function LogcatView({
@@ -43,6 +53,14 @@ export default function LogcatView({
   toggleLogcat,
   logs,
   setLogs,
+  logFilter: propLogFilter,
+  setLogFilter: propSetLogFilter,
+  useRegex: propUseRegex,
+  setUseRegex: propSetUseRegex,
+  preFilter,
+  setPreFilter,
+  preUseRegex,
+  setPreUseRegex,
 }: LogcatViewProps) {
   const { t } = useTranslation();
   const parentRef = useRef<HTMLDivElement>(null);
@@ -51,12 +69,20 @@ export default function LogcatView({
   // Logcat local state
   const [packages, setPackages] = useState<main.AppPackage[]>([]);
   const [selectedPackage, setSelectedPackage] = useState<string>("");
-  const [logFilter, setLogFilter] = useState("");
+  
+  // Use props if available, otherwise local state
+  const [localLogFilter, setLocalLogFilter] = useState("");
+  const [localUseRegex, setLocalUseRegex] = useState(false);
+  
+  const logFilter = propLogFilter !== undefined ? propLogFilter : localLogFilter;
+  const setLogFilter = propSetLogFilter || setLocalLogFilter;
+  const useRegex = propUseRegex !== undefined ? propUseRegex : localUseRegex;
+  const setUseRegex = propSetUseRegex || setLocalUseRegex;
+
   const [autoScroll, setAutoScroll] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string[]>([]);
   const [matchCase, setMatchCase] = useState(false);
   const [matchWholeWord, setMatchWholeWord] = useState(false);
-  const [useRegex, setUseRegex] = useState(false);
 
   useEffect(() => {
     const fetchPackageList = async () => {
@@ -113,6 +139,86 @@ export default function LogcatView({
       };
     }
   }, [logFilter, useRegex, matchCase, matchWholeWord]);
+
+  // Filter Presets state
+  interface FilterPreset {
+    id: string;
+    name: string;
+    pattern: string;
+    isRegex: boolean;
+  }
+  const [savedFilters, setSavedFilters] = useState<FilterPreset[]>(() => {
+    try {
+      const saved = localStorage.getItem("adbGUI_logcat_filters");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Persist filters
+  useEffect(() => {
+    localStorage.setItem("adbGUI_logcat_filters", JSON.stringify(savedFilters));
+  }, [savedFilters]);
+
+  // Selected presets for Pre-Filter
+  const [selectedPresetIds, setSelectedPresetIds] = useState<string[]>([]);
+
+  // Update pre-filter when presets selection changes
+  useEffect(() => {
+    if (selectedPresetIds.length === 0) {
+      if (setPreFilter) setPreFilter("");
+      return;
+    }
+
+    const selected = savedFilters.filter(f => selectedPresetIds.includes(f.id));
+    if (selected.length === 0) return;
+
+    // Combine filters. If multiple, we must use Regex OR.
+    // Even if one, if it is regex, we use regex.
+    // If we mix text and regex, we treat text as regex (escaped).
+    
+    const parts = selected.map(f => {
+       if (f.isRegex) return `(${f.pattern})`;
+       // Escape special regex chars for plain text to treat it as literal in a regex
+       return `(${f.pattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`;
+    });
+    
+    const combinedPattern = parts.join("|");
+    
+    if (setPreFilter) setPreFilter(combinedPattern);
+    if (setPreUseRegex) setPreUseRegex(true); // Always regex for combined
+
+  }, [selectedPresetIds, savedFilters, setPreFilter, setPreUseRegex]);
+
+  // Save Filter Modal state
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [newFilterName, setNewFilterName] = useState("");
+
+  const handleSaveFilter = () => {
+    if (!logFilter) {
+       message.warning("Please enter a filter pattern first.");
+       return;
+    }
+    setNewFilterName(logFilter);
+    setIsSaveModalOpen(true);
+  };
+
+  const confirmSaveFilter = () => {
+    if (!newFilterName.trim()) {
+      message.error("Name cannot be empty");
+      return;
+    }
+    const newPreset: FilterPreset = {
+      id: Date.now().toString(),
+      name: newFilterName,
+      pattern: logFilter,
+      isRegex: !!useRegex
+    };
+    setSavedFilters(prev => [...prev, newPreset]);
+    message.success(t("logcat.filter_saved"));
+    setIsSaveModalOpen(false);
+  };
 
   // 2. 强力过滤引擎
   const filteredLogs = useMemo(() => {
@@ -281,6 +387,12 @@ export default function LogcatView({
     }
   };
 
+  const handleRemovePreset = (id: string) => {
+    setSavedFilters(prev => prev.filter(p => p.id !== id));
+    setSelectedPresetIds(prev => prev.filter(pid => pid !== id));
+    message.success("Filter rule removed");
+  };
+
   return (
     <div
       style={{
@@ -348,112 +460,172 @@ export default function LogcatView({
         style={{
           marginBottom: 12,
           display: "flex",
-          gap: 16,
-          alignItems: "center",
+          flexDirection: "column",
+          gap: 12,
           flexShrink: 0,
         }}
       >
-        <div style={{ flex: 1, position: "relative" }}>
-          <Input
-            placeholder={
-              useRegex ? t("logcat.filter_regex") : t("logcat.filter_text")
-            }
-            value={logFilter}
-            onChange={(e) => setLogFilter(e.target.value)}
-            status={filterInfo.invalid ? "error" : ""}
-            suffix={
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {logFilter && !filterInfo.invalid && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginRight: 4,
-                    }}
-                  >
-                    <span
+        {/* Row 1: Real-time View Filter (Most used) */}
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, textAlign: "right" }}>{t("logcat.view_filter")}:</span>
+          <div style={{ flex: 1, position: "relative" }}>
+            <Input
+              id="logcat-filter-input"
+              placeholder={
+                useRegex ? t("logcat.filter_regex") : t("logcat.filter_text")
+              }
+              value={logFilter}
+              onChange={(e) => setLogFilter(e.target.value)}
+              status={filterInfo.invalid ? "error" : ""}
+              suffix={
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {logFilter && !filterInfo.invalid && (
+                    <div
                       style={{
-                        fontSize: "9px",
-                        padding: "0 4px",
-                        borderRadius: "2px",
-                        backgroundColor: useRegex ? "#e6f7ff" : "#f5f5f5",
-                        color: useRegex ? "#1677ff" : "#888",
-                        border: `1px solid ${useRegex ? "#91d5ff" : "#d9d9d9"}`,
-                        fontWeight: "bold",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        marginRight: 4,
                       }}
                     >
-                      {useRegex ? "REG" : "TXT"}
-                    </span>
-                    <span style={{ fontSize: "11px", color: "#888" }}>
-                      {filteredLogs.length} / {logs.length}
-                    </span>
-                  </div>
-                )}
-                <Space size={2} style={{ marginRight: -7 }}>
-                  <Button
-                    size="small"
-                    type={matchCase ? "primary" : "default"}
-                    style={{
-                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
-                      backgroundColor: matchCase ? "#1677ff" : "#f5f5f5", color: matchCase ? "#fff" : "#555",
-                      border: "none", fontWeight: "bold",
-                    }}
-                    onClick={() => setMatchCase(!matchCase)}
-                    title={t("logcat.match_case") || "Match Case (Aa)"}
-                  > Aa </Button>
-                  <Button
-                    size="small"
-                    type={matchWholeWord ? "primary" : "default"}
-                    style={{
-                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
-                      backgroundColor: matchWholeWord ? "#1677ff" : "#f5f5f5", color: matchWholeWord ? "#fff" : "#555",
-                      border: "none", fontWeight: "bold",
-                    }}
-                    onClick={() => setMatchWholeWord(!matchWholeWord)}
-                    title={t("logcat.match_whole_word") || "Match Whole Word (W)"}
-                  > W </Button>
-                  <Button
-                    size="small"
-                    type={useRegex ? "primary" : "default"}
-                    style={{
-                      fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
-                      backgroundColor: useRegex ? "#1677ff" : "#f5f5f5", color: useRegex ? "#fff" : "#555",
-                      border: "none", fontWeight: "bold",
-                    }}
-                    onClick={() => setUseRegex(!useRegex)}
-                    title={t("logcat.use_regex") || "Use Regular Expression (.*)"}
-                  > .* </Button>
-                </Space>
-              </div>
-            }
-          />
-          {logFilter && (
-            <div
-              style={{
-                position: "absolute", top: "100%", left: 0, fontSize: "10px",
-                color: filterInfo.invalid ? "#f5222d" : "#888", marginTop: 2,
-                fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden",
-                textOverflow: "ellipsis", width: "100%",
-              }}
-            >
-              {filterInfo.invalid
-                ? t("logcat.invalid_regex")
-                : `Pattern: /${filterInfo.pattern}/${matchCase ? "" : "i"}`}
-            </div>
-          )}
+                      <span
+                        style={{
+                          fontSize: "9px",
+                          padding: "0 4px",
+                          borderRadius: "2px",
+                          backgroundColor: useRegex ? "#e6f7ff" : "#f5f5f5",
+                          color: useRegex ? "#1677ff" : "#888",
+                          border: `1px solid ${useRegex ? "#91d5ff" : "#d9d9d9"}`,
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {useRegex ? "REG" : "TXT"}
+                      </span>
+                      <span style={{ fontSize: "11px", color: "#888" }}>
+                        {filteredLogs.length} / {logs.length}
+                      </span>
+                    </div>
+                  )}
+                  <Space size={2} style={{ marginRight: -7 }}>
+                    <Button
+                      size="small"
+                      type={matchCase ? "primary" : "default"}
+                      style={{
+                        fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                        backgroundColor: matchCase ? "#1677ff" : "#f5f5f5", color: matchCase ? "#fff" : "#555",
+                        border: "none", fontWeight: "bold",
+                      }}
+                      onClick={() => setMatchCase(!matchCase)}
+                      title={t("logcat.match_case") || "Match Case (Aa)"}
+                    > Aa </Button>
+                    <Button
+                      size="small"
+                      type={matchWholeWord ? "primary" : "default"}
+                      style={{
+                        fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                        backgroundColor: matchWholeWord ? "#1677ff" : "#f5f5f5", color: matchWholeWord ? "#fff" : "#555",
+                        border: "none", fontWeight: "bold",
+                      }}
+                      onClick={() => setMatchWholeWord(!matchWholeWord)}
+                      title={t("logcat.match_whole_word") || "Match Whole Word (W)"}
+                    > W </Button>
+                    <Button
+                      size="small"
+                      type={useRegex ? "primary" : "default"}
+                      style={{
+                        fontSize: "11px", padding: "0 4px", height: 20, minWidth: 24, borderRadius: 2,
+                        backgroundColor: useRegex ? "#1677ff" : "#f5f5f5", color: useRegex ? "#fff" : "#555",
+                        border: "none", fontWeight: "bold",
+                      }}
+                      onClick={() => setUseRegex(!useRegex)}
+                      title={t("logcat.use_regex") || "Use Regular Expression (.*)"}
+                    > .* </Button>
+                    <Button
+                      size="small"
+                      type="primary"
+                      style={{
+                        fontSize: "11px", padding: "0 8px", height: 20, borderRadius: 2,
+                        backgroundColor: "#52c41a", color: "#fff",
+                        border: "none", fontWeight: "bold", marginLeft: 8
+                      }}
+                      onClick={handleSaveFilter}
+                      title={t("logcat.save_filter")}
+                    > {t("logcat.save") || "Save"} </Button>
+                  </Space>
+                </div>
+              }
+            />
+             {logFilter && (
+                <div
+                  style={{
+                    position: "absolute", top: "100%", left: 0, fontSize: "10px",
+                    color: filterInfo.invalid ? "#f5222d" : "#888", marginTop: 2,
+                    fontFamily: "monospace", whiteSpace: "nowrap", overflow: "hidden",
+                    textOverflow: "ellipsis", width: "100%", zIndex: 10
+                  }}
+                >
+                  {filterInfo.invalid
+                    ? t("logcat.invalid_regex")
+                    : `Pattern: /${filterInfo.pattern}/${matchCase ? "" : "i"}`}
+                </div>
+              )}
+          </div>
+          
+          <div style={{ flexShrink: 0 }}>
+             <Checkbox.Group
+              options={[
+                { label: <span style={{ color: getLogColor("E") }}>{t("logcat.level.error")}</span>, value: "E" },
+                { label: <span style={{ color: getLogColor("W") }}>{t("logcat.level.warn")}</span>, value: "W" },
+                { label: <span style={{ color: getLogColor("I") }}>{t("logcat.level.info")}</span>, value: "I" },
+                { label: <span style={{ color: getLogColor("D") }}>{t("logcat.level.debug")}</span>, value: "D" },
+                { label: <span style={{ color: getLogColor("V") }}>{t("logcat.level.verbose")}</span>, value: "V" },
+              ]}
+              value={levelFilter}
+              onChange={(vals) => setLevelFilter(vals as string[])}
+              style={{ display: "flex", gap: "4px" }}
+            />
+          </div>
         </div>
-        <Checkbox.Group
-          options={[
-            { label: <span style={{ color: getLogColor("E") }}>{t("logcat.level.error")}</span>, value: "E" },
-            { label: <span style={{ color: getLogColor("W") }}>{t("logcat.level.warn")}</span>, value: "W" },
-            { label: <span style={{ color: getLogColor("I") }}>{t("logcat.level.info")}</span>, value: "I" },
-            { label: <span style={{ color: getLogColor("D") }}>{t("logcat.level.debug")}</span>, value: "D" },
-            { label: <span style={{ color: getLogColor("V") }}>{t("logcat.level.verbose")}</span>, value: "V" },
-          ]}
-          value={levelFilter}
-          onChange={(vals) => setLevelFilter(vals as string[])}
-        />
+
+        {/* Row 2: Fixed Pre-Filter (Advanced) */}
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, textAlign: "right" }}>{t("logcat.pre_filter") || "Pre-Filter"}:</span>
+          <div style={{ flex: 1 }}>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              placeholder={t("logcat.select_pre_filters") || "Select filters to strictly cache only matching logs (Pre-Filter)"}
+              value={selectedPresetIds}
+              onChange={setSelectedPresetIds}
+              optionLabelProp="filterName"
+              options={savedFilters.map(f => ({ 
+                label: (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>{f.name}</span>
+                    <DeleteOutlined 
+                      className="delete-preset-icon"
+                      style={{ color: "#999", fontSize: '12px' }}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "#ff4d4f"}
+                      onMouseLeave={(e) => e.currentTarget.style.color = "#999"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        handleRemovePreset(f.id);
+                      }}
+                    />
+                  </div>
+                ), 
+                value: f.id,
+                filterName: f.name
+              }))}
+              maxTagCount="responsive"
+              allowClear
+            />
+          </div>
+          <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 4, fontSize: "11px", color: "#666" }}>
+             <InfoCircleOutlined /> <span>Only matching logs are buffered</span>
+          </div>
+        </div>
       </div>
 
       <div
@@ -501,7 +673,27 @@ export default function LogcatView({
             }}
           />
         )}
-      </div>
+       </div>
+      
+      {/* Save Filter Modal */}
+      <Modal
+        title={t("logcat.save_filter")}
+        open={isSaveModalOpen}
+        onOk={confirmSaveFilter}
+        onCancel={() => setIsSaveModalOpen(false)}
+        okText={t("common.ok") || "OK"}
+        cancelText={t("common.cancel") || "Cancel"}
+        centered
+      >
+        <div style={{ marginBottom: 8 }}>{t("logcat.enter_filter_name")}</div>
+        <Input 
+          value={newFilterName} 
+          onChange={e => setNewFilterName(e.target.value)} 
+          placeholder="Filter Name"
+          autoFocus
+          onPressEnter={confirmSaveFilter}
+        />
+      </Modal>
     </div>
   );
 }

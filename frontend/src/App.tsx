@@ -100,6 +100,10 @@ function App() {
   const [selectedDevice, setSelectedDevice] = useState<string>("");
   const [logs, setLogs] = useState<string[]>([]);
   const [isLogging, setIsLogging] = useState(false);
+  const [logFilter, setLogFilter] = useState("");
+  const [useRegex, setUseRegex] = useState(false);
+  const [preFilter, setPreFilter] = useState("");
+  const [preUseRegex, setPreUseRegex] = useState(false);
   
   // Multi-device mirror status
   const [mirrorStatuses, setMirrorStatuses] = useState<Record<string, {
@@ -120,10 +124,30 @@ function App() {
   // Refs for event listeners
   const loadingRef = useRef(false);
   const isFetchingRef = useRef(false);
+  const logBufferRef = useRef<string[]>([]);
+  const logFlushTimerRef = useRef<number | null>(null);
+
+  const logFilterRef = useRef("");
+  const useRegexRef = useRef(false);
 
   useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
+    logFilterRef.current = logFilter;
+  }, [logFilter]);
+
+  useEffect(() => {
+    useRegexRef.current = useRegex;
+  }, [useRegex]);
+
+  const preFilterRef = useRef("");
+  const preUseRegexRef = useRef(false);
+
+  useEffect(() => {
+    preFilterRef.current = preFilter;
+  }, [preFilter]);
+
+  useEffect(() => {
+    preUseRegexRef.current = preUseRegex;
+  }, [preUseRegex]);
 
   const fetchDevices = async (silent: boolean = false) => {
     if (isFetchingRef.current) return;
@@ -269,7 +293,7 @@ function App() {
     }
   };
 
-  const toggleLogcat = async (pkg: string) => {
+    const toggleLogcat = async (pkg: string) => {
     if (!selectedDevice) {
       message.error(t("app.no_device_selected"));
       return;
@@ -278,21 +302,68 @@ function App() {
       await StopLogcat();
       setIsLogging(false);
       EventsOff("logcat-data");
+      if (logFlushTimerRef.current) {
+        clearInterval(logFlushTimerRef.current);
+        logFlushTimerRef.current = null;
+      }
+      logBufferRef.current = [];
     } else {
       setLogs([]);
       setIsLogging(true);
+      logBufferRef.current = [];
+      
+      // Flush logs every 100ms to avoid React state flood and improve performance
+      logFlushTimerRef.current = window.setInterval(() => {
+        if (logBufferRef.current.length > 0) {
+          const chunk = [...logBufferRef.current];
+          logBufferRef.current = [];
+          
+          setLogs((prev) => {
+            // Apply filtering here for persistent storage if needed, but typically
+            // UI filtering is separate. However, for "only log matches", we need to filter BEFORE adding.
+            // Since we cannot easily access the *latest* state inside setInterval without refs, 
+            // we will handle filtering in the event listener instead.
+            const next = [...prev, ...chunk];
+            return next.length > 50000 ? next.slice(-50000) : next;
+          });
+        }
+      }, 100);
+
       EventsOn("logcat-data", (line: string) => {
-        setLogs((prev) => {
-          const next = [...prev, line];
-          return next.slice(-1000); // Keep last 1000 lines
-        });
+        // Check filtering conditions using Refs to access latest state
+        let shouldKeep = true;
+        const currentFilter = preFilterRef.current; // Use Pre-Filter for buffering
+        const isRegex = preUseRegexRef.current;
+
+        if (currentFilter.trim()) {
+           try {
+             if (isRegex) {
+               const regex = new RegExp(currentFilter, "i");
+                if (!regex.test(line)) shouldKeep = false;
+             } else {
+               if (!line.toLowerCase().includes(currentFilter.toLowerCase())) shouldKeep = false;
+             }
+           } catch (e) {
+             // If regex is invalid, treat as text or ignore
+             if (!line.toLowerCase().includes(currentFilter.toLowerCase())) shouldKeep = false;
+           }
+        }
+
+        if (shouldKeep) {
+          logBufferRef.current.push(line);
+        }
       });
+
       try {
         await StartLogcat(selectedDevice, pkg);
       } catch (err) {
         message.error(t("app.logcat_failed") + ": " + String(err));
         setIsLogging(false);
         EventsOff("logcat-data");
+        if (logFlushTimerRef.current) {
+          clearInterval(logFlushTimerRef.current);
+          logFlushTimerRef.current = null;
+        }
       }
     }
   };
@@ -397,7 +468,14 @@ function App() {
       EventsOff("scrcpy-record-stopped");
       EventsOff("tray:navigate");
       StopLogcat();
+      if (logFlushTimerRef.current) {
+        clearInterval(logFlushTimerRef.current);
+      }
     };
+  }, []);
+
+  useEffect(() => {
+    fetchDevices();
   }, []);
 
   // Global screenshot progress listener
@@ -555,6 +633,14 @@ function App() {
             toggleLogcat={toggleLogcat}
             logs={logs}
             setLogs={setLogs}
+            logFilter={logFilter}
+            setLogFilter={setLogFilter}
+            useRegex={useRegex}
+            setUseRegex={setUseRegex}
+            preFilter={preFilter}
+            setPreFilter={setPreFilter}
+            preUseRegex={preUseRegex}
+            setPreUseRegex={setPreUseRegex}
           />
         );
       case "5":

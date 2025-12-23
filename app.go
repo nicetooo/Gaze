@@ -2195,8 +2195,9 @@ func (a *App) StopScrcpy(deviceId string) error {
 // StartLogcat starts the logcat stream for a device, optionally filtering by package name
 func (a *App) StartLogcat(deviceId, packageName string) error {
 	a.updateLastActive(deviceId)
+	// If logcat is already running, stop it first to ensure a clean state
 	if a.logcatCmd != nil {
-		return fmt.Errorf("logcat already running")
+		a.StopLogcat()
 	}
 
 	// Clear buffer first

@@ -257,7 +257,14 @@
     },
     "match_case": "Match Case (Aa)",
     "match_whole_word": "Match Whole Word (W)",
-    "use_regex": "Use Regular Expression (.*)"
+    "use_regex": "Use Regular Expression (.*)",
+    "view_filter": "View Filter",
+    "pre_filter": "Pre-Filter",
+    "save": "Save",
+    "save_filter": "Save Filter Rule",
+    "select_pre_filters": "Select filters to strictly cache only matching logs (Pre-Filter)",
+    "enter_filter_name": "Enter a name for this filter rule:",
+    "filter_saved": "Filter rule saved successfully"
   },
   "mirror": {
     "title": "Mirror Screen",
