@@ -79,6 +79,8 @@ type App struct {
 	logsMu      sync.Mutex
 
 	lastDevCount int
+	idToSerial   map[string]string
+	idToSerialMu sync.RWMutex
 
 	// Wireless stability
 	reconnectCooldown map[string]time.Time
@@ -154,6 +156,7 @@ func NewApp(version string) *App {
 		scrcpyRecordCmd:   make(map[string]*exec.Cmd),
 		openFileCmds:      make(map[string]*exec.Cmd),
 		lastActive:        make(map[string]int64),
+		idToSerial:        make(map[string]string),
 		reconnectCooldown: make(map[string]time.Time),
 		version:           version,
 	}
@@ -167,15 +170,13 @@ func (a *App) updateLastActive(deviceId string) {
 		return
 	}
 
-	// Try to find the true serial for this deviceId
+	// Try to find the true serial for this deviceId using the cache
 	serial := deviceId
-	devices, _ := a.GetDevices(false)
-	for _, d := range devices {
-		if d.ID == deviceId {
-			serial = d.Serial
-			break
-		}
+	a.idToSerialMu.RLock()
+	if s, ok := a.idToSerial[deviceId]; ok {
+		serial = s
 	}
+	a.idToSerialMu.RUnlock()
 
 	a.lastActiveMu.Lock()
 	defer a.lastActiveMu.Unlock()
@@ -1802,13 +1803,24 @@ func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 	}
 	wg.Wait()
 
-	// Sync to history
+	// Sync to history and update ID mapping cache
+	newIdToSerial := make(map[string]string)
 	for _, d := range finalDevices {
 		if d.State == "device" {
 			deviceCopy := *d
 			go a.addToHistory(deviceCopy)
 		}
+		// Update ID -> Serial mapping for all known aliases
+		newIdToSerial[d.ID] = d.Serial
+		newIdToSerial[d.Serial] = d.Serial
+		for _, id := range d.IDs {
+			newIdToSerial[id] = d.Serial
+		}
 	}
+
+	a.idToSerialMu.Lock()
+	a.idToSerial = newIdToSerial
+	a.idToSerialMu.Unlock()
 
 	// 7. Populating Metadata and Sorting
 	a.lastActiveMu.RLock()
