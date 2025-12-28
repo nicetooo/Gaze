@@ -62,8 +62,17 @@ A powerful, modern, and self-contained Android management tool built with **Wail
 ### 📜 Advanced Logcat
 - **Real-time Streaming**: Live log viewer with auto-scroll control.
 - **Powerful Filtering**: Filter by Log Level, Tag, PID, or custom Regex.
-- **Pre-Filtering**: High-performance buffering that only stores logs matching specific rules.
 - **App-Centric**: Auto-filter logs for a specific application.
+- **JSON Formatting**: Pretty-print detected JSON log segments.
+
+### 🌐 Network & Proxy (MITM)
+- **Automated Capture**: One-click to start an HTTP/HTTPS proxy server and automatically configure device proxy settings via ADB.
+- **HTTPS Decryption (MITM)**: Support for decrypting SSL traffic with automatic CA certificate generation and deployment.
+- **WebSocket Support**: Capture and inspect real-time WebSocket traffic.
+- **Big Data Handling**: Support for full body capture (up to 100MB) without truncation, with a 5000-entry log buffer.
+- **Traffic Shaping**: Simulate real-world network conditions with per-device Download/Upload bandwidth limits and artificial latency.
+- **Visual Metrics**: Real-time RX/TX speed monitoring for the selected device.
+- **Tech Deep Dive**: For more details, see [Proxy & Network Design](docs/proxy_tech_design.md).
 
 ### 💻 ADB Shell
 - **Integrated Console**: Run raw ADB commands directly within the app.

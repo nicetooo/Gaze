@@ -2977,16 +2977,13 @@ func (a *App) ListPackages(deviceId string, packageType string) ([]AppPackage, e
 				// Improved Label Extraction Logic
 				// 1. Try to extract from package name using a smarter brand map
 				brandMap := map[string]string{
-					"com.ss.android.ugc.tiktok.lite": "TikTok Lite",
-					"com.zhiliaoapp.musically":       "TikTok",
-					"com.ss.android.ugc.aweme":       "Douyin",
-					"com.google.android.youtube":     "YouTube",
-					"com.google.android.gms":         "Google Play Services",
-					"com.android.vending":            "Google Play Store",
-					"com.whatsapp":                   "WhatsApp",
-					"com.facebook.katana":            "Facebook",
-					"com.facebook.orca":              "Messenger",
-					"com.instagram.android":          "Instagram",
+					"com.google.android.youtube": "YouTube",
+					"com.google.android.gms":     "Google Play Services",
+					"com.android.vending":        "Google Play Store",
+					"com.whatsapp":               "WhatsApp",
+					"com.facebook.katana":        "Facebook",
+					"com.facebook.orca":          "Messenger",
+					"com.instagram.android":      "Instagram",
 				}
 
 				if brand, ok := brandMap[pkg.Name]; ok {
