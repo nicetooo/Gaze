@@ -1,11 +1,39 @@
 /* style.css */
+
+/* ===== Base Styles ===== */
 body, html, #app {
     margin: 0;
     padding: 0;
     user-select: none;
     -webkit-user-select: none;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
 }
 
+/* ===== macOS-style Scrollbars ===== */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.3);
+    background-clip: content-box;
+}
+
+/* ===== Text Selection ===== */
 /* Allow selection in inputs and textareas by default */
 input, textarea {
     user-select: text !important;
@@ -40,4 +68,25 @@ div[role="button"],
 .selectable div[role="button"] {
     user-select: none !important;
     -webkit-user-select: none !important;
+}
+
+/* ===== Refined Component Styles ===== */
+/* Subtle focus rings matching macOS */
+.ant-input:focus,
+.ant-input-focused,
+.ant-select-focused .ant-select-selector {
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2) !important;
+}
+
+/* Refined modal backdrop */
+.ant-modal-mask {
+    backdrop-filter: blur(4px);
+    background-color: rgba(0, 0, 0, 0.25) !important;
+}
+
+/* Smoother transitions */
+.ant-btn,
+.ant-input,
+.ant-select-selector {
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }

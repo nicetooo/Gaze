@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Button, Space, Input, message } from "antd";
+import { Button, Space, Input, message, theme } from "antd";
 import { ClearOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import DeviceSelector from "./DeviceSelector";
@@ -29,6 +29,7 @@ const ShellView: React.FC<ShellViewProps> = ({
   loading,
 }) => {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const [shellCmd, setShellCmd] = useState("");
   const [shellOutput, setShellOutput] = useState("");
   const [history, setHistory] = useState<string[]>([]);
@@ -105,7 +106,7 @@ const ShellView: React.FC<ShellViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>{t("shell.title")}</h2>
+        <h2 style={{ margin: 0, color: token.colorText }}>{t("shell.title")}</h2>
         <Space>
           <DeviceSelector
             devices={devices}

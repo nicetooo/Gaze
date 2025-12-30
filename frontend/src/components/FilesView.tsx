@@ -10,6 +10,7 @@ import {
   Dropdown,
   Modal,
   message,
+  theme,
 } from "antd";
 import { useTranslation } from "react-i18next";
 import {
@@ -196,6 +197,7 @@ const FilesView: React.FC<FilesViewProps> = ({
   initialPath = "/",
 }) => {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   
   // Files state
   const [currentPath, setCurrentPath] = useState(initialPath);
@@ -521,7 +523,7 @@ const FilesView: React.FC<FilesViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>{t("files.title")}</h2>
+        <h2 style={{ margin: 0, color: token.colorText }}>{t("files.title")}</h2>
         <DeviceSelector
           devices={devices}
           selectedDevice={selectedDevice}
@@ -594,9 +596,9 @@ const FilesView: React.FC<FilesViewProps> = ({
         style={{
           flex: 1,
           overflow: "hidden",
-          backgroundColor: "#fff",
+          backgroundColor: token.colorBgContainer,
           borderRadius: "4px",
-          border: "1px solid #f0f0f0",
+          border: `1px solid ${token.colorBorderSecondary}`,
           display: "flex",
           flexDirection: "column",
           userSelect: "text",

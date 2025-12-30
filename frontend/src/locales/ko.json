@@ -404,5 +404,11 @@
     "col_url": "URL",
     "col_type": "유형",
     "col_size": "크기"
+  },
+  "theme": {
+    "change_theme": "테마 변경",
+    "theme_light": "라이트 모드",
+    "theme_dark": "다크 모드",
+    "theme_system": "시스템 설정"
   }
 }

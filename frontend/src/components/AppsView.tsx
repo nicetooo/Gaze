@@ -10,8 +10,10 @@ import {
   Modal,
   Tag,
   Dropdown,
+  theme,
 } from "antd";
 import { useTranslation } from "react-i18next";
+import { useTheme } from "../ThemeContext";
 import {
   ReloadOutlined,
   PlayCircleOutlined,
@@ -73,6 +75,8 @@ const AppsView: React.FC<AppsViewProps> = ({
   handleJumpToLogcat,
 }) => {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
+  const { isDark } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [tableHeight, setTableHeight] = useState<number>(400);
 
@@ -305,10 +309,10 @@ const AppsView: React.FC<AppsViewProps> = ({
               <span style={{ position: "relative", zIndex: 1 }}>{firstLetter}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-              <span style={{ fontWeight: 600, fontSize: "14px", color: "#1a1a1a" }}>
+              <span style={{ fontWeight: 600, fontSize: "14px", color: token.colorText }}>
                 {record.label || record.name}
               </span>
-              <span style={{ fontSize: "10px", color: "#888", fontFamily: "monospace" }}>
+              <span style={{ fontSize: "10px", color: token.colorTextSecondary, fontFamily: "monospace" }}>
                 {record.name}
               </span>
             </div>
@@ -483,13 +487,13 @@ const AppsView: React.FC<AppsViewProps> = ({
         style={{
           flex: 1,
           overflow: "hidden",
-          backgroundColor: "#fff",
-          borderRadius: "8px",
-          border: "1px solid #f0f0f0",
+          backgroundColor: token.colorBgContainer,
+          borderRadius: token.borderRadiusLG,
+          border: `1px solid ${token.colorBorderSecondary}`,
           display: "flex",
           flexDirection: "column",
           userSelect: "text",
-          boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+          boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.2)" : "0 2px 8px rgba(0,0,0,0.05)",
         }}
       >
         <Table

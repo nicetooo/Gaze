@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useMemo } from "react";
-import { Button, Input, Select, Space, Checkbox, message, Modal, Tooltip, Tag } from "antd";
+import { Button, Input, Select, Space, Checkbox, message, Modal, Tooltip, Tag, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   PauseOutlined,
@@ -76,6 +76,7 @@ export default function LogcatView({
   setSelectedPackage: propSetSelectedPackage,
 }: LogcatViewProps) {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const parentRef = useRef<HTMLDivElement>(null);
   const scrollingRef = useRef(false);
 
@@ -463,7 +464,7 @@ export default function LogcatView({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>{t("logcat.title")}</h2>
+        <h2 style={{ margin: 0, color: token.colorText }}>{t("logcat.title")}</h2>
         <Space>
           <DeviceSelector
             devices={devices}
@@ -536,7 +537,7 @@ export default function LogcatView({
       >
         {/* Row 1: Fixed Pre-Filter (Advanced) - Moved up */}
         <div style={{ display: "flex", gap: 12, alignItems: "center", whiteSpace: "nowrap" }}>
-          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, minWidth: 80, textAlign: "right" }}>{t("logcat.pre_filter") || "Pre-Filter"}:</span>
+          <span style={{ color: token.colorTextSecondary, fontSize: "12px", fontWeight: "bold", width: 80, minWidth: 80, textAlign: "right" }}>{t("logcat.pre_filter") || "Pre-Filter"}:</span>
           <div style={{ flex: 1 }}>
             <Select
               mode="multiple"
@@ -616,7 +617,7 @@ export default function LogcatView({
 
         {/* Row 2: Real-time View Filter (Most used) - Moved down */}
         <div style={{ display: "flex", gap: 12, alignItems: "center", whiteSpace: "nowrap" }}>
-          <span style={{ color: "#ccc", fontSize: "12px", fontWeight: "bold", width: 80, minWidth: 80, textAlign: "right" }}>{t("logcat.view_filter")}:</span>
+          <span style={{ color: token.colorTextSecondary, fontSize: "12px", fontWeight: "bold", width: 80, minWidth: 80, textAlign: "right" }}>{t("logcat.view_filter")}:</span>
           <div style={{ flex: 1, position: "relative" }}>
             <Input
               id="logcat-filter-input"

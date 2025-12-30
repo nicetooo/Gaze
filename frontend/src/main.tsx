@@ -1,8 +1,10 @@
 import React from 'react'
 import {createRoot} from 'react-dom/client'
+import { ConfigProvider } from 'antd'
 import './style.css'
 import './i18n'
 import App from './App'
+import { ThemeProvider } from './ThemeContext'
 
 const container = document.getElementById('root')
 
@@ -33,6 +35,8 @@ const root = createRoot(container!)
 
 root.render(
     <React.StrictMode>
-        <App/>
+        <ThemeProvider>
+            <App/>
+        </ThemeProvider>
     </React.StrictMode>
 )

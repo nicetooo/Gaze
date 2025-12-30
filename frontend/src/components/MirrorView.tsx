@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Button, Space, Tag, Card, Switch, Tooltip, Slider, Select, message } from "antd";
+import { Button, Space, Tag, Card, Switch, Tooltip, Slider, Select, message, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   StopOutlined,
@@ -75,7 +75,8 @@ const MirrorView: React.FC<MirrorViewProps> = ({
   recordStatuses,
 }) => {
   const { t } = useTranslation();
-
+  const { token } = theme.useToken();
+  
   const defaultConfig: main.ScrcpyConfig = {
     maxSize: 0,
     bitRate: 8,
@@ -329,7 +330,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <h2 style={{ margin: 0 }}>{t("mirror.title")}</h2>
+          <h2 style={{ margin: 0, color: token.colorText }}>{t("mirror.title")}</h2>
           <Tag color="blue">{t("mirror.powered_by")}</Tag>
         </div>
         <Space>
@@ -382,8 +383,8 @@ const MirrorView: React.FC<MirrorViewProps> = ({
           style={{
             marginBottom: 16,
             padding: "8px 16px",
-            backgroundColor: "#e6f7ff",
-            border: "1px solid #91d5ff",
+            backgroundColor: token.colorInfoBg,
+            border: `1px solid ${token.colorInfoBorder}`,
             borderRadius: "8px",
             display: "flex",
             justifyContent: "space-between",
@@ -396,7 +397,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               {new Date(mirrorDuration * 1000).toISOString().substr(11, 8)}
             </span>
           </div>
-          <div style={{ fontSize: "12px", color: "#1890ff" }}>
+          <div style={{ fontSize: "12px", color: token.colorInfoText }}>
             {t("mirror.active_session")}
           </div>
         </div>
@@ -440,9 +441,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
               size="small"
               style={{
                 border:
-                  currentShouldRecord || isRecording ? "1px solid #ff4d4f" : undefined,
+                  currentShouldRecord || isRecording ? `1px solid ${token.colorError}` : undefined,
                 backgroundColor:
-                  currentShouldRecord || isRecording ? "#fff1f0" : undefined,
+                  currentShouldRecord || isRecording ? token.colorErrorBg : undefined,
               }}
             >
               <div
@@ -502,9 +503,9 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                 <div
                   style={{
                     padding: "8px",
-                    backgroundColor: "rgba(255, 77, 79, 0.05)",
+                    backgroundColor: token.colorErrorBg,
                     borderRadius: "4px",
-                    border: "1px dashed #ffa39e",
+                    border: `1px dashed ${token.colorErrorBorder}`,
                   }}
                 >
                   <div
@@ -526,7 +527,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                       style={{
                         fontWeight: "bold",
                         fontFamily: "monospace",
-                        color: "#cf1322",
+                        color: token.colorErrorText,
                       }}
                     >
                       {new Date(recordDuration * 1000).toISOString().substr(11, 8)}
@@ -536,7 +537,7 @@ const MirrorView: React.FC<MirrorViewProps> = ({
                     <div
                       style={{
                         fontSize: "10px",
-                        color: "#888",
+                        color: token.colorTextSecondary,
                         wordBreak: "break-all",
                         marginTop: 4,
                       }}

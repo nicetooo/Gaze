@@ -31,8 +31,11 @@ import {
   InfoCircleOutlined,
   TranslationOutlined,
   GlobalOutlined,
+  SunOutlined,
+  MoonOutlined,
 } from "@ant-design/icons";
 import "./App.css";
+import { useTheme } from "./ThemeContext";
 // @ts-ignore
 const BrowserOpenURL = (window as any).runtime.BrowserOpenURL;
 // @ts-ignore
@@ -76,6 +79,7 @@ interface Device {
 }
 
 function App() {
+  const { mode, setMode, isDark } = useTheme();
   const { t, i18n } = useTranslation();
   const [selectedKey, setSelectedKey] = useState("1");
   const [devices, setDevices] = useState<Device[]>([]);
@@ -733,8 +737,8 @@ function App() {
   return (
     <Layout style={{ minHeight: "100vh" }}>
       <Sider
-        width={200}
-        theme="dark"
+        width={220}
+        theme="light"
         style={{
           height: "100vh",
           position: "fixed",
@@ -743,18 +747,24 @@ function App() {
           bottom: 0,
           display: "flex",
           flexDirection: "column",
+          backgroundColor: isDark ? '#2C2C2E' : "#F5F5F7", 
+          borderRight: isDark ? "1px solid rgba(255,255,255,0.06)" : "1px solid rgba(0,0,0,0.06)",
         }}
       >
         <div
           style={{ display: "flex", flexDirection: "column", height: "100%" }}
         >
           <div className="drag-handle" style={{ height: 38, width: "100%", flexShrink: 0 }} />
-          <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
             <Menu
-              theme="dark"
+              theme={isDark ? "dark" : "light"}
               selectedKeys={[selectedKey]}
               mode="inline"
               onClick={({ key }) => setSelectedKey(key)}
+              style={{
+                backgroundColor: "transparent",
+                borderRight: "none",
+              }}
               items={[
                 { key: "1", icon: <MobileOutlined />, label: t("menu.devices") },
                 { key: "5", icon: <DesktopOutlined />, label: t("menu.mirror") },
@@ -769,13 +779,51 @@ function App() {
           <div
             style={{
               padding: "8px 16px",
-              borderTop: "1px solid rgba(255, 255, 255, 0.1)",
+              borderTop: isDark ? "1px solid rgba(255, 255, 255, 0.06)" : "1px solid rgba(0, 0, 0, 0.06)",
               display: "flex",
               justifyContent: "center",
-              gap: "8px",
+              gap: "4px", // Reduced gap to fit more icons
               flexWrap: "wrap",
             }}
           >
+             <Dropdown
+              menu={{
+                items: [
+                  { 
+                    key: "light", 
+                    label: t("app.theme_light") || "Light", 
+                    icon: <SunOutlined />,
+                    onClick: () => setMode("light") 
+                  },
+                  { 
+                    key: "dark", 
+                    label: t("app.theme_dark") || "Dark", 
+                    icon: <MoonOutlined />,
+                    onClick: () => setMode("dark") 
+                  },
+                  { 
+                    key: "system", 
+                    label: t("app.theme_system") || "System", 
+                    icon: <DesktopOutlined />,
+                    onClick: () => setMode("system") 
+                  },
+                ],
+                selectedKeys: [mode],
+              }}
+              placement="top"
+            >
+              <Button
+                type="text"
+                size="small"
+                icon={
+                  mode === 'light' ? <SunOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} /> :
+                  mode === 'dark' ? <MoonOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} /> :
+                  <DesktopOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} />
+                }
+                title={t("app.change_theme") || "Change Theme"}
+              />
+            </Dropdown>
+
             <Dropdown
               menu={{
                 items: [
@@ -792,35 +840,35 @@ function App() {
               <Button
                 type="text"
                 size="small"
-                icon={<TranslationOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
+                icon={<TranslationOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} />}
                 title={t("app.change_language")}
               />
             </Dropdown>
             <Button
               type="text"
               size="small"
-              icon={<InfoCircleOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
+              icon={<InfoCircleOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} />}
               onClick={() => setAboutVisible(true)}
               title={t("app.about")}
             />
             <Button
               type="text"
               size="small"
-              icon={<GithubOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
+              icon={<GithubOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} />}
               onClick={() => BrowserOpenURL && BrowserOpenURL("https://github.com/nicetooo/adbGUI")}
               title={t("app.github")}
             />
             <Button
               type="text"
               size="small"
-              icon={<BugOutlined style={{ fontSize: "16px", color: "rgba(255,255,255,0.45)" }} />}
+              icon={<BugOutlined style={{ fontSize: "16px", color: isDark ? "rgba(255,255,255,0.65)" : "rgba(0,0,0,0.65)" }} />}
               onClick={() => setFeedbackVisible(true)}
               title={t("app.feedback")}
             />
           </div>
         </div>
       </Sider>
-      <Layout className="site-layout" style={{ marginLeft: 200 }}>
+      <Layout className="site-layout" style={{ marginLeft: 220 }}>
         <Content style={{ margin: "0", height: "100vh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
           <div className="drag-handle" style={{ height: 38, width: "100%", flexShrink: 0 }} />
           {renderContent()}

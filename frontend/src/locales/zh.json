@@ -119,7 +119,11 @@
     "feedback_note": "点击提交后将打开 GitHub Issue 页面，并包含您的描述和选中的日志。",
     "backend_logs": "后端日志 (Go)",
     "frontend_logs": "前端日志 (JS)",
-    "select_all": "全选"
+    "select_all": "全选",
+    "change_theme": "切换主题",
+    "theme_light": "浅色模式",
+    "theme_dark": "深色模式",
+    "theme_system": "跟随系统"
   },
   "app_info": {
     "title": "应用信息",

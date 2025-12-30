@@ -404,5 +404,11 @@
     "col_url": "URL",
     "col_type": "タイプ",
     "col_size": "サイズ"
+  },
+  "theme": {
+    "change_theme": "テーマ変更",
+    "theme_light": "ライトモード",
+    "theme_dark": "ダークモード",
+    "theme_system": "システム設定"
   }
 }

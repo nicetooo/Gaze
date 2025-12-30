@@ -1,5 +1,5 @@
 import React from "react";
-import { Table, Button, Tag, Space, Tooltip } from "antd";
+import { Table, Button, Tag, Space, Tooltip, theme } from "antd";
 import { useTranslation } from "react-i18next";
 import {
   ReloadOutlined,
@@ -450,6 +450,8 @@ const DevicesView: React.FC<DevicesViewProps> = ({
     },
   ];
 
+  const { token } = theme.useToken();
+
   return (
     <div
       style={{
@@ -469,7 +471,7 @@ const DevicesView: React.FC<DevicesViewProps> = ({
           flexShrink: 0,
         }}
       >
-        <h2 style={{ margin: 0 }}>{t("devices.title")}</h2>
+        <h2 style={{ margin: 0, color: token.colorText }}>{t("devices.title")}</h2>
         <Space>
           <Button icon={<WifiOutlined />} onClick={onShowWirelessConnect}>
             {t("devices.wireless_connect")}
@@ -488,9 +490,9 @@ const DevicesView: React.FC<DevicesViewProps> = ({
         style={{
           flex: 1,
           overflow: "hidden",
-          backgroundColor: "#fff",
-          borderRadius: "4px",
-          border: "1px solid #f0f0f0",
+          backgroundColor: token.colorBgContainer,
+          borderRadius: token.borderRadius,
+          border: `1px solid ${token.colorBorderSecondary}`,
           display: "flex",
           flexDirection: "column",
           userSelect: "text",

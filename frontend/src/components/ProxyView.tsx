@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, InputNumber, Space, Typography, Tag, message, Table, Modal, Divider, Switch, Tooltip, Radio, Input, Drawer, Tabs } from 'antd';
+import { Card, Button, InputNumber, Space, Typography, Tag, message, Table, Modal, Divider, Switch, Tooltip, Radio, Input, Drawer, Tabs, theme } from 'antd';
 import { PoweroffOutlined, PlayCircleOutlined, DeleteOutlined, SettingOutlined, LockOutlined, GlobalOutlined, DashboardOutlined, ThunderboltOutlined, ArrowUpOutlined, ArrowDownOutlined, ApiOutlined, SafetyCertificateOutlined, DownloadOutlined, HourglassOutlined } from '@ant-design/icons';
 import DeviceSelector from './DeviceSelector';
 // @ts-ignore
@@ -51,6 +51,7 @@ const ProxyView: React.FC<ProxyViewProps> = ({
   devices, selectedDevice, setSelectedDevice, fetchDevices, loading
 }) => {
   const { t } = useTranslation();
+  const { token } = theme.useToken();
   const [isRunning, setIsRunning] = useState(false);
   const [port, setPort] = useState(8080);
   const [localIP, setLocalIP] = useState("");
@@ -558,7 +559,7 @@ const formatBody = (body: string) => {
         }
       >
           {/* Virtual Table Header - Fixed widths */}
-          <div style={{ display: 'grid', gridTemplateColumns: '80px 70px 60px 1fr 80px 80px', padding: '8px 12px', background: '#fafafa', borderBottom: '1px solid #f0f0f0', fontWeight: 'bold', fontSize: '12px', color: '#666' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '80px 70px 60px 1fr 80px 80px', padding: '8px 12px', background: token.colorFillAlter, borderBottom: `1px solid ${token.colorBorderSecondary}`, fontWeight: 'bold', fontSize: '12px', color: token.colorTextSecondary }}>
              <div>{t('proxy.col_time')}</div>
              <div>{t('proxy.col_method')}</div>
              <div>{t('proxy.col_stat')}</div>
@@ -586,8 +587,8 @@ const formatBody = (body: string) => {
                           left: 0,
                           width: '100%',
                           transform: `translateY(${virtualRow.start}px)`,
-                          background: virtualRow.index % 2 === 0 ? '#fff' : '#fafafa',
-                          borderBottom: '1px solid #f0f0f0',
+                          background: virtualRow.index % 2 === 0 ? token.colorBgContainer : token.colorFillAlter,
+                          borderBottom: `1px solid ${token.colorBorderSecondary}`,
                         }}
                      >
                         {/* Main Row Content */}
@@ -615,7 +616,7 @@ const formatBody = (body: string) => {
                             <div>
                                 <Tag color={record.statusCode && record.statusCode >= 400 ? 'red' : record.statusCode && record.statusCode >= 300 ? 'orange' : 'success'} style={{ marginRight: 0, transform: 'scale(0.8)', transformOrigin: 'left center' }}>{record.statusCode || '-'}</Tag>
                             </div>
-                            <div title={record.url} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#1890ff' }}>
+                            <div title={record.url} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: token.colorLink }}>
                                 {record.url}
                                 {record.isHttps && <LockOutlined style={{ fontSize: '10px', marginLeft: 4, color: '#52c41a' }} />}
                             </div>
