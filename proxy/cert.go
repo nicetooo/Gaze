@@ -99,8 +99,8 @@ func (m *CertManager) GenerateCert() error {
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"adbGUI Proxy CA"},
-			CommonName:   "adbGUI Proxy CA",
+			Organization: []string{"Gaze Proxy CA"},
+			CommonName:   "Gaze Proxy CA",
 		},
 		NotBefore:             time.Now().Add(-24 * time.Hour),
 		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour), // 10 years

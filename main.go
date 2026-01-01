@@ -57,23 +57,23 @@ func main() {
 
 		// Custom App Menu to intercept Quit
 		customAppMenu := menu.NewMenu()
-		customAppMenu.Append(menu.Text("About adbGUI", nil, func(_ *menu.CallbackData) {
+		customAppMenu.Append(menu.Text("About Gaze", nil, func(_ *menu.CallbackData) {
 			wailsRuntime.WindowShow(app.ctx)
 		}))
 		customAppMenu.Append(menu.Separator())
-		customAppMenu.Append(menu.Text("Quit adbGUI", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+		customAppMenu.Append(menu.Text("Quit Gaze", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 			os.Stderr.WriteString("\n[MENU QUIT CLICKED]\n")
 			wailsRuntime.Quit(app.ctx)
 		}))
 
-		applicationMenu.Append(menu.SubMenu("adbGUI", customAppMenu))
+		applicationMenu.Append(menu.SubMenu("Gaze", customAppMenu))
 		applicationMenu.Append(menu.EditMenu())
 		applicationMenu.Append(menu.WindowMenu())
 	}
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:     "adbGUI",
+		Title:     "Gaze",
 		Width:     1280,
 		Height:    720,
 		MinWidth:  1280,
@@ -91,7 +91,7 @@ func main() {
 			if runtime.GOOS == "darwin" {
 				start, _ := systray.RunWithExternalLoop(func() {
 					systray.SetIcon(iconData)
-					systray.SetTooltip("adbGUI")
+					systray.SetTooltip("Gaze")
 
 					// Initial update
 					updateTrayMenu(ctx, app)
@@ -169,7 +169,7 @@ func main() {
 			WebviewIsTransparent: true,
 			WindowIsTranslucent:  true,
 			About: &mac.AboutInfo{
-				Title:   "adbGUI",
+				Title:   "Gaze",
 				Message: "A modern ADB GUI tool",
 			},
 		},
@@ -256,7 +256,7 @@ func updateTrayMenu(ctx context.Context, app *App) {
 					if _, err := os.Stat(saveDir); err != nil {
 						saveDir = home
 					}
-					filename := fmt.Sprintf("adbGUI_record_%s_%s.mp4", strings.ReplaceAll(d.Model, " ", "_"), time.Now().Format("20060102_150405"))
+					filename := fmt.Sprintf("Gaze_record_%s_%s.mp4", strings.ReplaceAll(d.Model, " ", "_"), time.Now().Format("20060102_150405"))
 					savePath := filepath.Join(saveDir, filename)
 					config := ScrcpyConfig{RecordPath: savePath, MaxSize: 0, BitRate: 8, MaxFps: 60, VideoCodec: "h264", NoAudio: false}
 					app.StartRecording(d.ID, config)
@@ -384,7 +384,7 @@ func updateTrayMenu(ctx context.Context, app *App) {
 						saveDir = home // Fallback
 					}
 
-					filename := fmt.Sprintf("adbGUI_record_%s_%s.mp4",
+					filename := fmt.Sprintf("Gaze_record_%s_%s.mp4",
 						strings.ReplaceAll(d.Model, " ", "_"),
 						time.Now().Format("20060102_150405"))
 					savePath := filepath.Join(saveDir, filename)
@@ -492,7 +492,7 @@ func updateTrayMenu(ctx context.Context, app *App) {
 
 	systray.AddSeparator()
 
-	mOpen := systray.AddMenuItem("Open adbGUI", "")
+	mOpen := systray.AddMenuItem("Open Gaze", "")
 	mOpen.Click(func() {
 		wailsRuntime.WindowShow(ctx)
 	})

@@ -383,7 +383,7 @@
     "step_1": "打開 手機設定 -> 安全 (或 \"加密與憑據\")",
     "step_2": "點擊 從儲存空間安裝 / 安裝憑證",
     "step_3": "選擇 CA 憑證 (如果彈出風險警告，請選擇 \"仍然安裝\")",
-    "step_4": "瀏覽至 Downloads 資料夾並選擇 adbGUI-CA.crt",
+    "step_4": "瀏覽至 Downloads 資料夾並選擇 Gaze-CA.crt",
     "cert_warning": "* 注意：在 Android 11+ 上，根據用途不同，你可能需要將其分別安裝在「Wi-Fi 憑證」和「VPN 和應用使用者憑證」中。",
     "link_failed": "手機代理連結失敗: {{error}}",
     "permission_denied": "權限被拒絕",

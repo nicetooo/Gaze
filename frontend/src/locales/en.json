@@ -389,7 +389,7 @@
     "step_1": "Open Settings -> Security (or \"Encryption & credentials\")",
     "step_2": "Select Install from storage / Install a certificate.",
     "step_3": "Choose CA certificate (tap \"Install anyway\" if warned).",
-    "step_4": "Browse to Downloads and select adbGUI-CA.crt.",
+    "step_4": "Browse to Downloads and select Gaze-CA.crt.",
     "cert_warning": "* Note: On Android 11+, you might need to install it in \"Wi-Fi certificate\" and \"VPN & app user certificate\" separately depending on usage.",
     "link_failed": "Failed to link device: {{error}}",
     "permission_denied": "Permission Denied",

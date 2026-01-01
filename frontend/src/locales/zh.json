@@ -389,7 +389,7 @@
     "step_1": "打开 手机设置 -> 安全 (或 \"加密与凭据\")",
     "step_2": "点击 从存储空间安装 / 安装证书",
     "step_3": "选择 CA 证书 (如果弹出风险警告，请选择 \"仍然安装\")",
-    "step_4": "浏览至 Downloads 文件夹并选择 adbGUI-CA.crt",
+    "step_4": "浏览至 Downloads 文件夹并选择 Gaze-CA.crt",
     "cert_warning": "* 注意：在 Android 11+ 上，根据用途不同，你可能需要将其分别安装在“Wi-Fi 证书”和“VPN 和应用用户证书”中。",
     "link_failed": "手机代理链接失败: {{error}}",
     "permission_denied": "权限被拒绝",
