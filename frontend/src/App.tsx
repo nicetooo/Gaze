@@ -15,6 +15,7 @@ import FilesView from "./components/FilesView";
 import ShellView from "./components/ShellView";
 import MirrorView from "./components/MirrorView";
 import ProxyView from "./components/ProxyView";
+import AutomationView from "./components/AutomationView";
 import DeviceInfoModal from "./components/DeviceInfoModal";
 import AboutModal from "./components/AboutModal";
 import WirelessConnectModal from "./components/WirelessConnectModal";
@@ -33,6 +34,7 @@ import {
   GlobalOutlined,
   SunOutlined,
   MoonOutlined,
+  RobotOutlined,
 } from "@ant-design/icons";
 import "./App.css";
 import { useTheme } from "./ThemeContext";
@@ -210,6 +212,8 @@ function App() {
         return <MirrorView />;
       case VIEW_KEYS.PROXY:
         return <ProxyView />;
+      case VIEW_KEYS.AUTOMATION:
+        return <AutomationView />;
       default:
         return <div style={{ padding: 24 }}>{t("app.select_option")}</div>;
     }
@@ -249,6 +253,7 @@ function App() {
                 { key: VIEW_KEYS.SHELL, icon: <CodeOutlined />, label: t("menu.shell") },
                 { key: VIEW_KEYS.LOGCAT, icon: <FileTextOutlined />, label: t("menu.logcat") },
                 { key: VIEW_KEYS.PROXY, icon: <GlobalOutlined />, label: t("menu.proxy") || "Proxy" },
+                { key: VIEW_KEYS.AUTOMATION, icon: <RobotOutlined />, label: t("menu.automation") },
               ]}
             />
           </div>

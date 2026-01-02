@@ -29,7 +29,8 @@
     "shell": "终端模拟",
     "logcat": "日志查看",
     "mirror": "投屏控制",
-    "proxy": "网络代理"
+    "proxy": "网络代理",
+    "automation": "触控自动化"
   },
   "about": {
     "title": "关于 Gaze",
@@ -448,5 +449,31 @@
     "all_success": "全部 {{count}} 个操作执行成功",
     "all_failed": "全部 {{count}} 个操作执行失败",
     "partial_success": "{{success}} 个成功，{{failed}} 个失败"
+  },
+  "automation": {
+    "title": "触控自动化",
+    "touch_script": "触控脚本",
+    "record_control": "录制控制",
+    "touch_on_device": "设备屏幕触控事件",
+    "start_record": "开始录制",
+    "stop_record": "停止录制",
+    "recording": "录制中...",
+    "touch_device_tip": "在设备屏幕上操作以录制事件",
+    "events_count": "已录制 {{count}} 个事件",
+    "no_events": "未录制到触控事件",
+    "enter_name": "请输入脚本名称",
+    "save_script": "保存脚本",
+    "script_name": "脚本名称",
+    "script_saved": "脚本保存成功",
+    "script_deleted": "脚本已删除",
+    "saved_scripts": "已保存的脚本",
+    "no_scripts": "暂无保存的脚本",
+    "events": "个事件",
+    "play": "播放",
+    "stop": "停止",
+    "delete": "删除",
+    "delete_confirm": "确定删除脚本 \"{{name}}\"？",
+    "playing": "播放中...",
+    "script_preview": "脚本预览"
   }
 }

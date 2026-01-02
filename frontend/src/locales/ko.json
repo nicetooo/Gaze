@@ -28,7 +28,9 @@
     "files": "파일 관리",
     "shell": "터미널",
     "logcat": "로그캣",
-    "mirror": "화면 미러링"
+    "mirror": "화면 미러링",
+    "proxy": "네트워크 프록시",
+    "automation": "터치 자동화"
   },
   "about": {
     "title": "Gaze 정보",
@@ -449,5 +451,35 @@
     "all_success": "모든 {{count}}개 작업이 성공적으로 완료되었습니다",
     "all_failed": "모든 {{count}}개 작업이 실패했습니다",
     "partial_success": "{{success}}개 성공, {{failed}}개 실패"
+  },
+  "automation": {
+    "title": "터치 자동화",
+    "start_record": "녹화 시작",
+    "stop_record": "녹화 중지",
+    "recording": "녹화 중...",
+    "events_count": "{{count}}개의 이벤트 녹화됨",
+    "save_script": "스크립트 저장",
+    "script_name": "스크립트 이름",
+    "play": "재생",
+    "stop": "중지",
+    "delete": "삭제",
+    "delete_confirm": "스크립트 \"{{name}}\"을(를) 삭제하시겠습니까?",
+    "no_scripts": "저장된 스크립트가 없습니다",
+    "playing": "재생 중...",
+    "playback_progress": "{{current}}/{{total}}",
+    "script_saved": "스크립트가 저장되었습니다",
+    "script_deleted": "스크립트가 삭제되었습니다",
+    "select_device_first": "먼저 장치를 선택하세요",
+    "start_failed": "녹화 시작 실패",
+    "stop_failed": "녹화 중지 실패",
+    "play_failed": "재생 실패",
+    "load_failed": "스크립트 로드 실패",
+    "save_failed": "저장 실패",
+    "delete_failed": "삭제 실패",
+    "no_events": "녹화된 이벤트가 없습니다",
+    "script_preview": "스크립트 미리보기",
+    "event_tap": "탭",
+    "event_swipe": "스와이프",
+    "event_wait": "대기"
   }
 }

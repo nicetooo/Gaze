@@ -42,7 +42,7 @@ export interface RecordStatus {
 }
 
 // Navigation types
-export type ViewKey = '1' | '2' | '3' | '4' | '5' | '6' | '7';
+export type ViewKey = '1' | '2' | '3' | '4' | '5' | '6' | '7' | '8';
 
 export const VIEW_KEYS = {
   DEVICES: '1' as ViewKey,
@@ -52,6 +52,7 @@ export const VIEW_KEYS = {
   MIRROR: '5' as ViewKey,
   FILES: '6' as ViewKey,
   PROXY: '7' as ViewKey,
+  AUTOMATION: '8' as ViewKey,
 } as const;
 
 export const VIEW_NAME_MAP: Record<string, ViewKey> = {
@@ -62,6 +63,7 @@ export const VIEW_NAME_MAP: Record<string, ViewKey> = {
   mirror: VIEW_KEYS.MIRROR,
   files: VIEW_KEYS.FILES,
   proxy: VIEW_KEYS.PROXY,
+  automation: VIEW_KEYS.AUTOMATION,
 };
 
 // Batch operation types

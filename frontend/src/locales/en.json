@@ -29,7 +29,8 @@
     "shell": "Shell",
     "logcat": "Logcat",
     "mirror": "Mirror",
-    "proxy": "Proxy"
+    "proxy": "Proxy",
+    "automation": "Automation"
   },
   "about": {
     "title": "About Gaze",
@@ -448,5 +449,31 @@
     "all_success": "All {{count}} operations completed successfully",
     "all_failed": "All {{count}} operations failed",
     "partial_success": "{{success}} succeeded, {{failed}} failed"
+  },
+  "automation": {
+    "title": "Touch Automation",
+    "touch_script": "Touch Script",
+    "record_control": "Record Control",
+    "touch_on_device": "Touch events on device screen",
+    "start_record": "Start Recording",
+    "stop_record": "Stop Recording",
+    "recording": "Recording...",
+    "touch_device_tip": "Touch on device screen to record events",
+    "events_count": "{{count}} events recorded",
+    "no_events": "No touch events recorded",
+    "enter_name": "Please enter a script name",
+    "save_script": "Save Script",
+    "script_name": "Script Name",
+    "script_saved": "Script saved successfully",
+    "script_deleted": "Script deleted",
+    "saved_scripts": "Saved Scripts",
+    "no_scripts": "No saved scripts",
+    "events": "events",
+    "play": "Play",
+    "stop": "Stop",
+    "delete": "Delete",
+    "delete_confirm": "Delete script \"{{name}}\"?",
+    "playing": "Playing...",
+    "script_preview": "Script Preview"
   }
 }

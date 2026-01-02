@@ -118,13 +118,13 @@ type AppSettings struct {
 
 // BatchOperation represents a batch operation to execute on multiple devices
 type BatchOperation struct {
-	Type        string            `json:"type"`        // "install", "uninstall", "clear", "stop", "shell", "push"
-	DeviceIDs   []string          `json:"deviceIds"`   // List of device IDs to operate on
-	PackageName string            `json:"packageName"` // For app operations
-	APKPath     string            `json:"apkPath"`     // For install operation
-	Command     string            `json:"command"`     // For shell operation
-	LocalPath   string            `json:"localPath"`   // For push operation
-	RemotePath  string            `json:"remotePath"`  // For push operation
+	Type        string   `json:"type"`        // "install", "uninstall", "clear", "stop", "shell", "push"
+	DeviceIDs   []string `json:"deviceIds"`   // List of device IDs to operate on
+	PackageName string   `json:"packageName"` // For app operations
+	APKPath     string   `json:"apkPath"`     // For install operation
+	Command     string   `json:"command"`     // For shell operation
+	LocalPath   string   `json:"localPath"`   // For push operation
+	RemotePath  string   `json:"remotePath"`  // For push operation
 }
 
 // BatchResult represents the result of a batch operation for a single device
@@ -137,8 +137,41 @@ type BatchResult struct {
 
 // BatchOperationResult represents the complete result of a batch operation
 type BatchOperationResult struct {
-	TotalDevices   int           `json:"totalDevices"`
-	SuccessCount   int           `json:"successCount"`
-	FailureCount   int           `json:"failureCount"`
-	Results        []BatchResult `json:"results"`
+	TotalDevices int           `json:"totalDevices"`
+	SuccessCount int           `json:"successCount"`
+	FailureCount int           `json:"failureCount"`
+	Results      []BatchResult `json:"results"`
+}
+
+// TouchEvent represents a single touch event in an automation script
+type TouchEvent struct {
+	Timestamp int64  `json:"timestamp"` // Relative time in milliseconds from script start
+	Type      string `json:"type"`      // "tap", "swipe", "wait"
+	X         int    `json:"x"`
+	Y         int    `json:"y"`
+	X2        int    `json:"x2,omitempty"`       // End X for swipe
+	Y2        int    `json:"y2,omitempty"`       // End Y for swipe
+	Duration  int    `json:"duration,omitempty"` // Duration in ms for swipe or wait
+}
+
+// TouchScript represents a recorded touch automation script
+type TouchScript struct {
+	Name       string       `json:"name"`
+	DeviceID   string       `json:"deviceId"`
+	Resolution string       `json:"resolution"` // e.g. "1080x2400"
+	CreatedAt  string       `json:"createdAt"`
+	Events     []TouchEvent `json:"events"`
+}
+
+// TouchRecordingSession represents an active recording session
+type TouchRecordingSession struct {
+	DeviceID    string
+	StartTime   time.Time
+	RawEvents   []string // Raw getevent output lines
+	Resolution  string
+	InputDevice string // e.g. "/dev/input/event2"
+	MaxX        int
+	MaxY        int
+	MinX        int
+	MinY        int
 }

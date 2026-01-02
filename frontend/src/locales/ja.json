@@ -28,7 +28,9 @@
     "files": "ファイル管理",
     "shell": "ターミナル",
     "logcat": "ログキャット",
-    "mirror": "画面ミラーリング"
+    "mirror": "画面ミラーリング",
+    "proxy": "ネットワークプロキシ",
+    "automation": "タッチ自動化"
   },
   "about": {
     "title": "Gaze について",
@@ -449,5 +451,35 @@
     "all_success": "すべての {{count}} 件の操作が正常に完了しました",
     "all_failed": "すべての {{count}} 件の操作が失敗しました",
     "partial_success": "{{success}} 件成功、{{failed}} 件失敗"
+  },
+  "automation": {
+    "title": "タッチ自動化",
+    "start_record": "録画開始",
+    "stop_record": "録画停止",
+    "recording": "録画中...",
+    "events_count": "{{count}} 件のイベントを録画",
+    "save_script": "スクリプトを保存",
+    "script_name": "スクリプト名",
+    "play": "再生",
+    "stop": "停止",
+    "delete": "削除",
+    "delete_confirm": "スクリプト \"{{name}}\" を削除しますか？",
+    "no_scripts": "保存されたスクリプトがありません",
+    "playing": "再生中...",
+    "playback_progress": "{{current}}/{{total}}",
+    "script_saved": "スクリプトを保存しました",
+    "script_deleted": "スクリプトを削除しました",
+    "select_device_first": "まずデバイスを選択してください",
+    "start_failed": "録画の開始に失敗しました",
+    "stop_failed": "録画の停止に失敗しました",
+    "play_failed": "再生に失敗しました",
+    "load_failed": "スクリプトの読み込みに失敗しました",
+    "save_failed": "保存に失敗しました",
+    "delete_failed": "削除に失敗しました",
+    "no_events": "イベントが録画されていません",
+    "script_preview": "スクリプトプレビュー",
+    "event_tap": "タップ",
+    "event_swipe": "スワイプ",
+    "event_wait": "待機"
   }
 }

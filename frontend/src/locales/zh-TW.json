@@ -28,7 +28,9 @@
     "files": "檔案管理",
     "shell": "終端模擬",
     "logcat": "日誌查看",
-    "mirror": "投屏控制"
+    "mirror": "投屏控制",
+    "proxy": "網路代理",
+    "automation": "觸控自動化"
   },
   "about": {
     "title": "關於 Gaze",
@@ -449,5 +451,35 @@
     "all_success": "全部 {{count}} 個操作執行成功",
     "all_failed": "全部 {{count}} 個操作執行失敗",
     "partial_success": "{{success}} 個成功，{{failed}} 個失敗"
+  },
+  "automation": {
+    "title": "觸控自動化",
+    "start_record": "開始錄製",
+    "stop_record": "停止錄製",
+    "recording": "錄製中...",
+    "events_count": "已錄製 {{count}} 個事件",
+    "save_script": "儲存腳本",
+    "script_name": "腳本名稱",
+    "play": "播放",
+    "stop": "停止",
+    "delete": "刪除",
+    "delete_confirm": "確定刪除腳本 \"{{name}}\"？",
+    "no_scripts": "暫無儲存的腳本",
+    "playing": "播放中...",
+    "playback_progress": "{{current}}/{{total}}",
+    "script_saved": "腳本已儲存",
+    "script_deleted": "腳本已刪除",
+    "select_device_first": "請先選擇裝置",
+    "start_failed": "啟動錄製失敗",
+    "stop_failed": "停止錄製失敗",
+    "play_failed": "播放失敗",
+    "load_failed": "載入腳本失敗",
+    "save_failed": "儲存失敗",
+    "delete_failed": "刪除失敗",
+    "no_events": "沒有錄製到任何事件",
+    "script_preview": "腳本預覽",
+    "event_tap": "點擊",
+    "event_swipe": "滑動",
+    "event_wait": "等待"
   }
 }

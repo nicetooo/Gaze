@@ -30,6 +30,10 @@ export function DeleteFile(arg1, arg2) {
   return window['go']['main']['App']['DeleteFile'](arg1, arg2);
 }
 
+export function DeleteTouchScript(arg1) {
+  return window['go']['main']['App']['DeleteTouchScript'](arg1);
+}
+
 export function DisableApp(arg1, arg2) {
   return window['go']['main']['App']['DisableApp'](arg1, arg2);
 }
@@ -74,6 +78,10 @@ export function GetDeviceInfo(arg1) {
   return window['go']['main']['App']['GetDeviceInfo'](arg1);
 }
 
+export function GetDeviceResolution(arg1) {
+  return window['go']['main']['App']['GetDeviceResolution'](arg1);
+}
+
 export function GetDevices(arg1) {
   return window['go']['main']['App']['GetDevices'](arg1);
 }
@@ -98,8 +106,16 @@ export function GetProxyStatus() {
   return window['go']['main']['App']['GetProxyStatus']();
 }
 
+export function GetRecordingEventCount(arg1) {
+  return window['go']['main']['App']['GetRecordingEventCount'](arg1);
+}
+
 export function GetThumbnail(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetThumbnail'](arg1, arg2, arg3);
+}
+
+export function GetTouchInputDevice(arg1) {
+  return window['go']['main']['App']['GetTouchInputDevice'](arg1);
 }
 
 export function Greet(arg1) {
@@ -118,8 +134,16 @@ export function IsAppRunning(arg1, arg2) {
   return window['go']['main']['App']['IsAppRunning'](arg1, arg2);
 }
 
+export function IsPlayingTouch(arg1) {
+  return window['go']['main']['App']['IsPlayingTouch'](arg1);
+}
+
 export function IsRecording(arg1) {
   return window['go']['main']['App']['IsRecording'](arg1);
+}
+
+export function IsRecordingTouch(arg1) {
+  return window['go']['main']['App']['IsRecordingTouch'](arg1);
 }
 
 export function ListCameras(arg1) {
@@ -136,6 +160,10 @@ export function ListFiles(arg1, arg2) {
 
 export function ListPackages(arg1, arg2) {
   return window['go']['main']['App']['ListPackages'](arg1, arg2);
+}
+
+export function LoadTouchScripts() {
+  return window['go']['main']['App']['LoadTouchScripts']();
 }
 
 export function Log(arg1, arg2) {
@@ -162,6 +190,10 @@ export function OpenSettings(arg1, arg2, arg3) {
   return window['go']['main']['App']['OpenSettings'](arg1, arg2, arg3);
 }
 
+export function PlayTouchScript(arg1, arg2) {
+  return window['go']['main']['App']['PlayTouchScript'](arg1, arg2);
+}
+
 export function RemoveHistoryDevice(arg1) {
   return window['go']['main']['App']['RemoveHistoryDevice'](arg1);
 }
@@ -172,6 +204,10 @@ export function RestartAdbServer() {
 
 export function RunAdbCommand(arg1, arg2) {
   return window['go']['main']['App']['RunAdbCommand'](arg1, arg2);
+}
+
+export function SaveTouchScript(arg1) {
+  return window['go']['main']['App']['SaveTouchScript'](arg1);
 }
 
 export function SelectAPKForBatch() {
@@ -250,6 +286,10 @@ export function StartScrcpy(arg1, arg2) {
   return window['go']['main']['App']['StartScrcpy'](arg1, arg2);
 }
 
+export function StartTouchRecording(arg1) {
+  return window['go']['main']['App']['StartTouchRecording'](arg1);
+}
+
 export function StartWirelessServer() {
   return window['go']['main']['App']['StartWirelessServer']();
 }
@@ -280,6 +320,14 @@ export function StopRecording(arg1) {
 
 export function StopScrcpy(arg1) {
   return window['go']['main']['App']['StopScrcpy'](arg1);
+}
+
+export function StopTouchPlayback(arg1) {
+  return window['go']['main']['App']['StopTouchPlayback'](arg1);
+}
+
+export function StopTouchRecording(arg1) {
+  return window['go']['main']['App']['StopTouchRecording'](arg1);
 }
 
 export function SwitchToWireless(arg1) {

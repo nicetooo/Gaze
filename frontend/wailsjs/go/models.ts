@@ -304,6 +304,68 @@ export namespace main {
 	        this.noPowerOn = source["noPowerOn"];
 	    }
 	}
+	export class TouchEvent {
+	    timestamp: number;
+	    type: string;
+	    x: number;
+	    y: number;
+	    x2?: number;
+	    y2?: number;
+	    duration?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new TouchEvent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.timestamp = source["timestamp"];
+	        this.type = source["type"];
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.x2 = source["x2"];
+	        this.y2 = source["y2"];
+	        this.duration = source["duration"];
+	    }
+	}
+	export class TouchScript {
+	    name: string;
+	    deviceId: string;
+	    resolution: string;
+	    createdAt: string;
+	    events: TouchEvent[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TouchScript(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.deviceId = source["deviceId"];
+	        this.resolution = source["resolution"];
+	        this.createdAt = source["createdAt"];
+	        this.events = this.convertValues(source["events"], TouchEvent);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

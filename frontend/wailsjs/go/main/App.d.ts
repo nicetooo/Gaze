@@ -17,6 +17,8 @@ export function CopyFile(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function DeleteFile(arg1:string,arg2:string):Promise<void>;
 
+export function DeleteTouchScript(arg1:string):Promise<void>;
+
 export function DisableApp(arg1:string,arg2:string):Promise<string>;
 
 export function DownloadFile(arg1:string,arg2:string):Promise<string>;
@@ -39,6 +41,8 @@ export function GetDeviceIP(arg1:string):Promise<string>;
 
 export function GetDeviceInfo(arg1:string):Promise<main.DeviceInfo>;
 
+export function GetDeviceResolution(arg1:string):Promise<string>;
+
 export function GetDevices(arg1:boolean):Promise<Array<main.Device>>;
 
 export function GetHistoryDevices():Promise<Array<main.HistoryDevice>>;
@@ -51,7 +55,11 @@ export function GetProxySettings():Promise<{[key: string]: any}>;
 
 export function GetProxyStatus():Promise<boolean>;
 
+export function GetRecordingEventCount(arg1:string):Promise<number>;
+
 export function GetThumbnail(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function GetTouchInputDevice(arg1:string):Promise<string>;
 
 export function Greet(arg1:string):Promise<string>;
 
@@ -61,7 +69,11 @@ export function InstallProxyCert(arg1:string):Promise<string>;
 
 export function IsAppRunning(arg1:string,arg2:string):Promise<boolean>;
 
+export function IsPlayingTouch(arg1:string):Promise<boolean>;
+
 export function IsRecording(arg1:string):Promise<boolean>;
+
+export function IsRecordingTouch(arg1:string):Promise<boolean>;
 
 export function ListCameras(arg1:string):Promise<Array<string>>;
 
@@ -70,6 +82,8 @@ export function ListDisplays(arg1:string):Promise<Array<string>>;
 export function ListFiles(arg1:string,arg2:string):Promise<Array<main.FileInfo>>;
 
 export function ListPackages(arg1:string,arg2:string):Promise<Array<main.AppPackage>>;
+
+export function LoadTouchScripts():Promise<Array<main.TouchScript>>;
 
 export function Log(arg1:string,arg2:Array<any>):Promise<void>;
 
@@ -83,11 +97,15 @@ export function OpenPath(arg1:string):Promise<void>;
 
 export function OpenSettings(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function PlayTouchScript(arg1:string,arg2:main.TouchScript):Promise<void>;
+
 export function RemoveHistoryDevice(arg1:string):Promise<void>;
 
 export function RestartAdbServer():Promise<string>;
 
 export function RunAdbCommand(arg1:string,arg2:string):Promise<string>;
+
+export function SaveTouchScript(arg1:main.TouchScript):Promise<void>;
 
 export function SelectAPKForBatch():Promise<string>;
 
@@ -127,6 +145,8 @@ export function StartRecording(arg1:string,arg2:main.ScrcpyConfig):Promise<void>
 
 export function StartScrcpy(arg1:string,arg2:main.ScrcpyConfig):Promise<void>;
 
+export function StartTouchRecording(arg1:string):Promise<void>;
+
 export function StartWirelessServer():Promise<string>;
 
 export function StopAllNetworkMonitors():Promise<void>;
@@ -142,6 +162,10 @@ export function StopProxy():Promise<string>;
 export function StopRecording(arg1:string):Promise<void>;
 
 export function StopScrcpy(arg1:string):Promise<void>;
+
+export function StopTouchPlayback(arg1:string):Promise<void>;
+
+export function StopTouchRecording(arg1:string):Promise<main.TouchScript>;
 
 export function SwitchToWireless(arg1:string):Promise<string>;
 
