@@ -642,6 +642,12 @@
     "no_selectors": "无可用的选择器",
     "selector_applied": "选择器已应用",
     "update": "更新",
-    "bounds_warning": "Bounds 选择器使用固定屏幕坐标，在不同设备或屏幕方向上可能无法正常工作。"
+    "bounds_warning": "Bounds 选择器使用固定屏幕坐标，在不同设备或屏幕方向上可能无法正常工作。",
+    "pick_point_on_screen": "点击屏幕拾取坐标",
+    "waiting_for_tap": "等待点击...",
+    "pick_point_hint": "适用于 WebView/混合页面等无法分析的场景",
+    "tap_on_device": "请在设备屏幕上点击以捕获坐标",
+    "point_captured": "已捕获坐标: ({{x}}, {{y}})",
+    "point_capture_failed": "捕获坐标失败"
   }
 }

@@ -682,6 +682,12 @@
     "step_updated": "Step updated",
     "save": "Save",
     "update": "Update",
-    "bounds_warning": "Bounds selectors use fixed screen coordinates. They may not work reliably on different devices or screen orientations."
+    "bounds_warning": "Bounds selectors use fixed screen coordinates. They may not work reliably on different devices or screen orientations.",
+    "pick_point_on_screen": "Pick Point by Tapping Screen",
+    "waiting_for_tap": "Waiting for tap...",
+    "pick_point_hint": "For WebView/Hybrid pages that cannot be analyzed",
+    "tap_on_device": "Tap on the device screen to capture coordinates",
+    "point_captured": "Point captured: ({{x}}, {{y}})",
+    "point_capture_failed": "Failed to capture point"
   }
 }

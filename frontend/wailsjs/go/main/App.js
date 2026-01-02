@@ -230,6 +230,10 @@ export function PerformNodeAction(arg1, arg2, arg3) {
   return window['go']['main']['App']['PerformNodeAction'](arg1, arg2, arg3);
 }
 
+export function PickPointOnScreen(arg1, arg2) {
+  return window['go']['main']['App']['PickPointOnScreen'](arg1, arg2);
+}
+
 export function PlayTouchScript(arg1, arg2) {
   return window['go']['main']['App']['PlayTouchScript'](arg1, arg2);
 }

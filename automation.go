@@ -376,6 +376,195 @@ func (a *App) IsRecordingTouch(deviceId string) bool {
 	return exists
 }
 
+// PickPointOnScreen waits for a single tap on the device screen and returns the coordinates
+// Returns a map with x, y coordinates and a bounds string
+func (a *App) PickPointOnScreen(deviceId string, timeoutSeconds int) (map[string]interface{}, error) {
+	// Get touch input device
+	inputDevice, err := a.GetTouchInputDevice(deviceId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find touch input device: %w", err)
+	}
+
+	// Get device resolution for coordinate scaling
+	resolution, _ := a.GetDeviceResolution(deviceId)
+	parts := strings.Split(resolution, "x")
+	screenWidth, screenHeight := 1080, 1920
+	if len(parts) == 2 {
+		screenWidth, _ = strconv.Atoi(parts[0])
+		screenHeight, _ = strconv.Atoi(parts[1])
+	}
+
+	// Get min/max coordinates for the touch device
+	maxX, maxY := 0, 0
+	minX, minY := 0, 0
+
+	propsCmd := fmt.Sprintf("shell getevent -p %s", inputDevice)
+	propsOutput, err := a.RunAdbCommand(deviceId, propsCmd)
+	if err == nil {
+		lines := strings.Split(propsOutput, "\n")
+		re := regexp.MustCompile(`min\s+(-?\d+),\s+max\s+(-?\d+)`)
+
+		for _, line := range lines {
+			if strings.Contains(line, "ABS_MT_POSITION_X") || strings.Contains(line, "0035") {
+				if matches := re.FindStringSubmatch(line); len(matches) >= 3 {
+					minX, _ = strconv.Atoi(matches[1])
+					maxX, _ = strconv.Atoi(matches[2])
+				}
+			}
+			if strings.Contains(line, "ABS_MT_POSITION_Y") || strings.Contains(line, "0036") {
+				if matches := re.FindStringSubmatch(line); len(matches) >= 3 {
+					minY, _ = strconv.Atoi(matches[1])
+					maxY, _ = strconv.Atoi(matches[2])
+				}
+			}
+		}
+	}
+
+	// Default timeout 30 seconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 30
+	}
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	// Start getevent
+	cmd := exec.CommandContext(ctx, a.adbPath, "-s", deviceId, "shell", "getevent", "-lt", inputDevice)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start getevent: %w", err)
+	}
+
+	// Emit event to notify frontend that we're waiting
+	wailsRuntime.EventsEmit(a.ctx, "point-picker-started", map[string]interface{}{
+		"deviceId": deviceId,
+	})
+
+	// Channel to receive result
+	resultChan := make(chan map[string]interface{}, 1)
+	errChan := make(chan error, 1)
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		var currentX, currentY int
+		var hasX, hasY bool
+		touchDown := false
+
+		for scanner.Scan() {
+			line := scanner.Text()
+
+			// Parse X coordinate
+			if strings.Contains(line, "ABS_MT_POSITION_X") {
+				re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
+				if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+					val, _ := strconv.ParseInt(matches[1], 16, 32)
+					currentX = int(val)
+					hasX = true
+				}
+			}
+
+			// Parse Y coordinate
+			if strings.Contains(line, "ABS_MT_POSITION_Y") {
+				re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
+				if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+					val, _ := strconv.ParseInt(matches[1], 16, 32)
+					currentY = int(val)
+					hasY = true
+				}
+			}
+
+			// Detect touch down
+			if strings.Contains(line, "BTN_TOUCH") && strings.Contains(line, "DOWN") {
+				touchDown = true
+			}
+			if strings.Contains(line, "BTN_TOUCH") && strings.HasSuffix(strings.TrimSpace(line), "00000001") {
+				touchDown = true
+			}
+
+			// Detect touch up - this is when we capture the point
+			isTouchUp := false
+			if strings.Contains(line, "BTN_TOUCH") && (strings.Contains(line, "UP") || strings.HasSuffix(strings.TrimSpace(line), "00000000")) {
+				isTouchUp = true
+			}
+			if strings.Contains(line, "ABS_MT_TRACKING_ID") && strings.Contains(strings.ToLower(line), "ffffffff") {
+				isTouchUp = true
+			}
+
+			if isTouchUp && touchDown && hasX && hasY {
+				// Scale coordinates to screen resolution
+				scaledX := currentX
+				scaledY := currentY
+
+				if maxX > 0 && maxY > 0 {
+					scaledX = (currentX - minX) * screenWidth / (maxX - minX + 1)
+					scaledY = (currentY - minY) * screenHeight / (maxY - minY + 1)
+				}
+
+				// Create bounds string (a small area around the tap point)
+				tapSize := 10 // 10 pixel tap area
+				x1 := scaledX - tapSize
+				y1 := scaledY - tapSize
+				x2 := scaledX + tapSize
+				y2 := scaledY + tapSize
+
+				// Clamp to screen bounds
+				if x1 < 0 {
+					x1 = 0
+				}
+				if y1 < 0 {
+					y1 = 0
+				}
+				if x2 > screenWidth {
+					x2 = screenWidth
+				}
+				if y2 > screenHeight {
+					y2 = screenHeight
+				}
+
+				bounds := fmt.Sprintf("[%d,%d][%d,%d]", x1, y1, x2, y2)
+
+				resultChan <- map[string]interface{}{
+					"x":      scaledX,
+					"y":      scaledY,
+					"bounds": bounds,
+					"rawX":   currentX,
+					"rawY":   currentY,
+				}
+				return
+			}
+		}
+
+		if err := scanner.Err(); err != nil && ctx.Err() == nil {
+			errChan <- err
+		}
+	}()
+
+	// Wait for result or timeout
+	select {
+	case result := <-resultChan:
+		cmd.Process.Kill()
+		wailsRuntime.EventsEmit(a.ctx, "point-picker-completed", result)
+		return result, nil
+	case err := <-errChan:
+		cmd.Process.Kill()
+		return nil, err
+	case <-ctx.Done():
+		cmd.Process.Kill()
+		wailsRuntime.EventsEmit(a.ctx, "point-picker-timeout", map[string]interface{}{
+			"deviceId": deviceId,
+		})
+		return nil, fmt.Errorf("timeout waiting for tap")
+	}
+}
+
+// CancelPointPicker can be used to cancel an ongoing point picker (not currently tracked per-device, relies on timeout)
+// For now, the timeout mechanism handles cancellation
+
 // GetRecordingEventCount returns the current number of recorded events
 func (a *App) GetRecordingEventCount(deviceId string) int {
 	touchRecordMu.Lock()

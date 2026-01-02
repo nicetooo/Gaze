@@ -117,6 +117,8 @@ export function PauseTask(arg1:string):Promise<void>;
 
 export function PerformNodeAction(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function PickPointOnScreen(arg1:string,arg2:number):Promise<{[key: string]: any}>;
+
 export function PlayTouchScript(arg1:string,arg2:main.TouchScript):Promise<void>;
 
 export function RemoveHistoryDevice(arg1:string):Promise<void>;

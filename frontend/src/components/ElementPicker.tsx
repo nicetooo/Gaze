@@ -24,6 +24,7 @@ import {
   CheckCircleOutlined,
   AimOutlined,
   WarningOutlined,
+  SelectOutlined,
 } from "@ant-design/icons";
 import { useDeviceStore, useAutomationStore } from "../stores";
 
@@ -149,6 +150,9 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
     "auto"
   );
   const [selectedSelectorIndex, setSelectedSelectorIndex] = useState(0);
+
+  // Point picker state
+  const [isPickingPoint, setIsPickingPoint] = useState(false);
 
   // Detect search mode from query
   const getEffectiveSearchMode = (query: string): string => {
@@ -438,6 +442,48 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
     }
   };
 
+  // Pick point by tapping on device screen
+  const handlePickPoint = async () => {
+    if (!selectedDevice) {
+      message.warning(t("app.select_device"));
+      return;
+    }
+
+    setIsPickingPoint(true);
+    message.loading({
+      content: t("workflow.tap_on_device"),
+      key: "point-picker",
+      duration: 0,
+    });
+
+    try {
+      const result = await (window as any).go.main.App.PickPointOnScreen(
+        selectedDevice,
+        30
+      );
+
+      if (result && result.bounds) {
+        message.success({
+          content: t("workflow.point_captured", { x: result.x, y: result.y }),
+          key: "point-picker",
+        });
+
+        // Directly use the bounds as selector
+        onSelect({
+          type: "bounds",
+          value: result.bounds,
+        });
+      }
+    } catch (err) {
+      message.error({
+        content: t("workflow.point_capture_failed") + ": " + String(err),
+        key: "point-picker",
+      });
+    } finally {
+      setIsPickingPoint(false);
+    }
+  };
+
   const searchHelpContent = (
     <div style={{ maxWidth: 320 }}>
       <div style={{ marginBottom: 8 }}>
@@ -502,6 +548,38 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
             flexDirection: "column",
           }}
         >
+          {/* Point picker for WebView/Hybrid pages */}
+          <div
+            style={{
+              padding: 12,
+              borderBottom: `1px solid ${token.colorBorderSecondary}`,
+              backgroundColor: token.colorFillAlter,
+            }}
+          >
+            <Button
+              type="dashed"
+              icon={<SelectOutlined />}
+              onClick={handlePickPoint}
+              loading={isPickingPoint}
+              disabled={!selectedDevice}
+              block
+            >
+              {isPickingPoint
+                ? t("workflow.waiting_for_tap")
+                : t("workflow.pick_point_on_screen")}
+            </Button>
+            <div
+              style={{
+                fontSize: 11,
+                color: token.colorTextSecondary,
+                marginTop: 6,
+                textAlign: "center",
+              }}
+            >
+              {t("workflow.pick_point_hint")}
+            </div>
+          </div>
+
           {/* Search bar */}
           <div
             style={{
