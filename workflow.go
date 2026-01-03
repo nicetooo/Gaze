@@ -311,7 +311,7 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 }
 
 // Updated signature to return (result, error)
-func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, _currentLoop, _totalLoops, depth int) (bool, error) {
+func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, _, _, depth int) (bool, error) {
 	// Recursion guard
 	if depth > 10 {
 		return false, fmt.Errorf("maximum workflow nesting depth exceeded")
@@ -428,6 +428,22 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 		}
 
 		return true, a.playTouchScriptSync(ctx, deviceId, script, nil)
+
+	case "launch_app":
+		_, err := a.StartApp(deviceId, step.Value)
+		return true, err
+
+	case "stop_app":
+		_, err := a.ForceStopApp(deviceId, step.Value)
+		return true, err
+
+	case "clear_app":
+		_, err := a.ClearAppData(deviceId, step.Value)
+		return true, err
+
+	case "open_settings":
+		_, err := a.OpenSettings(deviceId, "android.settings.APPLICATION_DETAILS_SETTINGS", "package:"+step.Value)
+		return true, err
 
 	case "click_element", "long_click_element", "input_text", "assert_element", "wait_element", "wait_gone", "swipe_element":
 		return true, a.handleElementAction(ctx, deviceId, step)

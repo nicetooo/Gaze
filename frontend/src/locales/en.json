@@ -656,7 +656,8 @@
       "flow_control": "Flow Control",
       "script_actions": "Script Actions",
       "system_actions": "System Actions",
-      "nested": "Nested Workflows"
+      "nested": "Nested Workflows",
+      "app_actions": "App Actions"
     },
     "step_type": {
       "start": "Start",
@@ -681,7 +682,11 @@
       "key_volume_up": "Volume Up",
       "key_volume_down": "Volume Down",
       "screen_on": "Screen On",
-      "screen_off": "Screen Off"
+      "screen_off": "Screen Off",
+      "launch_app": "Launch App",
+      "stop_app": "Force Stop App",
+      "clear_app": "Clear Data",
+      "open_settings": "App Settings"
     },
     "element_picker": "Element Picker",
     "pick_element": "Pick Element from Screen",

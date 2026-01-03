@@ -582,7 +582,11 @@
       "key_volume_up": "音量+",
       "key_volume_down": "音量-",
       "screen_on": "画面オン",
-      "screen_off": "画面オフ"
+      "screen_off": "画面オフ",
+      "launch_app": "アプリ起動",
+      "stop_app": "強制停止",
+      "clear_app": "データ消去",
+      "open_settings": "アプリ設定"
     },
     "convert": "変換",
     "step_updated": "ステップを更新しました",
@@ -607,7 +611,8 @@
       "flow_control": "フロ制御",
       "script_actions": "スクリプトアクション",
       "system_actions": "システムアクション",
-      "nested": "入れ子呼び出し"
+      "nested": "入れ子呼び出し",
+      "app_actions": "アプリ操作"
     },
     "add_step": "ステップ追加",
     "delete_confirm": "ワークフローを削除しますか？",

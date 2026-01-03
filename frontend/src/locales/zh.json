@@ -601,7 +601,11 @@
       "key_volume_up": "音量+",
       "key_volume_down": "音量-",
       "screen_on": "亮屏",
-      "screen_off": "熄屏"
+      "screen_off": "熄屏",
+      "launch_app": "启动应用",
+      "stop_app": "强行停止",
+      "clear_app": "清除数据",
+      "open_settings": "应用设置"
     },
     "convert": "转换",
     "step_updated": "步骤已更新",
@@ -626,7 +630,8 @@
       "flow_control": "流程控制",
       "script_actions": "脚本操作",
       "system_actions": "系统操作",
-      "nested": "嵌套调用"
+      "nested": "嵌套调用",
+      "app_actions": "应用操作"
     },
     "add_step": "添加步骤",
     "delete_confirm": "确定删除工作流？",

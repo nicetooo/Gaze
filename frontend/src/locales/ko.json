@@ -582,7 +582,11 @@
       "key_volume_up": "볼륨 +",
       "key_volume_down": "볼륨 -",
       "screen_on": "화면 켜기",
-      "screen_off": "화면 끄기"
+      "screen_off": "화면 끄기",
+      "launch_app": "앱 시작",
+      "stop_app": "강제 중지",
+      "clear_app": "데이터 삭제",
+      "open_settings": "앱 설정"
     },
     "convert": "변환",
     "step_updated": "단계가 업데이트되었습니다",
@@ -607,7 +611,8 @@
       "flow_control": "흐름 제어",
       "script_actions": "스크립트 작업",
       "system_actions": "시스템 작업",
-      "nested": "중첩 호출"
+      "nested": "중첩 호출",
+      "app_actions": "앱 작업"
     },
     "add_step": "단계 추가",
     "delete_confirm": "워크플로를 삭제하시겠습니까?",

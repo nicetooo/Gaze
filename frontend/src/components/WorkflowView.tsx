@@ -22,7 +22,6 @@ import {
 } from "antd";
 import { useTranslation } from "react-i18next";
 import {
-  PlayCircleOutlined,
   StopOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -30,6 +29,7 @@ import {
   RobotOutlined,
   AimOutlined,
   ClockCircleOutlined,
+  PlayCircleOutlined,
   CheckCircleOutlined,
   SwapOutlined,
   FormOutlined,
@@ -51,6 +51,7 @@ import {
   PicCenterOutlined,
   PicRightOutlined,
   LoadingOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import {
   ReactFlow,
@@ -114,6 +115,12 @@ const STEP_TYPES = {
   ],
   NESTED: [
     { key: 'run_workflow', icon: <BranchesOutlined />, color: 'gold' },
+  ],
+  APP_ACTIONS: [
+    { key: 'launch_app', icon: <PlayCircleOutlined />, color: 'green' },
+    { key: 'stop_app', icon: <StopOutlined />, color: 'red' },
+    { key: 'clear_app', icon: <DeleteOutlined />, color: 'orange' },
+    { key: 'open_settings', icon: <SettingOutlined />, color: 'blue' },
   ],
 };
 
@@ -314,9 +321,12 @@ const WorkflowView: React.FC = () => {
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [workflowModalVisible, setWorkflowModalVisible] = useState(false);
   const [workflowForm] = Form.useForm();
+  const [packages, setPackages] = useState<any[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [currentStepId, setCurrentStepId] = useState<string | null>(null);
   const [waitingStepId, setWaitingStepId] = useState<string | null>(null);
   const [waitingPhase, setWaitingPhase] = useState<'pre' | 'post' | null>(null);
@@ -346,6 +356,23 @@ const WorkflowView: React.FC = () => {
 
   // Node Editing
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
+
+  const fetchPackages = useCallback(async () => {
+    if (!selectedDevice) return;
+    setAppsLoading(true);
+    try {
+      const res = await (window as any).go.main.App.ListPackages(selectedDevice, 'user');
+      setPackages(res || []);
+    } catch (err) {
+      console.error("Failed to fetch packages:", err);
+    } finally {
+      setAppsLoading(false);
+    }
+  }, [selectedDevice]);
+
+  useEffect(() => {
+    fetchPackages();
+  }, [fetchPackages]);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [stepForm] = Form.useForm();
 
@@ -932,6 +959,9 @@ const WorkflowView: React.FC = () => {
         runtime.EventsOff("workflow-completed", onComplete);
         runtime.EventsOff("workflow-error", onError);
         runtime.EventsOff("workflow-step-running", onStep);
+        runtime.EventsOff("workflow-step-waiting", onWait);
+        runtime.EventsOff("task-paused", onPaused);
+        runtime.EventsOff("task-resumed", onResumed);
       };
 
       const onComplete = (data: any) => {
@@ -965,13 +995,28 @@ const WorkflowView: React.FC = () => {
         }
       };
 
+      const onPaused = (data: any) => {
+        if (data.deviceId === deviceObj.id) {
+          setIsPaused(true);
+        }
+      };
+
+      const onResumed = (data: any) => {
+        if (data.deviceId === deviceObj.id) {
+          setIsPaused(false);
+        }
+      };
+
       runtime.EventsOn("workflow-completed", onComplete);
       runtime.EventsOn("workflow-error", onError);
       runtime.EventsOn("workflow-step-running", onStep);
       runtime.EventsOn("workflow-step-waiting", onWait);
+      runtime.EventsOn("task-paused", onPaused);
+      runtime.EventsOn("task-resumed", onResumed);
     });
 
     try {
+      setIsPaused(false); // Reset pause state when starting
       await (window as any).go.main.App.RunWorkflow(deviceObj, sanitizedWorkflow);
       await executionPromise;
       setExecutionLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${t("workflow.completed")}`]);
@@ -980,6 +1025,7 @@ const WorkflowView: React.FC = () => {
       message.error(String(err));
     } finally {
       setIsRunning(false);
+      setIsPaused(false);
       setCurrentStepId(null);
     }
   };
@@ -994,6 +1040,7 @@ const WorkflowView: React.FC = () => {
     try {
       await (window as any).go.main.App.StopWorkflow(deviceObj);
       setIsRunning(false);
+      setIsPaused(false);
       setCurrentStepId(null);
       setExecutionLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${t("workflow.stopped")}`]);
     } catch (err) {
@@ -1012,6 +1059,16 @@ const WorkflowView: React.FC = () => {
     } catch (err) {
       message.error(String(err));
     }
+  };
+
+  const handlePauseWorkflow = async () => {
+    if (!selectedDevice) return;
+    await (window as any).go.main.App.PauseTask(selectedDevice);
+  };
+
+  const handleResumeWorkflow = async () => {
+    if (!selectedDevice) return;
+    await (window as any).go.main.App.ResumeTask(selectedDevice);
   };
 
   return (
@@ -1035,9 +1092,20 @@ const WorkflowView: React.FC = () => {
                 {t("workflow.save")}
               </Button>
               {isRunning ? (
-                <Button danger icon={<StopOutlined />} onClick={handleStopWorkflow}>
-                  {t("workflow.stop")}
-                </Button>
+                <Space>
+                  {isPaused ? (
+                    <Button icon={<PlayCircleOutlined />} onClick={handleResumeWorkflow}>
+                      {t("workflow.resume")}
+                    </Button>
+                  ) : (
+                    <Button icon={<PauseCircleOutlined />} onClick={handlePauseWorkflow}>
+                      {t("workflow.pause")}
+                    </Button>
+                  )}
+                  <Button danger icon={<StopOutlined />} onClick={handleStopWorkflow}>
+                    {t("workflow.stop")}
+                  </Button>
+                </Space>
               ) : (
                 <Button type="primary" icon={<PlayCircleOutlined />} onClick={handleRunWorkflow} disabled={!selectedDevice}>
                   {t("workflow.run")}
@@ -1167,6 +1235,15 @@ const WorkflowView: React.FC = () => {
                         ))}
                       </Space>
                     </Collapse.Panel>
+                    <Collapse.Panel header={t("workflow.category.script_actions")} key="script_actions">
+                      <Space wrap size={[8, 8]}>
+                        {STEP_TYPES.SCRIPT_ACTIONS.map(s => (
+                          <Tooltip title={t(`workflow.step_type.${s.key}`)} key={s.key}>
+                            <Button size="small" icon={s.icon} onClick={() => handleAddStep(s.key)} />
+                          </Tooltip>
+                        ))}
+                      </Space>
+                    </Collapse.Panel>
                     <Collapse.Panel header={t("workflow.category.system_actions")} key="4">
                       <Space wrap size={[8, 8]}>
                         {STEP_TYPES.SYSTEM_ACTIONS.map(s => (
@@ -1179,6 +1256,15 @@ const WorkflowView: React.FC = () => {
                     <Collapse.Panel header={t("workflow.category.nested")} key="5">
                       <Space wrap size={[8, 8]}>
                         {STEP_TYPES.NESTED.map(s => (
+                          <Tooltip title={t(`workflow.step_type.${s.key}`)} key={s.key}>
+                            <Button size="small" icon={s.icon} onClick={() => handleAddStep(s.key)} />
+                          </Tooltip>
+                        ))}
+                      </Space>
+                    </Collapse.Panel>
+                    <Collapse.Panel header={t("workflow.category.app_actions")} key="6">
+                      <Space wrap size={[8, 8]}>
+                        {STEP_TYPES.APP_ACTIONS.map(s => (
                           <Tooltip title={t(`workflow.step_type.${s.key}`)} key={s.key}>
                             <Button size="small" icon={s.icon} onClick={() => handleAddStep(s.key)} />
                           </Tooltip>
@@ -1234,7 +1320,8 @@ const WorkflowView: React.FC = () => {
                     const type = getFieldValue('type');
                     const isBranch = type === 'branch';
                     const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
-                    const needsValue = ['input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type);
+                    const isAppAction = ['launch_app', 'stop_app', 'clear_app', 'open_settings'].includes(type);
+                    const needsValue = ['input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
                     const isWorkflow = type === 'run_workflow';
 
                     return (
@@ -1306,6 +1393,26 @@ const WorkflowView: React.FC = () => {
                                 { label: t("workflow.direction_left"), value: 'left' },
                                 { label: t("workflow.direction_right"), value: 'right' },
                               ]} placeholder={t("workflow.select_direction")} />
+                            ) : isAppAction ? (
+                              <Select
+                                showSearch
+                                placeholder={t("apps.filter_placeholder")}
+                                loading={appsLoading}
+                                onFocus={() => packages.length === 0 && fetchPackages()}
+                                options={packages.map(p => ({
+                                  content: (
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                                      <span>{p.label || p.name}</span>
+                                      <span style={{ fontSize: 10, color: token.colorTextSecondary }}>{p.name}</span>
+                                    </div>
+                                  ),
+                                  label: `${p.label || ''} ${p.name}`,
+                                  value: p.name
+                                }))}
+                                filterOption={(input, option) =>
+                                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                }
+                              />
                             ) : (
                               <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
                             )}
@@ -1368,7 +1475,7 @@ const WorkflowView: React.FC = () => {
             </>
           )}
         </Drawer>
-      </div>
+      </div >
 
       <Modal
         title={t("workflow.create")}
@@ -1395,7 +1502,7 @@ const WorkflowView: React.FC = () => {
         onCancel={() => setElementPickerVisible(false)}
         onSelect={handleElementSelected}
       />
-    </div>
+    </div >
   );
 };
 
