@@ -453,21 +453,9 @@ func (a *App) StartTouchRecording(deviceId string, recordingMode string) error {
 								fmt.Printf("[Automation] Recording paused for selector choice\n")
 							}(scaledX, scaledY, len(sess.ElementInfos), time.Now())
 						} else {
-							// Fast mode: capture element info asynchronously (existing behavior)
-							go func(x, y int) {
-								elemInfo := a.captureElementInfoAtPoint(deviceId, x, y)
-								if elemInfo != nil {
-									touchRecordMu.Lock()
-									if sess, ok := touchRecordData[deviceId]; ok {
-										sess.ElementInfos = append(sess.ElementInfos, *elemInfo)
-										if elemInfo.Selector != nil {
-											fmt.Printf("[Automation] Captured element at (%d,%d): Selector=%+v\n",
-												x, y, elemInfo.Selector)
-										}
-									}
-									touchRecordMu.Unlock()
-								}
-							}(scaledX, scaledY)
+							// Fast mode: strictly coordinates only.
+							// Do NOT capture element info to ensure zero latency and pure coordinate playback.
+							fmt.Printf("[Automation] Fast mode: recording coordinate (%d,%d) only\n", scaledX, scaledY)
 						}
 					}
 
