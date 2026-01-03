@@ -523,7 +523,7 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
       open={visible}
       onCancel={onCancel}
       width={900}
-      bodyStyle={{ padding: 0 }}
+      styles={{ body: { padding: 0 } }}
       footer={
         <Space>
           <Button onClick={onCancel}>{t("common.cancel")}</Button>
@@ -763,11 +763,10 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
                               ? token.colorPrimaryBg
                               : token.colorBgContainer,
                           borderRadius: 6,
-                          border: `1px solid ${
-                            selectedSelectorIndex === index
+                          border: `1px solid ${selectedSelectorIndex === index
                               ? token.colorPrimary
                               : token.colorBorder
-                          }`,
+                            }`,
                           marginRight: 0,
                         }}
                       >

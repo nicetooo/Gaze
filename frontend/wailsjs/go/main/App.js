@@ -14,6 +14,10 @@ export function AdbPair(arg1, arg2) {
   return window['go']['main']['App']['AdbPair'](arg1, arg2);
 }
 
+export function AnalyzeElementSelectors(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['AnalyzeElementSelectors'](arg1, arg2, arg3, arg4);
+}
+
 export function CancelOpenFile(arg1) {
   return window['go']['main']['App']['CancelOpenFile'](arg1);
 }
@@ -58,12 +62,24 @@ export function ExecuteBatchOperation(arg1) {
   return window['go']['main']['App']['ExecuteBatchOperation'](arg1);
 }
 
+export function ExecuteSingleTouchEvent(arg1, arg2, arg3) {
+  return window['go']['main']['App']['ExecuteSingleTouchEvent'](arg1, arg2, arg3);
+}
+
+export function ExecuteSingleWorkflowStep(arg1, arg2) {
+  return window['go']['main']['App']['ExecuteSingleWorkflowStep'](arg1, arg2);
+}
+
 export function ExportAPK(arg1, arg2) {
   return window['go']['main']['App']['ExportAPK'](arg1, arg2);
 }
 
 export function FindElement(arg1, arg2, arg3) {
   return window['go']['main']['App']['FindElement'](arg1, arg2, arg3);
+}
+
+export function FindElementAtPoint(arg1, arg2, arg3) {
+  return window['go']['main']['App']['FindElementAtPoint'](arg1, arg2, arg3);
 }
 
 export function ForceStopApp(arg1, arg2) {
@@ -124,6 +140,10 @@ export function GetProxyStatus() {
 
 export function GetRecordingEventCount(arg1) {
   return window['go']['main']['App']['GetRecordingEventCount'](arg1);
+}
+
+export function GetRecordingStatus(arg1) {
+  return window['go']['main']['App']['GetRecordingStatus'](arg1);
 }
 
 export function GetThumbnail(arg1, arg2, arg3) {
@@ -366,8 +386,8 @@ export function StartScrcpy(arg1, arg2) {
   return window['go']['main']['App']['StartScrcpy'](arg1, arg2);
 }
 
-export function StartTouchRecording(arg1) {
-  return window['go']['main']['App']['StartTouchRecording'](arg1);
+export function StartTouchRecording(arg1, arg2) {
+  return window['go']['main']['App']['StartTouchRecording'](arg1, arg2);
 }
 
 export function StartWirelessServer() {
@@ -416,6 +436,10 @@ export function StopTouchRecording(arg1) {
 
 export function StopWorkflow(arg1) {
   return window['go']['main']['App']['StopWorkflow'](arg1);
+}
+
+export function SubmitSelectorChoice(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SubmitSelectorChoice'](arg1, arg2, arg3);
 }
 
 export function SwitchToWireless(arg1) {

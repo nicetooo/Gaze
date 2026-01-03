@@ -92,8 +92,15 @@ interface AutomationState {
   rawXml: string | null;
   isFetchingHierarchy: boolean;
 
+  // Recording mode state
+  recordingMode: 'fast' | 'precise';
+  isWaitingForSelector: boolean;
+  pendingSelectorData: any | null;
+  isPreCapturing: boolean;
+  isAnalyzing: boolean;
+
   // Actions
-  startRecording: (deviceId: string) => Promise<void>;
+  startRecording: (deviceId: string, mode?: 'fast' | 'precise') => Promise<void>;
   stopRecording: () => Promise<main.TouchScript | null>;
   playScript: (deviceId: string, script: main.TouchScript) => Promise<void>;
   stopPlayback: () => void;
@@ -104,6 +111,10 @@ interface AutomationState {
   renameScript: (oldName: string, newName: string) => Promise<void>;
   setCurrentScript: (script: main.TouchScript | null) => void;
   updateRecordingDuration: () => void;
+
+  // Selector choice actions
+  submitSelectorChoice: (selectorType: string, selectorValue: string) => Promise<void>;
+  setRecordingMode: (mode: 'fast' | 'precise') => void;
 
   // Task Actions
   loadTasks: () => Promise<void>;
@@ -141,11 +152,18 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
   uiHierarchy: null,
   rawXml: null,
   isFetchingHierarchy: false,
+  
+  // Recording mode state
+  recordingMode: 'fast',
+  isWaitingForSelector: false,
+  pendingSelectorData: null,
+  isPreCapturing: false,
+  isAnalyzing: false,
 
   // Actions
-  startRecording: async (deviceId: string) => {
+  startRecording: async (deviceId: string, mode: 'fast' | 'precise' = 'fast') => {
     try {
-      await StartTouchRecording(deviceId);
+      await StartTouchRecording(deviceId, mode);
       set({
         isRecording: true,
         recordingDeviceId: deviceId,
@@ -153,6 +171,9 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
         recordingDuration: 0,
         recordedActionCount: 0,
         currentScript: null,
+        recordingMode: mode,
+        isWaitingForSelector: false,
+        pendingSelectorData: null,
       });
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -394,6 +415,32 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
     }
   },
 
+  submitSelectorChoice: async (selectorType: string, selectorValue: string) => {
+    const { recordingDeviceId } = get();
+    if (!recordingDeviceId) {
+      throw new Error('No active recording');
+    }
+    
+    try {
+      await (window as any).go.main.App.SubmitSelectorChoice(
+        recordingDeviceId,
+        selectorType,
+        selectorValue
+      );
+      set({
+        isWaitingForSelector: false,
+        pendingSelectorData: null,
+      });
+    } catch (err) {
+      console.error('Failed to submit selector choice:', err);
+      throw err;
+    }
+  },
+
+  setRecordingMode: (mode: 'fast' | 'precise') => {
+    set({ recordingMode: mode });
+  },
+
   // Event subscription
   subscribeToEvents: () => {
     const handleRecordStarted = (data: any) => {
@@ -477,6 +524,34 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
       });
     };
 
+    const handleRecordingPausedForSelector = (data: any) => {
+      set({
+        isWaitingForSelector: true,
+        pendingSelectorData: data,
+        isAnalyzing: false, // Added
+      });
+    };
+
+    const handleRecordingResumed = (data: any) => {
+      set({
+        isWaitingForSelector: false,
+        pendingSelectorData: null,
+        isAnalyzing: false, // Added
+      });
+    };
+
+    const offPreCaptureStarted = EventsOn('recording-pre-capture-started', (data: any) => {
+      set({ isPreCapturing: true });
+    });
+
+    const offPreCaptureFinished = EventsOn('recording-pre-capture-finished', (data: any) => {
+      set({ isPreCapturing: false });
+    });
+
+    const offAnalysisStarted = EventsOn('recording-analysis-started', (data: any) => {
+      set({ isAnalyzing: true });
+    });
+
     EventsOn('touch-record-started', handleRecordStarted);
     EventsOn('touch-record-stopped', handleRecordStopped);
     EventsOn('touch-action-recorded', handleTouchActionRecorded);
@@ -488,6 +563,8 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
     EventsOn('task-step-running', handleTaskStepRunning);
     EventsOn('task-paused', handleTaskPaused);
     EventsOn('task-resumed', handleTaskResumed);
+    EventsOn('recording-paused-for-selector', handleRecordingPausedForSelector);
+    EventsOn('recording-resumed', handleRecordingResumed);
 
     return () => {
       EventsOff('touch-record-started');
@@ -499,6 +576,8 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
       EventsOff('task-started');
       EventsOff('task-completed');
       EventsOff('task-step-running');
+      EventsOff('recording-paused-for-selector');
+      EventsOff('recording-resumed');
     };
   },
 }));

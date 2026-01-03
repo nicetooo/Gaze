@@ -31,7 +31,20 @@ var (
 	taskPauseSignal = make(map[string]chan struct{})
 	taskIsPaused    = make(map[string]bool)
 	taskPauseMu     sync.Mutex
+
+	// UI hierarchy cache for recording (to avoid excessive dumps)
+	uiHierarchyCache       = make(map[string]*cachedUIHierarchy)
+	uiHierarchyCacheMu     sync.Mutex
+	uiHierarchyCacheTTL    = 2 * time.Second        // Cache valid for 2 seconds
+	uiHierarchyMinInterval = 500 * time.Millisecond // Min time between dumps
 )
+
+type cachedUIHierarchy struct {
+	result        *UIHierarchyResult
+	timestamp     time.Time // Finish time
+	DumpStartTime time.Time // When it actually started
+	lastDump      time.Time // Last time we attempted a dump
+}
 
 // GetTouchInputDevice finds the touch input device path on the Android device
 func (a *App) GetTouchInputDevice(deviceId string) (string, error) {
@@ -151,7 +164,7 @@ func (a *App) GetDeviceResolution(deviceId string) (string, error) {
 }
 
 // StartTouchRecording starts recording touch events from the device
-func (a *App) StartTouchRecording(deviceId string) error {
+func (a *App) StartTouchRecording(deviceId string, recordingMode string) error {
 	touchRecordMu.Lock()
 	defer touchRecordMu.Unlock()
 
@@ -238,16 +251,48 @@ func (a *App) StartTouchRecording(deviceId string) error {
 	// Store recording state
 	touchRecordCmd[deviceId] = cmd
 	touchRecordCancel[deviceId] = cancel
+
+	// Default to fast mode if not specified
+	if recordingMode == "" {
+		recordingMode = "fast"
+	}
+
 	touchRecordData[deviceId] = &TouchRecordingSession{
-		DeviceID:    deviceId,
-		StartTime:   time.Now(),
-		RawEvents:   make([]string, 0),
-		Resolution:  resolution,
-		InputDevice: inputDevice,
-		MaxX:        maxX,
-		MaxY:        maxY,
-		MinX:        minX,
-		MinY:        minY,
+		DeviceID:      deviceId,
+		StartTime:     time.Now(),
+		RawEvents:     make([]string, 0),
+		Resolution:    resolution,
+		InputDevice:   inputDevice,
+		MaxX:          maxX,
+		MaxY:          maxY,
+		MinX:          minX,
+		MinY:          minY,
+		RecordingMode: recordingMode,
+		IsPaused:      false,
+	}
+
+	// Pre-capture UI hierarchy in precise mode so the first action has a snapshot
+	if recordingMode == "precise" {
+		go func() {
+			fmt.Printf("[Automation] Pre-capturing UI hierarchy for precise recording...\n")
+			wailsRuntime.EventsEmit(a.ctx, "recording-pre-capture-started", map[string]interface{}{
+				"deviceId": deviceId,
+			})
+
+			a.captureElementInfoAtPoint(deviceId, -1, -1) // Trigger dump
+
+			wailsRuntime.EventsEmit(a.ctx, "recording-pre-capture-finished", map[string]interface{}{
+				"deviceId": deviceId,
+			})
+			fmt.Printf("[Automation] Pre-capture finished, ready for interaction\n")
+		}()
+	}
+
+	// Get screen resolution for coordinate scaling
+	screenW, screenH := 1080, 1920
+	if parts := strings.Split(resolution, "x"); len(parts) == 2 {
+		screenW, _ = strconv.Atoi(parts[0])
+		screenH, _ = strconv.Atoi(parts[1])
 	}
 
 	// Start goroutine to read events
@@ -255,6 +300,10 @@ func (a *App) StartTouchRecording(deviceId string) error {
 		scanner := bufio.NewScanner(stdout)
 		lineCount := 0
 		capturedCount := 0
+
+		// Track current touch position for element capture
+		var currentTouchX, currentTouchY int = -1, -1
+		var touchActive bool = false
 
 		fmt.Printf("[Automation] Listening for events from: %s\n", inputDevice)
 
@@ -272,21 +321,156 @@ func (a *App) StartTouchRecording(deviceId string) error {
 			// Filter: ensure it contains EV_
 			if strings.Contains(line, "EV_") {
 				touchRecordMu.Lock()
-				if session, ok := touchRecordData[deviceId]; ok {
-					session.RawEvents = append(session.RawEvents, line)
-					capturedCount++
+				session, sessionExists := touchRecordData[deviceId]
+				isPaused := false
+				if sessionExists {
+					isPaused = session.IsPaused
+					if !isPaused {
+						session.RawEvents = append(session.RawEvents, line)
+						capturedCount++
+					}
 				}
 				touchRecordMu.Unlock()
 
+				if isPaused {
+					continue
+				}
+
+				// Parse coordinates in real-time for element capture
+				if strings.Contains(line, "ABS_MT_POSITION_X") {
+					re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
+					if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+						val, _ := strconv.ParseInt(matches[1], 16, 32)
+						currentTouchX = int(val)
+					}
+				} else if strings.Contains(line, "ABS_MT_POSITION_Y") {
+					re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
+					if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+						val, _ := strconv.ParseInt(matches[1], 16, 32)
+						currentTouchY = int(val)
+					}
+				}
+
+				// Detect touch down
+				if (strings.Contains(line, "BTN_TOUCH") && (strings.Contains(line, "DOWN") || strings.HasSuffix(strings.TrimSpace(line), "00000001"))) ||
+					(strings.Contains(line, "ABS_MT_TRACKING_ID") && !strings.Contains(strings.ToLower(line), "ffffffff")) {
+					touchActive = true
+				}
+
 				// Check for touch up / release action to notify frontend (real-time feedback)
-				// Use an else-if to prioritize BTN_TOUCH and avoid double-counting if both signals are in the same loop (though they are usually separate lines)
-				// The main fix is ensuring we don't trigger for BOTH signals if they are emitted for the same lift event.
+				isTouchUp := false
 				if strings.Contains(line, "BTN_TOUCH") && (strings.Contains(line, "UP") || strings.HasSuffix(strings.TrimSpace(line), "00000000")) {
-					wailsRuntime.EventsEmit(a.ctx, "touch-action-recorded", map[string]interface{}{
-						"deviceId": deviceId,
-					})
+					isTouchUp = true
 				} else if strings.Contains(line, "ABS_MT_TRACKING_ID") && strings.Contains(strings.ToLower(line), "ffffffff") {
-					// Only use Tracking ID if this line isn't a BTN_TOUCH line (prevents double fire on line-by-line basis)
+					isTouchUp = true
+				}
+
+				if isTouchUp && touchActive {
+					touchActive = false
+
+					// Scale coordinates to screen resolution for element lookup
+					if currentTouchX >= 0 && currentTouchY >= 0 && sessionExists {
+						scaledX := currentTouchX
+						scaledY := currentTouchY
+
+						touchRecordMu.Lock()
+						sess := touchRecordData[deviceId]
+						touchRecordMu.Unlock()
+
+						if sess != nil && sess.MaxX > sess.MinX && sess.MaxY > sess.MinY {
+							scaledX = (currentTouchX - sess.MinX) * screenW / (sess.MaxX - sess.MinX + 1)
+							scaledY = (currentTouchY - sess.MinY) * screenH / (sess.MaxY - sess.MinY + 1)
+						}
+
+						fmt.Printf("[Automation] Touch UP at Raw(%d, %d) -> Scaled(%d, %d) [RangeX: %d-%d, RangeY: %d-%d, Screen: %dx%d]\n",
+							currentTouchX, currentTouchY, scaledX, scaledY, sess.MinX, sess.MaxX, sess.MinY, sess.MaxY, screenW, screenH)
+
+						// Check recording mode
+						if sess != nil && sess.RecordingMode == "precise" {
+							// Precise mode: analyze and wait for user selector choice
+							// We do this in a goroutine to avoid blocking the scanner loop
+							go func(x, y, idx int, touchTime time.Time) {
+								// Small delay to ensure the final synchronous signals (EV_SYN)
+								// are captured before we freeze the event stream
+								time.Sleep(100 * time.Millisecond)
+
+								fmt.Printf("[Automation] Precise mode: analyzing selectors at (%d,%d)\n", x, y)
+
+								// Emit analysis started event
+								wailsRuntime.EventsEmit(a.ctx, "recording-analysis-started", map[string]interface{}{
+									"deviceId": deviceId,
+									"x":        x,
+									"y":        y,
+								})
+
+								// Set paused state early to avoid processing more events while analyzing
+								touchRecordMu.Lock()
+								if s, ok := touchRecordData[deviceId]; ok {
+									s.IsPaused = true
+								}
+								touchRecordMu.Unlock()
+
+								suggestions, elemInfo, err := a.AnalyzeElementSelectors(deviceId, x, y, touchTime)
+
+								touchRecordMu.Lock()
+								s, ok := touchRecordData[deviceId]
+								if !ok {
+									touchRecordMu.Unlock()
+									return
+								}
+
+								if err != nil {
+									fmt.Printf("[Automation] Failed to analyze selectors: %v. Falling back to coordinates.\n", err)
+									// Provide coordinate suggestion as fallback so user isn't stuck
+									suggestions = []SelectorSuggestion{
+										{
+											Type:        "coordinates",
+											Value:       fmt.Sprintf("%d,%d", x, y),
+											Priority:    1,
+											Description: "Fallback: Analysis failed, using raw coordinates.",
+										},
+									}
+									elemInfo = &ElementInfo{X: x, Y: y, Timestamp: time.Now().Unix()}
+								}
+
+								s.PendingSelectorReq = &SelectorChoiceRequest{
+									EventIndex:  idx,
+									X:           x,
+									Y:           y,
+									Suggestions: suggestions,
+									ElementInfo: elemInfo,
+								}
+								touchRecordMu.Unlock()
+
+								// Emit event to frontend
+								wailsRuntime.EventsEmit(a.ctx, "recording-paused-for-selector", map[string]interface{}{
+									"deviceId":    deviceId,
+									"x":           x,
+									"y":           y,
+									"suggestions": suggestions,
+									"elementInfo": elemInfo,
+								})
+								fmt.Printf("[Automation] Recording paused for selector choice\n")
+							}(scaledX, scaledY, len(sess.ElementInfos), time.Now())
+						} else {
+							// Fast mode: capture element info asynchronously (existing behavior)
+							go func(x, y int) {
+								elemInfo := a.captureElementInfoAtPoint(deviceId, x, y)
+								if elemInfo != nil {
+									touchRecordMu.Lock()
+									if sess, ok := touchRecordData[deviceId]; ok {
+										sess.ElementInfos = append(sess.ElementInfos, *elemInfo)
+										if elemInfo.Selector != nil {
+											fmt.Printf("[Automation] Captured element at (%d,%d): Selector=%+v\n",
+												x, y, elemInfo.Selector)
+										}
+									}
+									touchRecordMu.Unlock()
+								}
+							}(scaledX, scaledY)
+						}
+					}
+
 					wailsRuntime.EventsEmit(a.ctx, "touch-action-recorded", map[string]interface{}{
 						"deviceId": deviceId,
 					})
@@ -358,6 +542,11 @@ func (a *App) StopTouchRecording(deviceId string) (*TouchScript, error) {
 	delete(touchRecordCmd, deviceId)
 	delete(touchRecordCancel, deviceId)
 	delete(touchRecordData, deviceId)
+
+	// Clear UI hierarchy cache for this device
+	uiHierarchyCacheMu.Lock()
+	delete(uiHierarchyCache, deviceId)
+	uiHierarchyCacheMu.Unlock()
 
 	// Emit event
 	wailsRuntime.EventsEmit(a.ctx, "touch-record-stopped", map[string]interface{}{
@@ -584,10 +773,29 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 		Events:     make([]TouchEvent, 0),
 	}
 
-	fmt.Printf("[Automation] Parsing %d raw events\n", len(session.RawEvents))
+	fmt.Printf("[Automation] Parsing %d raw events, %d element infos captured\n", len(session.RawEvents), len(session.ElementInfos))
 
 	if len(session.RawEvents) == 0 {
 		return script
+	}
+
+	// Helper function to find element info by coordinates (with tolerance)
+	findElementInfo := func(x, y int) *ElementInfo {
+		tolerance := 50 // pixels tolerance for matching
+		var bestMatch *ElementInfo
+		bestDist := tolerance * tolerance * 2 // max distance squared
+
+		for i := range session.ElementInfos {
+			info := &session.ElementInfos[i]
+			dx := info.X - x
+			dy := info.Y - y
+			dist := dx*dx + dy*dy
+			if dist < bestDist {
+				bestDist = dist
+				bestMatch = info
+			}
+		}
+		return bestMatch
 	}
 
 	// Parse resolution for coordinate scaling
@@ -624,6 +832,8 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 	fmt.Printf("[Automation] Screen: %dx%d, Coord Range: X[%d-%d] Y[%d-%d]\n", screenW, screenH, minX, maxX, minY, maxY)
 
 	var firstTimestamp float64 = -1
+	var lastEventTimestamp float64 = -1
+	var totalAdjustment float64 = 0
 	var currentX, currentY int = -1, -1
 	var touchStartTime float64 = -1
 	var touchStartX, touchStartY int = -1, -1
@@ -642,9 +852,17 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 
 		if firstTimestamp < 0 {
 			firstTimestamp = timestamp
+		} else if session.RecordingMode == "precise" && lastEventTimestamp > 0 {
+			// In precise mode, any gap > 0.8s is likely a dump/pause.
+			// Re-align it to a fixed 400ms delay to keep the script snappy.
+			gap := timestamp - lastEventTimestamp
+			if gap > 0.8 {
+				totalAdjustment += (gap - 0.4)
+			}
 		}
+		lastEventTimestamp = timestamp
 
-		relativeMs := int64((timestamp - firstTimestamp) * 1000)
+		relativeMs := int64((timestamp - firstTimestamp - totalAdjustment) * 1000)
 
 		// Handle special value cases like UP/DOWN for BTN_TOUCH
 		if evValue == "DOWN" {
@@ -704,7 +922,7 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 					}
 
 					if maxX > minX {
-						width := float64(maxX - minX)
+						width := float64(maxX - minX + 1)
 						scaledStartX = round(float64(touchStartX-minX) * float64(screenW) / width)
 						scaledEndX = round(float64(currentX-minX) * float64(screenW) / width)
 					} else {
@@ -713,7 +931,7 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 					}
 
 					if maxY > minY {
-						height := float64(maxY - minY)
+						height := float64(maxY - minY + 1)
 						scaledStartY = round(float64(touchStartY-minY) * float64(screenH) / height)
 						scaledEndY = round(float64(currentY-minY) * float64(screenH) / height)
 					} else {
@@ -734,19 +952,33 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 						Timestamp: relativeMs,
 					}
 
-					if distance < 2500 && duration < 300 {
-						// Tap: small movement and quick release
+					// Distance threshold: 50px movement (50*50=2500)
+					// Duration threshold: 500ms for long press
+					// Prioritize duration over distance to avoid misclassifying long presses as swipes
+					if duration >= 500 {
+						// Long press: held for significant time (even with minor drift)
+						event.Type = "long_press"
+						event.X = scaledStartX
+						event.Y = scaledStartY
+						event.Duration = duration
+					} else if distance < 2500 {
+						// Tap: quick touch with minimal movement
 						event.Type = "tap"
 						event.X = scaledStartX
 						event.Y = scaledStartY
 					} else {
-						// Swipe: significant movement
+						// Swipe: significant movement in short time
 						event.Type = "swipe"
 						event.X = scaledStartX
 						event.Y = scaledStartY
 						event.X2 = scaledEndX
 						event.Y2 = scaledEndY
 						event.Duration = duration
+					}
+
+					// Look up element info for this touch event
+					if elemInfo := findElementInfo(event.X, event.Y); elemInfo != nil {
+						event.Selector = elemInfo.Selector
 					}
 
 					script.Events = append(script.Events, event)
@@ -788,7 +1020,7 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 					round := func(val float64) int { return int(val + 0.5) }
 
 					if maxX > minX {
-						width := float64(maxX - minX)
+						width := float64(maxX - minX + 1)
 						scaledStartX = round(float64(touchStartX-minX) * float64(screenW) / width)
 						scaledEndX = round(float64(currentX-minX) * float64(screenW) / width)
 					} else {
@@ -797,7 +1029,7 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 					}
 
 					if maxY > minY {
-						height := float64(maxY - minY)
+						height := float64(maxY - minY + 1)
 						scaledStartY = round(float64(touchStartY-minY) * float64(screenH) / height)
 						scaledEndY = round(float64(currentY-minY) * float64(screenH) / height)
 					} else {
@@ -813,11 +1045,22 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 						Timestamp: relativeMs,
 					}
 
-					if distance < 2500 && duration < 300 {
+					// Distance threshold: 50px movement (50*50=2500)
+					// Duration threshold: 500ms for long press
+					// Prioritize duration over distance to avoid misclassifying long presses as swipes
+					if duration >= 500 {
+						// Long press: held for significant time (even with minor drift)
+						event.Type = "long_press"
+						event.X = scaledStartX
+						event.Y = scaledStartY
+						event.Duration = duration
+					} else if distance < 2500 {
+						// Tap: quick touch with minimal movement
 						event.Type = "tap"
 						event.X = scaledStartX
 						event.Y = scaledStartY
 					} else {
+						// Swipe: significant movement in short time
 						event.Type = "swipe"
 						event.X = scaledStartX
 						event.Y = scaledStartY
@@ -825,6 +1068,12 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 						event.Y2 = scaledEndY
 						event.Duration = duration
 					}
+
+					// Look up element info for this touch event
+					if elemInfo := findElementInfo(event.X, event.Y); elemInfo != nil {
+						event.Selector = elemInfo.Selector
+					}
+
 					script.Events = append(script.Events, event)
 				}
 
@@ -849,6 +1098,158 @@ func (a *App) parseRawEvents(session *TouchRecordingSession) *TouchScript {
 	}
 
 	return script
+}
+
+// ExecuteSingleTouchEvent executes a single touch event on the device
+func (a *App) ExecuteSingleTouchEvent(deviceId string, event TouchEvent, sourceResolution string) error {
+	selectorValue := ""
+	if event.Selector != nil {
+		selectorValue = event.Selector.Value
+	}
+	fmt.Printf("[Automation] Single Event Request: Type=%s, X=%d, Y=%d, Value=%q\n",
+		event.Type, event.X, event.Y, selectorValue)
+
+	// Get target device resolution for scaling
+	targetResStr, err := a.GetDeviceResolution(deviceId)
+	var scaleX, scaleY float64 = 1.0, 1.0
+
+	if err == nil && sourceResolution != "" {
+		targetW, targetH, ok1 := parseResolution(targetResStr)
+		sourceW, sourceH, ok2 := parseResolution(sourceResolution)
+
+		if ok1 && ok2 && sourceW > 0 && sourceH > 0 {
+			scaleX = float64(targetW) / float64(sourceW)
+			scaleY = float64(targetH) / float64(sourceH)
+		}
+	}
+
+	// Apply scaling
+	finalX := int(float64(event.X) * scaleX)
+	finalY := int(float64(event.Y) * scaleY)
+
+	// Execute the touch event
+	var cmd string
+	lowerType := strings.ToLower(event.Type)
+	switch lowerType {
+	case "tap", "click":
+		tapX, tapY := finalX, finalY
+		if event.Selector != nil && event.Selector.Type != "coordinates" {
+			resolvedX, resolvedY, found := a.resolveSmartTapCoords(deviceId, event.Selector, finalX, finalY)
+			if found {
+				tapX, tapY = resolvedX, resolvedY
+			}
+		}
+		cmd = fmt.Sprintf("shell input tap %d %d", tapX, tapY)
+		fmt.Printf("[Automation] Executing Single Tap at (%d, %d)\n", tapX, tapY)
+	case "long_press", "long_click":
+		cmd = fmt.Sprintf("shell input swipe %d %d %d %d %d", finalX, finalY, finalX, finalY, 1000)
+		fmt.Printf("[Automation] Executing Single Long Press at (%d, %d)\n", finalX, finalY)
+	case "swipe":
+		finalX2 := int(float64(event.X2) * scaleX)
+		finalY2 := int(float64(event.Y2) * scaleY)
+		cmd = fmt.Sprintf("shell input swipe %d %d %d %d %d", finalX, finalY, finalX2, finalY2, 300)
+		fmt.Printf("[Automation] Executing Single Swipe: (%d, %d) -> (%d, %d)\n", finalX, finalY, finalX2, finalY2)
+	case "wait":
+		duration := event.Duration
+		if duration <= 0 {
+			duration = 500
+		}
+		fmt.Printf("[Automation] Single Event: Waiting %dms\n", duration)
+		time.Sleep(time.Duration(duration) * time.Millisecond)
+		return nil
+	default:
+		fmt.Printf("[Automation] Warning: Unknown single event type: %q\n", event.Type)
+		return fmt.Errorf("unknown event type: %s", event.Type)
+	}
+
+	output, err := a.RunAdbCommand(deviceId, cmd)
+	if err != nil {
+		fmt.Printf("[Automation] Single event command failed: %v, output: %s\n", err, output)
+	} else {
+		fmt.Printf("[Automation] Single event executed successfully\n")
+	}
+	return err
+}
+
+// resolveSmartTapCoords attempts to find an element on screen and returns its center coordinates.
+// If multiple matches are found, it picks the one closest to (origX, origY).
+func (a *App) resolveSmartTapCoords(deviceId string, selector *ElementSelector, origX, origY int) (int, int, bool) {
+	if selector == nil || selector.Type == "coordinates" {
+		return 0, 0, false
+	}
+
+	fmt.Printf("[Automation] Resolving Smart Tap: Selector=%+v, Orig=(%d, %d)\n", selector, origX, origY)
+
+	start := time.Now()
+	timeout := 5 * time.Second
+	retryInterval := 800 * time.Millisecond
+
+	// First wait a bit for transitions
+	time.Sleep(300 * time.Millisecond)
+
+	for {
+		hierarchy, err := a.GetUIHierarchy(deviceId)
+		if err != nil {
+			fmt.Printf("[Automation] Smart Tap: UI Dump failed: %v\n", err)
+		} else {
+			var matches []*UINode
+
+			// Use the unified find helper
+			matches = a.findAllElementNodes(hierarchy.Root, selector.Type, selector.Value)
+
+			if len(matches) > 0 {
+				// Pick the match closest to original coordinates
+				var bestNode *UINode
+				minDist := -1.0
+
+				for _, node := range matches {
+					re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
+					m := re.FindStringSubmatch(node.Bounds)
+					if len(m) >= 5 {
+						x1, _ := strconv.Atoi(m[1])
+						y1, _ := strconv.Atoi(m[2])
+						x2, _ := strconv.Atoi(m[3])
+						y2, _ := strconv.Atoi(m[4])
+						cx, cy := (x1+x2)/2, (y1+y2)/2
+
+						dx := float64(cx - origX)
+						dy := float64(cy - origY)
+						dist := dx*dx + dy*dy
+
+						if bestNode == nil || dist < minDist {
+							bestNode = node
+							minDist = dist
+						}
+					}
+				}
+
+				if bestNode != nil {
+					re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
+					m := re.FindStringSubmatch(bestNode.Bounds)
+					if len(m) >= 5 {
+						x1, _ := strconv.Atoi(m[1])
+						y1, _ := strconv.Atoi(m[2])
+						x2, _ := strconv.Atoi(m[3])
+						y2, _ := strconv.Atoi(m[4])
+						centerX := (x1 + x2) / 2
+						centerY := (y1 + y2) / 2
+						fmt.Printf("[Automation] Smart Tap: Found best match (dist=%.0f) at ACTUAL(%d, %d)\n",
+							minDist, centerX, centerY)
+						return centerX, centerY, true
+					}
+				}
+			}
+		}
+
+		if time.Since(start) > timeout {
+			break
+		}
+		fmt.Printf("[Automation] Smart Tap: Element not found, retrying in %v...\n", retryInterval)
+		time.Sleep(retryInterval)
+	}
+
+	fmt.Printf("[Automation] Smart Tap: No match found after %v\n", timeout)
+	return 0, 0, false
 }
 
 // PlayTouchScript plays back a recorded touch script
@@ -916,6 +1317,7 @@ func (a *App) playTouchScriptSync(ctx context.Context, deviceId string, script T
 	}
 
 	for i, event := range script.Events {
+		fmt.Printf("[Automation] Executing event %d/%d: %s at (%d, %d)\n", i+1, total, event.Type, event.X, event.Y)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -944,12 +1346,22 @@ func (a *App) playTouchScriptSync(ctx context.Context, deviceId string, script T
 		var cmd string
 		switch event.Type {
 		case "tap":
-			cmd = fmt.Sprintf("shell input tap %d %d", finalX, finalY)
+			tapX, tapY := finalX, finalY
+
+			// Smart Tap: if we have identifying info, try to find the element on screen
+			if event.Selector != nil && event.Selector.Type != "coordinates" {
+				resolvedX, resolvedY, found := a.resolveSmartTapCoords(deviceId, event.Selector, finalX, finalY)
+				if found {
+					tapX, tapY = resolvedX, resolvedY
+				}
+			}
+			cmd = fmt.Sprintf("shell input tap %d %d", tapX, tapY)
 		case "swipe":
 			finalX2 := int(float64(event.X2) * scaleX)
 			finalY2 := int(float64(event.Y2) * scaleY)
 			cmd = fmt.Sprintf("shell input swipe %d %d %d %d %d",
 				finalX, finalY, finalX2, finalY2, event.Duration)
+			fmt.Printf("[Automation] Executing SWIPE: (%d, %d) -> (%d, %d)\n", finalX, finalY, finalX2, finalY2)
 		case "wait":
 			time.Sleep(time.Duration(event.Duration) * time.Millisecond)
 			continue
@@ -957,7 +1369,10 @@ func (a *App) playTouchScriptSync(ctx context.Context, deviceId string, script T
 			continue
 		}
 
-		_, _ = a.RunAdbCommand(deviceId, cmd)
+		_, err = a.RunAdbCommand(deviceId, cmd)
+		if err != nil {
+			fmt.Printf("[Automation] Action command failed: %v\n", err)
+		}
 
 		if progressCb != nil {
 			progressCb(i+1, total)
@@ -1497,8 +1912,13 @@ func (a *App) GetUIHierarchy(deviceId string) (*UIHierarchyResult, error) {
 	maxRetries := 3
 
 	for i := 0; i < maxRetries; i++ {
+		// Cleanup: kill any existing uiautomator processes to prevent conflicts/OOM
+		a.RunAdbCommand(deviceId, "shell pkill uiautomator")
+		if i > 0 {
+			time.Sleep(1000 * time.Millisecond) // Wait longer on retry
+		}
+
 		// Dump to a temporary file on device
-		// We use /data/local/tmp as it's usually more reliable than /sdcard
 		dumpFile := "/data/local/tmp/view.xml"
 		dumpCmd := fmt.Sprintf("shell uiautomator dump %s", dumpFile)
 		_, err = a.RunAdbCommand(deviceId, dumpCmd)
@@ -1510,6 +1930,7 @@ func (a *App) GetUIHierarchy(deviceId string) (*UIHierarchyResult, error) {
 				break
 			}
 		}
+		fmt.Printf("[Automation] UI dump retry %d/%d (error: %v)\n", i+1, maxRetries, err)
 		time.Sleep(500 * time.Millisecond)
 	}
 
@@ -1625,10 +2046,10 @@ func (a *App) GetElementsWithText(deviceId string, text string) ([]map[string]in
 
 // SearchResult represents a search result with path information
 type SearchResult struct {
-	Node   *UINode  `json:"node"`
-	Path   string   `json:"path"`
-	Depth  int      `json:"depth"`
-	Index  int      `json:"index"`
+	Node  *UINode `json:"node"`
+	Path  string  `json:"path"`
+	Depth int     `json:"depth"`
+	Index int     `json:"index"`
 }
 
 // SearchElementsXPath searches elements using XPath-like syntax
@@ -1912,6 +2333,13 @@ func (a *App) evaluateCondition(node *UINode, condition string) bool {
 	return false
 }
 
+func buildStepName(prefix, label, fallback string) string {
+	if label != "" {
+		return fmt.Sprintf("%s %q", prefix, label)
+	}
+	return fallback
+}
+
 // SearchUIElements is the unified search API exposed to frontend
 // Automatically detects query type: XPath (starts with //), Advanced (has :), or simple text
 func (a *App) SearchUIElements(deviceId string, query string) ([]map[string]interface{}, error) {
@@ -2000,6 +2428,154 @@ func (a *App) PerformNodeAction(deviceId string, bounds string, actionType strin
 
 	_, err := a.RunAdbCommand(deviceId, cmd)
 	return err
+}
+
+// FindElementAtPoint finds the UI element at the given coordinates
+// Returns the smallest element (deepest in tree) that contains the point
+func (a *App) FindElementAtPoint(node *UINode, x, y int) *UINode {
+	if node == nil {
+		return nil
+	}
+
+	// Parse bounds "[x1,y1][x2,y2]"
+	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
+	matches := re.FindStringSubmatch(node.Bounds)
+	if len(matches) < 5 {
+		// No valid bounds, check children
+		for i := range node.Nodes {
+			if found := a.FindElementAtPoint(&node.Nodes[i], x, y); found != nil {
+				return found
+			}
+		}
+		return nil
+	}
+
+	x1, _ := strconv.Atoi(matches[1])
+	y1, _ := strconv.Atoi(matches[2])
+	x2, _ := strconv.Atoi(matches[3])
+	y2, _ := strconv.Atoi(matches[4])
+
+	// Check if point is within bounds
+	if x < x1 || x > x2 || y < y1 || y > y2 {
+		return nil
+	}
+
+	// Point is within this node's bounds
+	// Try to find a more specific child
+	for i := len(node.Nodes) - 1; i >= 0; i-- {
+		if found := a.FindElementAtPoint(&node.Nodes[i], x, y); found != nil {
+			return found
+		}
+	}
+
+	return node
+}
+
+// captureElementInfoAtPoint captures element info at the given coordinates
+// Uses caching and throttling to avoid excessive UI dumps during recording
+func (a *App) captureElementInfoAtPoint(deviceId string, x, y int) *ElementInfo {
+	now := time.Now()
+
+	// Check cache first
+	uiHierarchyCacheMu.Lock()
+	cached, exists := uiHierarchyCache[deviceId]
+
+	// Use cached result if it's fresh enough
+	if exists && now.Sub(cached.timestamp) < uiHierarchyCacheTTL {
+		uiHierarchyCacheMu.Unlock()
+
+		if cached.result != nil {
+			node := a.FindElementAtPoint(cached.result.Root, x, y)
+			if node != nil {
+				label := node.Text
+				if label == "" {
+					label = node.ContentDesc
+				}
+				return &ElementInfo{
+					X: x,
+					Y: y,
+					Selector: &ElementSelector{
+						Type:  "text",
+						Value: label,
+						Index: 0,
+					},
+					Timestamp: time.Now().Unix(),
+				}
+			}
+		}
+		return nil
+	}
+
+	// Check if enough time has passed since last dump attempt (throttling)
+	if exists && now.Sub(cached.lastDump) < uiHierarchyMinInterval {
+		uiHierarchyCacheMu.Unlock()
+		// Too soon, skip this capture to avoid overloading the device
+		return nil
+	}
+
+	// Update last dump time before releasing lock
+	dumpStartTime := time.Now()
+	if !exists {
+		uiHierarchyCache[deviceId] = &cachedUIHierarchy{
+			lastDump:      now,
+			DumpStartTime: dumpStartTime,
+		}
+	} else {
+		cached.lastDump = now
+		cached.DumpStartTime = dumpStartTime
+	}
+	uiHierarchyCacheMu.Unlock()
+
+	// Perform new UI dump
+	result, err := a.GetUIHierarchy(deviceId)
+	if err != nil {
+		return nil
+	}
+
+	// Update cache
+	uiHierarchyCacheMu.Lock()
+	uiHierarchyCache[deviceId] = &cachedUIHierarchy{
+		result:        result,
+		timestamp:     time.Now(),
+		DumpStartTime: dumpStartTime,
+		lastDump:      now,
+	}
+	uiHierarchyCacheMu.Unlock()
+
+	node := a.FindElementAtPoint(result.Root, x, y)
+	if node == nil {
+		return nil
+	}
+
+	selector := &ElementSelector{Type: "text", Value: node.Text, Index: 0}
+	if selector.Value == "" {
+		if node.ContentDesc != "" {
+			selector.Type = "desc"
+			selector.Value = node.ContentDesc
+		} else if node.ResourceID != "" {
+			selector.Type = "id"
+			selector.Value = node.ResourceID
+		} else {
+			// Try XPath
+			xpath := a.buildXPath(result.Root, node)
+			if xpath != "" {
+				selector.Type = "xpath"
+				selector.Value = xpath
+			} else {
+				selector.Type = "coordinates"
+				selector.Value = fmt.Sprintf("%d,%d", x, y)
+			}
+		}
+	}
+
+	return &ElementInfo{
+		X:         x,
+		Y:         y,
+		Class:     node.Class,
+		Bounds:    node.Bounds,
+		Selector:  selector,
+		Timestamp: time.Now().Unix(),
+	}
 }
 
 // InputNodeText taps a node to focus it and then sends text input

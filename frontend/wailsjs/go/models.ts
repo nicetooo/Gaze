@@ -193,6 +193,47 @@ export namespace main {
 	        this.index = source["index"];
 	    }
 	}
+	export class ElementInfo {
+	    x: number;
+	    y: number;
+	    class: string;
+	    bounds: string;
+	    selector?: ElementSelector;
+	    timestamp: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ElementInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.x = source["x"];
+	        this.y = source["y"];
+	        this.class = source["class"];
+	        this.bounds = source["bounds"];
+	        this.selector = this.convertValues(source["selector"], ElementSelector);
+	        this.timestamp = source["timestamp"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class FileInfo {
 	    name: string;
 	    size: number;
@@ -222,8 +263,7 @@ export namespace main {
 	    brand: string;
 	    type: string;
 	    wifiAddr: string;
-	    // Go type: time
-	    lastSeen: any;
+	    lastSeen: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new HistoryDevice(source);
@@ -237,26 +277,8 @@ export namespace main {
 	        this.brand = source["brand"];
 	        this.type = source["type"];
 	        this.wifiAddr = source["wifiAddr"];
-	        this.lastSeen = this.convertValues(source["lastSeen"], null);
+	        this.lastSeen = source["lastSeen"];
 	    }
-	
-		convertValues(a: any, classs: any, asMap: boolean = false): any {
-		    if (!a) {
-		        return a;
-		    }
-		    if (a.slice && a.map) {
-		        return (a as any[]).map(elem => this.convertValues(elem, classs));
-		    } else if ("object" === typeof a) {
-		        if (asMap) {
-		            for (const key of Object.keys(a)) {
-		                a[key] = new classs(a[key]);
-		            }
-		            return a;
-		        }
-		        return new classs(a);
-		    }
-		    return a;
-		}
 	}
 	export class ScrcpyConfig {
 	    maxSize: number;
@@ -478,6 +500,24 @@ export namespace main {
 		    return a;
 		}
 	}
+	export class SelectorSuggestion {
+	    type: string;
+	    value: string;
+	    priority: number;
+	    description: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SelectorSuggestion(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.type = source["type"];
+	        this.value = source["value"];
+	        this.priority = source["priority"];
+	        this.description = source["description"];
+	    }
+	}
 	
 	export class TouchEvent {
 	    timestamp: number;
@@ -487,8 +527,7 @@ export namespace main {
 	    x2?: number;
 	    y2?: number;
 	    duration?: number;
-	    label?: string;
-	    resId?: string;
+	    selector?: ElementSelector;
 	
 	    static createFrom(source: any = {}) {
 	        return new TouchEvent(source);
@@ -503,9 +542,26 @@ export namespace main {
 	        this.x2 = source["x2"];
 	        this.y2 = source["y2"];
 	        this.duration = source["duration"];
-	        this.label = source["label"];
-	        this.resId = source["resId"];
+	        this.selector = this.convertValues(source["selector"], ElementSelector);
 	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
 	}
 	export class TouchScript {
 	    name: string;
@@ -697,6 +753,23 @@ export namespace main {
 		    }
 		    return a;
 		}
+	}
+
+}
+
+export namespace time {
+	
+	export class Time {
+	
+	
+	    static createFrom(source: any = {}) {
+	        return new Time(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	
+	    }
 	}
 
 }

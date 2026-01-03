@@ -54,6 +54,7 @@ import {
   LoadingOutlined,
   SettingOutlined,
   IdcardOutlined,
+  ThunderboltOutlined,
 } from "@ant-design/icons";
 import {
   ReactFlow,
@@ -135,6 +136,14 @@ const getStepTypeInfo = (type: string) => {
   return { key: type, icon: <RobotOutlined />, color: 'default' };
 };
 
+// Helper function to check if a targetHandle value is valid
+const isValidTargetHandle = (handle: any): boolean => {
+  if (!handle) return false;
+  const handleStr = String(handle);
+  return handleStr !== 'default' && handleStr !== 'null' && handleStr.trim() !== '';
+};
+
+
 // Workflow types
 interface WorkflowStep {
   id: string;
@@ -187,11 +196,18 @@ interface Workflow {
 // Custom Node Component
 const WorkflowNode = ({ data, selected }: any) => {
   const { t } = useTranslation();
-  const { step, isRunning, isCurrent, isWaiting, waitingPhase } = data;
+  const { step, isRunning, isCurrent, isWaiting, waitingPhase, onExecuteStep, canExecute } = data;
   const { token } = theme.useToken();
   const typeInfo = getStepTypeInfo(step.type);
   const isBranch = step.type === 'branch';
   const isStart = step.type === 'start';
+
+  const handleExecuteClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onExecuteStep && !isStart) {
+      onExecuteStep(step);
+    }
+  };
 
   return (
     <div style={{ position: 'relative' }}>
@@ -227,7 +243,7 @@ const WorkflowNode = ({ data, selected }: any) => {
       {/* Start node has no input handle */}
       {!isStart && (
         <>
-          <Handle type="target" position={Position.Top} style={{ background: token.colorTextSecondary }} />
+          <Handle type="target" position={Position.Top} id="default" style={{ background: token.colorTextSecondary }} />
           <Handle type="target" position={Position.Left} id="target-left" style={{ background: token.colorTextSecondary }} />
           <Handle type="target" position={Position.Right} id="target-right" style={{ background: token.colorTextSecondary }} />
         </>
@@ -242,7 +258,7 @@ const WorkflowNode = ({ data, selected }: any) => {
           backgroundColor: isCurrent ? token.colorPrimaryBg : token.colorBgContainer, // Ensure container background
           color: token.colorText, // Explicit text color
         }}
-        bodyStyle={{ padding: '8px 12px' }}
+        styles={{ body: { padding: '8px 12px' } }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
@@ -268,6 +284,19 @@ const WorkflowNode = ({ data, selected }: any) => {
               </div>
             )}
           </div>
+          {/* Execute Button */}
+          {!isStart && (
+            <Tooltip title={t("workflow.execute_step")}>
+              <Button
+                type="text"
+                size="small"
+                icon={<ThunderboltOutlined />}
+                onClick={handleExecuteClick}
+                disabled={!canExecute}
+                style={{ padding: '0 4px', minWidth: 24, color: token.colorPrimary }}
+              />
+            </Tooltip>
+          )}
         </div>
       </Card>
 
@@ -357,23 +386,129 @@ const WorkflowView: React.FC = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Wrapper for onNodesChange to protect Start node from deletion
+  // Flag to trigger auto-save after reconnection
+  const [needsAutoSave, setNeedsAutoSave] = useState(false);
+  const reconnectionEdgesRef = useRef<Edge[]>([]);
+
+  // Wrapper for onNodesChange to protect Start node from deletion and auto-reconnect
   const onNodesChangeWithProtection = useCallback(
     (changes: NodeChange[]) => {
+      // Handle node removal with auto-reconnection
+      const removeChanges = changes.filter(c => c.type === 'remove');
+
+      if (removeChanges.length > 0) {
+        let hasReconnection = false;
+
+        removeChanges.forEach(change => {
+          if (change.type === 'remove') {
+            const nodeToDelete = nodes.find(n => n.id === change.id);
+
+            // Prevent deleting start node
+            if (nodeToDelete && (nodeToDelete.data.step as WorkflowStep).type === 'start') {
+              message.warning(t("workflow.error_delete_start"));
+              return;
+            }
+
+            // Find incoming and outgoing edges for this node
+            const incomingEdges = edges.filter(e => e.target === change.id);
+            const outgoingEdges = edges.filter(e => e.source === change.id);
+
+            console.log('[Delete Node via Keyboard] Deleting node:', change.id);
+            console.log('[Delete Node via Keyboard] Incoming edges:', incomingEdges);
+            console.log('[Delete Node via Keyboard] Outgoing edges:', outgoingEdges);
+
+            // Create new edges to reconnect predecessors to successors
+            if (incomingEdges.length > 0 && outgoingEdges.length > 0) {
+              const newEdges: Edge[] = [];
+              incomingEdges.forEach(inEdge => {
+                outgoingEdges.forEach(outEdge => {
+                  const newEdge: any = {
+                    id: `edge-${inEdge.source}-${outEdge.target}-${Date.now()}-${Math.random()}`,
+                    source: inEdge.source,
+                    target: outEdge.target,
+                    sourceHandle: inEdge.sourceHandle,
+                    type: 'smoothstep' as const,
+                    markerEnd: { type: MarkerType.ArrowClosed },
+                  };
+                  // Only set targetHandle if it has a valid value
+                  if (outEdge.targetHandle && outEdge.targetHandle !== 'default' && outEdge.targetHandle !== 'null') {
+                    newEdge.targetHandle = outEdge.targetHandle;
+                  }
+                  console.log('[Delete Node via Keyboard] Creating new edge:', newEdge);
+                  newEdges.push(newEdge);
+                });
+              });
+
+              // Add new reconnection edges
+              setEdges(eds => {
+                const filtered = eds.filter(e => e.source !== change.id && e.target !== change.id);
+                const result = [...filtered, ...newEdges];
+                console.log('[Delete Node via Keyboard] New edges after deletion:', result);
+                return result;
+              });
+
+              // Store edges for re-application after save
+              reconnectionEdgesRef.current = newEdges;
+              hasReconnection = true;
+            }
+          }
+        });
+
+        if (hasReconnection) {
+          // Set flag to trigger auto-save in useEffect
+          setNeedsAutoSave(true);
+        }
+      }
+
+      // Filter out Start node deletion attempts
       const filteredChanges = changes.filter(c => {
         if (c.type === 'remove') {
           const node = nodes.find(n => n.id === c.id);
           if (node && (node.data.step as WorkflowStep).type === 'start') {
-            message.warning(t("workflow.error_delete_start"));
             return false;
           }
         }
         return true;
       });
+
       onNodesChange(filteredChanges);
     },
-    [nodes, onNodesChange, t]
+    [nodes, edges, onNodesChange, setEdges, t]
   );
+
+  // Auto-save workflow after node deletion with reconnection
+  useEffect(() => {
+    if (needsAutoSave && selectedWorkflow) {
+      const timer = setTimeout(async () => {
+        console.log('[Auto-save] Saving workflow after auto-reconnection');
+        await handleSaveGraph(true);
+
+        // Wait a bit for workflow to reload, then re-add the reconnection edges
+        setTimeout(() => {
+          if (reconnectionEdgesRef.current.length > 0) {
+            console.log('[Auto-save] Re-adding reconnection edges:', reconnectionEdgesRef.current);
+            setEdges(eds => {
+              // Remove any existing edges with the same source-target pairs to avoid duplicates
+              const filtered = eds.filter(e => {
+                return !reconnectionEdgesRef.current.some(re =>
+                  re.source === e.source && re.target === e.target
+                );
+              });
+              const result = [...filtered, ...reconnectionEdgesRef.current];
+              console.log('[Auto-save] Edges after re-adding:', result);
+              return result;
+            });
+            reconnectionEdgesRef.current = [];
+          }
+          message.success(t("workflow.node_deleted_reconnected"));
+        }, 100);
+
+        setNeedsAutoSave(false);
+      }, 200);
+
+      return () => clearTimeout(timer);
+    }
+  }, [needsAutoSave, selectedWorkflow]);
 
   // Node Editing
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -460,6 +595,22 @@ const WorkflowView: React.FC = () => {
     return { nodes: layoutedNodes, edges };
   }, []);
 
+  const handleExecuteSingleStep = useCallback(async (step: WorkflowStep) => {
+    if (!selectedDevice) {
+      message.warning(t("app.select_device"));
+      return;
+    }
+    if (step.type === 'start') {
+      return; // Start node doesn't execute anything
+    }
+    try {
+      await (window as any).go.main.App.ExecuteSingleWorkflowStep(selectedDevice, step);
+      message.success(t("workflow.step_executed"));
+    } catch (err) {
+      message.error(String(err));
+    }
+  }, [selectedDevice, t]);
+
   useEffect(() => {
     // Also clear waiting when workflow ends
     if (!isRunning) {
@@ -471,9 +622,12 @@ const WorkflowView: React.FC = () => {
   useEffect(() => {
     // Skip re-rendering nodes if we just saved (nodes are already up-to-date)
     if (skipNextRenderRef.current) {
+      console.log('[Workflow Render] Skipping render because skipNextRenderRef is true');
       skipNextRenderRef.current = false;
       return;
     }
+
+    console.log('[Workflow Render] Rendering workflow:', selectedWorkflow?.name);
 
     if (selectedWorkflow) {
       const newNodes: Node[] = selectedWorkflow.steps.map((step, index) => {
@@ -492,7 +646,9 @@ const WorkflowView: React.FC = () => {
             label: step.name || t(`workflow.step_type.${step.type}`),
             isCurrent,
             isWaiting,
-            waitingPhase: waitPhase
+            waitingPhase: waitPhase,
+            onExecuteStep: handleExecuteSingleStep,
+            canExecute: !!selectedDevice && !isRunning,
           },
         };
       });
@@ -503,43 +659,55 @@ const WorkflowView: React.FC = () => {
       if (hasGraphData) {
         selectedWorkflow.steps.forEach(step => {
           if (step.nextStepId) {
-            newEdges.push({
+            const edge: any = {
               id: `e-${step.id}-${step.nextStepId}`,
               source: step.id,
               target: step.nextStepId,
               type: 'smoothstep',
               sourceHandle: step.nextSource || 'default',
-              targetHandle: step.nextTarget,
               markerEnd: { type: MarkerType.ArrowClosed }
-            });
+            };
+            // Only set targetHandle if it has a valid, non-empty value
+            if (isValidTargetHandle(step.nextTarget)) {
+              edge.targetHandle = step.nextTarget;
+            }
+            newEdges.push(edge);
           }
           if (step.trueStepId) {
-            newEdges.push({
+            const edge: any = {
               id: `e-${step.id}-${step.trueStepId}-true`,
               source: step.id,
               target: step.trueStepId,
               type: 'smoothstep',
               sourceHandle: step.trueSource || 'true',
-              targetHandle: step.trueTarget,
               label: 'True',
               style: { stroke: token.colorSuccess },
               labelStyle: { fill: token.colorSuccess, fontWeight: 700 },
               markerEnd: { type: MarkerType.ArrowClosed, color: token.colorSuccess }
-            });
+            };
+            // Only set targetHandle if it has a valid, non-empty value
+            if (isValidTargetHandle(step.trueTarget)) {
+              edge.targetHandle = step.trueTarget;
+            }
+            newEdges.push(edge);
           }
           if (step.falseStepId) {
-            newEdges.push({
+            const edge: any = {
               id: `e-${step.id}-${step.falseStepId}-false`,
               source: step.id,
               target: step.falseStepId,
               type: 'smoothstep',
               sourceHandle: step.falseSource || 'false',
-              targetHandle: step.falseTarget,
               label: 'False',
               style: { stroke: token.colorError },
               labelStyle: { fill: token.colorError, fontWeight: 700 },
               markerEnd: { type: MarkerType.ArrowClosed, color: token.colorError }
-            });
+            };
+            // Only set targetHandle if it has a valid, non-empty value
+            if (isValidTargetHandle(step.falseTarget)) {
+              edge.targetHandle = step.falseTarget;
+            }
+            newEdges.push(edge);
           }
         });
       } else {
@@ -556,11 +724,22 @@ const WorkflowView: React.FC = () => {
       }
 
       const hasPositions = selectedWorkflow.steps.some(s => s.posX !== undefined);
+
+      // Clean up edges: remove invalid targetHandle values
+      const cleanedEdges = newEdges.map(edge => {
+        const cleanEdge = { ...edge };
+        if (cleanEdge.targetHandle && !isValidTargetHandle(cleanEdge.targetHandle)) {
+          console.warn('[Workflow] Removing invalid targetHandle:', cleanEdge.targetHandle, 'from edge:', cleanEdge.id);
+          delete cleanEdge.targetHandle;
+        }
+        return cleanEdge;
+      });
+
       if (hasPositions) {
         setNodes(newNodes);
-        setEdges(newEdges);
+        setEdges(cleanedEdges);
       } else {
-        const layouted = getLayoutedElements(newNodes, newEdges);
+        const layouted = getLayoutedElements(newNodes, cleanedEdges);
         setNodes(layouted.nodes);
         setEdges(layouted.edges);
       }
@@ -568,7 +747,7 @@ const WorkflowView: React.FC = () => {
       setNodes([]);
       setEdges([]);
     }
-  }, [selectedWorkflow, getLayoutedElements, t, token]);
+  }, [selectedWorkflow, getLayoutedElements, t, token, handleExecuteSingleStep, selectedDevice, isRunning]);
 
   useEffect(() => {
     if (!selectedWorkflow) return;
@@ -593,11 +772,18 @@ const WorkflowView: React.FC = () => {
   }, [workflowStepMap, selectedWorkflow, isRunning]);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({
-      ...params,
-      type: 'smoothstep',
-      markerEnd: { type: MarkerType.ArrowClosed }
-    }, eds)),
+    (params: Connection) => {
+      const newEdge: any = {
+        ...params,
+        type: 'smoothstep',
+        markerEnd: { type: MarkerType.ArrowClosed }
+      };
+      // Remove targetHandle if it's invalid to avoid warnings
+      if (!isValidTargetHandle(newEdge.targetHandle)) {
+        delete newEdge.targetHandle;
+      }
+      setEdges((eds) => addEdge(newEdge, eds));
+    },
     [setEdges],
   );
 
@@ -747,19 +933,25 @@ const WorkflowView: React.FC = () => {
         if (t) {
           trueStepId = t.target;
           trueSource = t.sourceHandle || 'true';
-          trueTarget = t.targetHandle || '';
+          // Only save valid targetHandle values
+          const tHandle = t.targetHandle;
+          trueTarget = isValidTargetHandle(tHandle) ? String(tHandle) : '';
         }
         if (f) {
           falseStepId = f.target;
           falseSource = f.sourceHandle || 'false';
-          falseTarget = f.targetHandle || '';
+          // Only save valid targetHandle values
+          const fHandle = f.targetHandle;
+          falseTarget = isValidTargetHandle(fHandle) ? String(fHandle) : '';
         }
       } else {
         const next = outgoing.find(e => e.sourceHandle === 'default' || e.sourceHandle === 'source-left' || e.sourceHandle === 'source-right' || !e.sourceHandle);
         if (next) {
           nextStepId = next.target;
           nextSource = next.sourceHandle || 'default';
-          nextTarget = next.targetHandle || '';
+          // Only save valid targetHandle values
+          const nHandle = next.targetHandle;
+          nextTarget = isValidTargetHandle(nHandle) ? String(nHandle) : '';
         }
       }
 
@@ -926,7 +1118,7 @@ const WorkflowView: React.FC = () => {
     }));
   };
 
-  const handleDeleteNode = () => {
+  const handleDeleteNode = async () => {
     if (!editingNodeId) return;
 
     // Prevent deleting start node
@@ -936,10 +1128,60 @@ const WorkflowView: React.FC = () => {
       return;
     }
 
+    // Find incoming and outgoing edges
+    const incomingEdges = edges.filter(e => e.target === editingNodeId);
+    const outgoingEdges = edges.filter(e => e.source === editingNodeId);
+
+    console.log('[Delete Node] Deleting node:', editingNodeId);
+    console.log('[Delete Node] Incoming edges:', incomingEdges);
+    console.log('[Delete Node] Outgoing edges:', outgoingEdges);
+
+    // Create new edges to reconnect predecessors to successors
+    const newEdges: Edge[] = [];
+
+    if (incomingEdges.length > 0 && outgoingEdges.length > 0) {
+      incomingEdges.forEach(inEdge => {
+        outgoingEdges.forEach(outEdge => {
+          const newEdge: any = {
+            id: `edge-${inEdge.source}-${outEdge.target}-${Date.now()}-${Math.random()}`,
+            source: inEdge.source,
+            target: outEdge.target,
+            sourceHandle: inEdge.sourceHandle || 'default',
+            type: 'smoothstep' as const,
+            markerEnd: { type: MarkerType.ArrowClosed },
+          };
+          // Only set targetHandle if it has a valid value
+          if (outEdge.targetHandle && outEdge.targetHandle !== 'default' && outEdge.targetHandle !== 'null') {
+            newEdge.targetHandle = outEdge.targetHandle;
+          }
+          console.log('[Delete Node] Creating new edge:', newEdge);
+          newEdges.push(newEdge);
+        });
+      });
+    }
+
+    // Update nodes and edges
     setNodes(nds => nds.filter(n => n.id !== editingNodeId));
-    setEdges(eds => eds.filter(e => e.source !== editingNodeId && e.target !== editingNodeId));
+    setEdges(eds => {
+      // Remove edges connected to deleted node
+      const filtered = eds.filter(e => e.source !== editingNodeId && e.target !== editingNodeId);
+      // Add new reconnection edges
+      const result = [...filtered, ...newEdges];
+      console.log('[Delete Node] New edges after deletion:', result);
+      return result;
+    });
+
     setDrawerVisible(false);
     setEditingNodeId(null);
+
+    // Save the workflow immediately to persist the changes
+    // Wait a bit for state to update
+    setTimeout(async () => {
+      await handleSaveGraph(true);
+      if (newEdges.length > 0) {
+        message.success(t("workflow.node_deleted_reconnected"));
+      }
+    }, 100);
   }
 
   const handleElementSelected = (selector: ElementSelector) => {

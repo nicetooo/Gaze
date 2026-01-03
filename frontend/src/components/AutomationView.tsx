@@ -254,33 +254,101 @@ const AutomationView: React.FC = () => {
 
     const steps: main.WorkflowStep[] = [];
     let lastTimestamp = 0;
+    const now = Date.now();
+
+    // Add Start node
+    const startId = `step_start_${now}`;
+    steps.push({
+      id: startId,
+      type: 'start',
+      name: 'Start',
+      posX: 250,
+      posY: 50,
+    } as main.WorkflowStep);
 
     script.events.forEach((event, idx) => {
       // Add wait step if there is a significant delay
       const delay = event.timestamp - lastTimestamp;
       if (delay > 50) { // 50ms threshold
         steps.push({
-          id: `step_wait_${Date.now()}_${idx}`,
+          id: `step_wait_${now}_${idx}`,
           type: 'wait',
+          name: `Wait ${delay}ms`,
           value: String(delay),
           loop: 1,
           postDelay: 0,
+          posX: 250,
+          posY: 150 + steps.length * 100,
         } as main.WorkflowStep);
       }
       lastTimestamp = event.timestamp;
 
       // Add Action Step
-      const id = `step_action_${Date.now()}_${idx}`;
+      const id = `step_action_${now}_${idx}`;
+
+      const buildStepName = (action: string, event: main.TouchEvent, fallback: string) => {
+        if (event.selector && event.selector.value) {
+          const val = event.selector.value;
+          const shortVal = val.split('/').pop() || val;
+          return `${action}: "${shortVal}"`;
+        }
+        return fallback;
+      };
+
       if (event.type === 'tap') {
-        steps.push({
-          id,
-          type: 'adb',
-          name: `Tap ${idx + 1}`,
-          value: `shell input tap ${event.x} ${event.y}`,
-          loop: 1,
-          postDelay: 0,
-          onError: 'stop'
-        } as main.WorkflowStep);
+        const selector = event.selector;
+        if (selector && selector.type !== 'coordinates') {
+          steps.push({
+            id,
+            type: 'click_element',
+            name: buildStepName('Click', event, `Click ${idx + 1}`),
+            selector: { ...selector },
+            loop: 1,
+            postDelay: 0,
+            onError: 'stop',
+            posX: 250,
+            posY: 150 + steps.length * 100,
+          } as main.WorkflowStep);
+        } else {
+          steps.push({
+            id,
+            type: 'click_element',
+            name: `Click (${event.x}, ${event.y})`,
+            selector: { type: 'bounds', value: `[${event.x},${event.y}]`, index: 0 },
+            loop: 1,
+            postDelay: 0,
+            onError: 'stop',
+            posX: 250,
+            posY: 150 + steps.length * 100,
+          } as main.WorkflowStep);
+        }
+      } else if (event.type === 'long_press') {
+        const selector = event.selector;
+        if (selector && selector.type !== 'coordinates') {
+          steps.push({
+            id,
+            type: 'long_click_element',
+            name: buildStepName('Long Click', event, `Long Click ${idx + 1}`),
+            selector: { ...selector },
+            loop: 1,
+            postDelay: 0,
+            onError: 'stop',
+            posX: 250,
+            posY: 150 + steps.length * 100,
+          } as main.WorkflowStep);
+        } else {
+          steps.push({
+            id,
+            type: 'adb',
+            name: `Long Press (${event.x}, ${event.y})`,
+            value: `shell input swipe ${event.x} ${event.y} ${event.x} ${event.y} ${event.duration || 1000}`,
+            loop: 1,
+            postDelay: 0,
+            onError: 'stop',
+            posX: 250,
+            posY: 150 + steps.length * 100,
+          } as main.WorkflowStep);
+        }
       } else if (event.type === 'swipe') {
         steps.push({
           id,
@@ -289,10 +357,11 @@ const AutomationView: React.FC = () => {
           value: `shell input swipe ${event.x} ${event.y} ${event.x2 || event.x} ${event.y2 || event.y} ${event.duration || 300}`,
           loop: 1,
           postDelay: 0,
-          onError: 'stop'
+          onError: 'stop',
+          posX: 250,
+          posY: 150 + steps.length * 100,
         } as main.WorkflowStep);
       } else if (event.type === 'wait') {
-        // Explicit wait event in script
         steps.push({
           id,
           type: 'wait',
@@ -300,12 +369,19 @@ const AutomationView: React.FC = () => {
           value: String(event.duration || 1000),
           loop: 1,
           postDelay: 0,
+          posX: 250,
+          posY: 150 + steps.length * 100,
         } as main.WorkflowStep);
       }
     });
 
+    // Link steps
+    for (let i = 0; i < steps.length - 1; i++) {
+      steps[i].nextStepId = steps[i + 1].id;
+    }
+
     const newWorkflow = new main.Workflow({
-      id: `wf_converted_${Date.now()}`,
+      id: `wf_converted_${now}`,
       name: `${script.name} (Converted)`,
       description: `Converted from recording on ${new Date().toLocaleString()}`,
       steps: steps,
@@ -460,7 +536,7 @@ const AutomationView: React.FC = () => {
       <div style={{ flex: 1, overflowY: "auto", paddingRight: 8 }}>
         <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
           {/* Left Column - Recording Control */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16, overflow: "hidden" }}>
             {/* Recording Card */}
             <Card
               title={
@@ -688,6 +764,8 @@ const AutomationView: React.FC = () => {
                           isDevicePlaying && playbackProgress && idx < playbackProgress.current
                             ? token.colorSuccess
                             : token.colorText,
+                        wordBreak: "break-all",
+                        overflowWrap: "anywhere",
                       }}
                     >
                       {formatEventDescription(event, idx)}
@@ -699,7 +777,7 @@ const AutomationView: React.FC = () => {
           </div>
 
           {/* Right Column - Script/Task List */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <Tabs
               activeKey={activeTab}
               onChange={setActiveTab}
@@ -744,7 +822,7 @@ const AutomationView: React.FC = () => {
                         </div>
                       }
                       size="small"
-                      bodyStyle={{ padding: 0, overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}
+                      styles={{ body: { padding: 0, overflowY: "auto", maxHeight: "calc(100vh - 200px)" } }}
                     >
                       {scripts.length === 0 ? (
                         <Empty description={t("automation.no_scripts")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -897,7 +975,7 @@ const AutomationView: React.FC = () => {
                         </div>
                       }
                       size="small"
-                      bodyStyle={{ padding: 0, overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}
+                      styles={{ body: { padding: 0, overflowY: "auto", maxHeight: "calc(100vh - 200px)" } }}
                     >
                       {tasks.length === 0 ? (
                         <Empty description={t("automation.no_tasks")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
@@ -1045,7 +1123,7 @@ const AutomationView: React.FC = () => {
                           key={key}
                           size="small"
                           style={{ marginBottom: 8, background: token.colorBgLayout }}
-                          bodyStyle={{ padding: 8 }}
+                          styles={{ body: { padding: 8 } }}
                         >
                           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

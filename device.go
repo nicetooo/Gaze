@@ -105,7 +105,7 @@ func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 
 	// 3.5. Proactively reconnect to recently active wireless devices missing from the current list
 	for _, hd := range historyDevices {
-		if hd.WifiAddr != "" && time.Since(hd.LastSeen) < 15*time.Minute {
+		if hd.WifiAddr != "" && time.Since(time.Unix(hd.LastSeen, 0)) < 15*time.Minute {
 			found := false
 			for _, n := range nodes {
 				if n.id == hd.WifiAddr {
@@ -239,8 +239,8 @@ func (a *App) GetDevices(forceLog bool) ([]Device, error) {
 		dev.Model = strings.TrimSpace(strings.ReplaceAll(dev.Model, "_", " "))
 
 		if (dev.Type == "wireless" || dev.Type == "both") && !strings.Contains(dev.WifiAddr, ":") {
-			if h, ok := historyBySerial[dev.Serial]; ok && strings.Contains(h.WifiAddr, ":") {
-				dev.WifiAddr = h.WifiAddr
+			if hd, ok := historyBySerial[dev.Serial]; ok && time.Since(time.Unix(hd.LastSeen, 0)) < 2*time.Hour && strings.Contains(hd.WifiAddr, ":") {
+				dev.WifiAddr = hd.WifiAddr
 			}
 		}
 
@@ -795,7 +795,7 @@ func (a *App) addToHistory(device Device) {
 	found := false
 	for i, d := range history {
 		if (device.Serial != "" && d.Serial == device.Serial) || d.ID == device.ID {
-			history[i].LastSeen = time.Now()
+			history[i].LastSeen = time.Now().Unix()
 			history[i].Model = device.Model
 			history[i].Brand = device.Brand
 			history[i].Type = device.Type
@@ -815,7 +815,7 @@ func (a *App) addToHistory(device Device) {
 			Brand:    device.Brand,
 			Type:     device.Type,
 			WifiAddr: device.WifiAddr,
-			LastSeen: time.Now(),
+			LastSeen: time.Now().Unix(),
 		})
 	}
 

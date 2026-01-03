@@ -107,6 +107,35 @@ func (a *App) StopWorkflow(device Device) {
 	a.StopTask(device.ID)
 }
 
+// ExecuteSingleWorkflowStep executes a single workflow step on the device
+func (a *App) ExecuteSingleWorkflowStep(deviceId string, step WorkflowStep) error {
+	// Skip start node - it's just a visual marker
+	if step.Type == "start" {
+		return nil
+	}
+
+	ctx := context.Background()
+	vars := make(map[string]string)
+
+	// Handle pre-wait
+	if step.PreWait > 0 {
+		time.Sleep(time.Duration(step.PreWait) * time.Millisecond)
+	}
+
+	// Execute the step
+	_, err := a.runWorkflowStep(ctx, deviceId, step, 1, 1, 0, vars)
+	if err != nil {
+		return err
+	}
+
+	// Handle post-delay
+	if step.PostDelay > 0 {
+		time.Sleep(time.Duration(step.PostDelay) * time.Millisecond)
+	}
+
+	return nil
+}
+
 // RunWorkflow executes a workflow on the specified device
 func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 	deviceId := device.ID
@@ -614,40 +643,50 @@ func (a *App) handleElementAction(ctx context.Context, deviceId string, step Wor
 	}
 }
 
-// Helper to find node and return pointer
+// Helper to find node and return pointer (returns first match)
 func (a *App) findElementNode(node *UINode, checkType, checkValue string) *UINode {
+	matches := a.findAllElementNodes(node, checkType, checkValue)
+	if len(matches) > 0 {
+		return matches[0]
+	}
+	return nil
+}
+
+// Helper to find all matching nodes
+func (a *App) findAllElementNodes(node *UINode, checkType, checkValue string) []*UINode {
 	if node == nil {
 		return nil
 	}
 
+	var results []*UINode
+
 	match := false
 	switch checkType {
 	case "text":
-		match = node.Text == checkValue
+		// For robustness, check both text and description in "text" mode
+		match = node.Text == checkValue || node.ContentDesc == checkValue
 	case "id":
 		match = node.ResourceID == checkValue || strings.HasSuffix(node.ResourceID, ":id/"+checkValue)
 	case "class":
 		match = node.Class == checkValue
 	case "contains":
 		match = strings.Contains(node.Text, checkValue) || strings.Contains(node.ContentDesc, checkValue)
-	case "description":
+	case "desc", "description":
 		match = node.ContentDesc == checkValue
 	case "bounds":
 		match = node.Bounds == checkValue
 	}
 
 	if match {
-		return node
+		results = append(results, node)
 	}
 
 	for i := range node.Nodes {
-		found := a.findElementNode(&node.Nodes[i], checkType, checkValue)
-		if found != nil {
-			return found
-		}
+		found := a.findAllElementNodes(&node.Nodes[i], checkType, checkValue)
+		results = append(results, found...)
 	}
 
-	return nil
+	return results
 }
 
 // evaluateBranchCondition evaluates different types of branch conditions

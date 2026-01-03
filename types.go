@@ -18,13 +18,13 @@ type Device struct {
 
 // HistoryDevice represents a device in the connection history
 type HistoryDevice struct {
-	ID       string    `json:"id"`
-	Serial   string    `json:"serial"`
-	Model    string    `json:"model"`
-	Brand    string    `json:"brand"`
-	Type     string    `json:"type"`
-	WifiAddr string    `json:"wifiAddr"`
-	LastSeen time.Time `json:"lastSeen"`
+	ID       string `json:"id"`
+	Serial   string `json:"serial"`
+	Model    string `json:"model"`
+	Brand    string `json:"brand"`
+	Type     string `json:"type"`
+	WifiAddr string `json:"wifiAddr"`
+	LastSeen int64  `json:"lastSeen"`
 }
 
 // DeviceInfo contains detailed information about a device
@@ -145,15 +145,14 @@ type BatchOperationResult struct {
 
 // TouchEvent represents a single touch event in an automation script
 type TouchEvent struct {
-	Timestamp int64  `json:"timestamp"` // Relative time in milliseconds from script start
-	Type      string `json:"type"`      // "tap", "swipe", "wait"
-	X         int    `json:"x"`
-	Y         int    `json:"y"`
-	X2        int    `json:"x2,omitempty"`       // End X for swipe
-	Y2        int    `json:"y2,omitempty"`       // End Y for swipe
-	Duration  int    `json:"duration,omitempty"` // Duration in ms for swipe or wait
-	Label     string `json:"label,omitempty"`    // Optional label (e.g. text of the button clicked)
-	ResID     string `json:"resId,omitempty"`    // Optional resource ID of the element
+	Timestamp int64            `json:"timestamp"` // Relative time in milliseconds from script start
+	Type      string           `json:"type"`      // "tap", "swipe", "wait"
+	X         int              `json:"x"`
+	Y         int              `json:"y"`
+	X2        int              `json:"x2,omitempty"`       // End X for swipe
+	Y2        int              `json:"y2,omitempty"`       // End Y for swipe
+	Duration  int              `json:"duration,omitempty"` // Duration in ms for swipe or wait
+	Selector  *ElementSelector `json:"selector,omitempty"` // Unified selector for smart tap
 }
 
 // TouchScript represents a recorded touch automation script
@@ -166,17 +165,48 @@ type TouchScript struct {
 	Events      []TouchEvent `json:"events"`
 }
 
+// ElementInfo stores captured UI element information at touch point
+type ElementInfo struct {
+	X         int              `json:"x"`
+	Y         int              `json:"y"`
+	Class     string           `json:"class"`
+	Bounds    string           `json:"bounds"`
+	Selector  *ElementSelector `json:"selector,omitempty"` // Preferred selector
+	Timestamp int64            `json:"timestamp"`          // Unix timestamp when captured
+}
+
+// SelectorSuggestion represents a suggested selector option for user to choose
+type SelectorSuggestion struct {
+	Type        string `json:"type"`        // "text", "id", "desc", "class", "xpath"
+	Value       string `json:"value"`       // The selector value
+	Priority    int    `json:"priority"`    // Higher is better (1-5)
+	Description string `json:"description"` // Human-readable description
+}
+
 // TouchRecordingSession represents an active recording session
 type TouchRecordingSession struct {
-	DeviceID    string
-	StartTime   time.Time
-	RawEvents   []string // Raw getevent output lines
-	Resolution  string
-	InputDevice string // e.g. "/dev/input/event2"
-	MaxX        int
-	MaxY        int
-	MinX        int
-	MinY        int
+	DeviceID           string
+	StartTime          time.Time
+	RawEvents          []string // Raw getevent output lines
+	Resolution         string
+	InputDevice        string // e.g. "/dev/input/event2"
+	MaxX               int
+	MaxY               int
+	MinX               int
+	MinY               int
+	ElementInfos       []ElementInfo          // Captured element info during recording
+	RecordingMode      string                 // "fast" or "precise"
+	IsPaused           bool                   // True when waiting for user selector choice
+	PendingSelectorReq *SelectorChoiceRequest // Current pending selector choice
+}
+
+// SelectorChoiceRequest represents a request for user to choose a selector
+type SelectorChoiceRequest struct {
+	EventIndex  int                  `json:"eventIndex"` // Index of the event in recording
+	X           int                  `json:"x"`
+	Y           int                  `json:"y"`
+	Suggestions []SelectorSuggestion `json:"suggestions"`
+	ElementInfo *ElementInfo         `json:"elementInfo"`
 }
 
 // TaskStep represents a step in a composite task

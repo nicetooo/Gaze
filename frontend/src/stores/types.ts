@@ -23,7 +23,7 @@ export interface HistoryDevice {
   brand: string;
   type: string;
   wifiAddr: string;
-  lastSeen: string;
+  lastSeen: number;
   isPinned?: boolean;
 }
 
