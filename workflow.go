@@ -348,52 +348,25 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 		return true, a.loadAndRunSubWorkflow(ctx, deviceId, processedValue, depth, vars)
 
 	case "branch":
-		// 1. Check condition (Selector)
+		// 1. Evaluate condition based on type
 		timeout := 2000 // Default 2s check
 		if step.Timeout > 0 {
 			timeout = step.Timeout
 		}
 
-		found := false
-		startTime := time.Now()
-
-		// Polling for element presence
-		for {
-			select {
-			case <-ctx.Done():
-				return false, ctx.Err()
-			default:
-			}
-
-			// Capture Hierarchy takes time, so we just check once per loop
-			hierarchy, err := a.GetUIHierarchy(deviceId)
-			if err == nil && step.Selector != nil {
-				if step.Selector.Type == "xpath" {
-					results := a.SearchElementsXPath(hierarchy.Root, processedSelectorValue)
-					if len(results) > 0 {
-						found = true
-						break
-					}
-				} else {
-					if node := a.findElementNode(hierarchy.Root, step.Selector.Type, processedSelectorValue); node != nil {
-						found = true
-						break
-					}
-				}
-			}
-
-			if time.Since(startTime) > time.Duration(timeout)*time.Millisecond {
-				break
-			}
-			time.Sleep(500 * time.Millisecond)
+		conditionType := step.ConditionType
+		if conditionType == "" {
+			conditionType = "exists" // Default to existence check
 		}
+
+		result := a.evaluateBranchCondition(deviceId, step, conditionType, processedSelectorValue, processedValue, timeout, vars)
 
 		// 2. Determine functionality based on configuration
 		isGraphMode := step.TrueStepId != "" || step.FalseStepId != ""
 
 		if isGraphMode {
 			// Graph Mode: Just return the result, navigation layout handled by caller
-			return found, nil
+			return result, nil
 		}
 
 		// Legacy Mode: Nested Sub-Workflow Call
@@ -404,7 +377,7 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 		}
 
 		targetID := ""
-		if found {
+		if result {
 			targetID = targets["true"]
 			fmt.Printf("[Workflow] Legacy Branch TRUE -> %s\n", targetID)
 		} else {
@@ -672,6 +645,109 @@ func (a *App) findElementNode(node *UINode, checkType, checkValue string) *UINod
 	}
 
 	return nil
+}
+
+// evaluateBranchCondition evaluates different types of branch conditions
+func (a *App) evaluateBranchCondition(deviceId string, step WorkflowStep, conditionType, selectorValue, compareValue string, timeout int, vars map[string]string) bool {
+	startTime := time.Now()
+
+	for {
+		// Check timeout
+		if time.Since(startTime) > time.Duration(timeout)*time.Millisecond {
+			break
+		}
+
+		// Get UI hierarchy
+		hierarchy, err := a.GetUIHierarchy(deviceId)
+		if err != nil {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
+		switch conditionType {
+		case "exists":
+			// Check if element exists
+			if step.Selector == nil {
+				return false
+			}
+			if step.Selector.Type == "xpath" {
+				results := a.SearchElementsXPath(hierarchy.Root, selectorValue)
+				if len(results) > 0 {
+					return true
+				}
+			} else {
+				if node := a.findElementNode(hierarchy.Root, step.Selector.Type, selectorValue); node != nil {
+					return true
+				}
+			}
+
+		case "not_exists":
+			// Check if element does NOT exist
+			if step.Selector == nil {
+				return true
+			}
+			if step.Selector.Type == "xpath" {
+				results := a.SearchElementsXPath(hierarchy.Root, selectorValue)
+				if len(results) == 0 {
+					return true
+				}
+			} else {
+				if node := a.findElementNode(hierarchy.Root, step.Selector.Type, selectorValue); node == nil {
+					return true
+				}
+			}
+
+		case "text_equals":
+			// Check if element's text equals the value
+			if step.Selector == nil {
+				return false
+			}
+			var node *UINode
+			if step.Selector.Type == "xpath" {
+				results := a.SearchElementsXPath(hierarchy.Root, selectorValue)
+				if len(results) > 0 {
+					node = results[0].Node
+				}
+			} else {
+				node = a.findElementNode(hierarchy.Root, step.Selector.Type, selectorValue)
+			}
+			if node != nil && node.Text == compareValue {
+				return true
+			}
+
+		case "text_contains":
+			// Check if element's text contains the value
+			if step.Selector == nil {
+				return false
+			}
+			var node *UINode
+			if step.Selector.Type == "xpath" {
+				results := a.SearchElementsXPath(hierarchy.Root, selectorValue)
+				if len(results) > 0 {
+					node = results[0].Node
+				}
+			} else {
+				node = a.findElementNode(hierarchy.Root, step.Selector.Type, selectorValue)
+			}
+			if node != nil && strings.Contains(node.Text, compareValue) {
+				return true
+			}
+
+		case "variable_equals":
+			// Compare two variables or a variable with a literal value
+			// selectorValue is the first variable name (without {{}}), compareValue is the expected value
+			varName := strings.TrimSpace(selectorValue)
+			varValue, exists := vars[varName]
+			if exists && varValue == compareValue {
+				return true
+			}
+		}
+
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Timeout reached, condition not met
+	return false
 }
 
 func parseBoundsCenter(bounds string) (int, int, error) {

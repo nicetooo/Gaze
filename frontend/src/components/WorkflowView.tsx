@@ -149,6 +149,7 @@ interface WorkflowStep {
   preWait?: number; // Delay before execution in ms
   swipeDistance?: number; // Distance for swipe actions
   swipeDuration?: number; // Duration for swipe actions in ms
+  conditionType?: string; // Condition type for branch steps: 'exists', 'not_exists', 'text_equals', 'text_contains', 'variable_equals'
   onError?: 'stop' | 'continue'; // Error handling strategy
 
   // Flow connections (next step IDs)
@@ -646,6 +647,7 @@ const WorkflowView: React.FC = () => {
       selectorType: step.selector?.type,
       selectorValue: step.selector?.value,
       type: step.type,
+      conditionType: step.conditionType || 'exists', // Default to 'exists' for branch nodes
     });
     setDrawerVisible(true);
   };
@@ -860,7 +862,11 @@ const WorkflowView: React.FC = () => {
     if (type !== 'start') {
       setEditingNodeId(id);
       stepForm.resetFields();
-      stepForm.setFieldsValue({ type, onError: 'stop', loop: 1 });
+      const defaultValues: any = { type, onError: 'stop', loop: 1 };
+      if (type === 'branch') {
+        defaultValues.conditionType = 'exists'; // Default condition type for branch nodes
+      }
+      stepForm.setFieldsValue(defaultValues);
       setDrawerVisible(true);
     }
   };
@@ -886,6 +892,7 @@ const WorkflowView: React.FC = () => {
           postDelay: Number(values.postDelay || 0),
           swipeDistance: values.swipeDistance,
           swipeDuration: values.swipeDuration,
+          conditionType: values.conditionType,
           nextStepId: (node.data.step as WorkflowStep).nextStepId,
           trueStepId: (node.data.step as WorkflowStep).trueStepId,
           falseStepId: (node.data.step as WorkflowStep).falseStepId,
@@ -1070,7 +1077,7 @@ const WorkflowView: React.FC = () => {
     setVariablesModalVisible(true);
   };
 
-  const handleSaveVariables = () => {
+  const handleSaveVariables = async () => {
     if (!selectedWorkflow) return;
     const variables: Record<string, string> = {};
     tempVariables.forEach(({ key, value }) => {
@@ -1081,11 +1088,33 @@ const WorkflowView: React.FC = () => {
 
     const updatedWorkflow = {
       ...selectedWorkflow,
-      variables
+      variables,
+      updatedAt: new Date().toISOString(),
     };
-    setSelectedWorkflow(updatedWorkflow);
-    setVariablesModalVisible(false);
-    message.success(t("workflow.variables_updated"));
+
+    try {
+      // Save to backend immediately
+      await (window as any).go.main.App.SaveWorkflow(updatedWorkflow);
+
+      // Update local state
+      setSelectedWorkflow(updatedWorkflow);
+
+      // Update workflows list
+      setWorkflows(prev => {
+        const idx = prev.findIndex(w => w.id === updatedWorkflow.id);
+        if (idx >= 0) {
+          const newList = [...prev];
+          newList[idx] = updatedWorkflow;
+          return newList;
+        }
+        return prev;
+      });
+
+      setVariablesModalVisible(false);
+      message.success(t("workflow.variables_updated"));
+    } catch (err) {
+      message.error(`Failed to save variables: ${err}`);
+    }
   };
 
   const handleStopWorkflow = async () => {
@@ -1355,6 +1384,10 @@ const WorkflowView: React.FC = () => {
           title={t("workflow.edit_step")}
           placement="right"
           onClose={() => {
+            // Ensure the latest form values are saved before closing
+            if (editingNodeId) {
+              handleUpdateStep(stepForm.getFieldsValue());
+            }
             setDrawerVisible(false);
             message.success(t("workflow.step_updated"));
           }}
@@ -1393,15 +1426,21 @@ const WorkflowView: React.FC = () => {
 
                 <Form.Item
                   noStyle
-                  shouldUpdate={(prev, cur) => prev.type !== cur.type}
+                  shouldUpdate={(prev, cur) => prev.type !== cur.type || prev.conditionType !== cur.conditionType}
                 >
                   {({ getFieldValue }) => {
                     const type = getFieldValue('type');
                     const isBranch = type === 'branch';
+                    const conditionType = getFieldValue('conditionType') || 'exists';
                     const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
                     const isAppAction = ['launch_app', 'stop_app', 'clear_app', 'open_settings'].includes(type);
                     const needsValue = ['set_variable', 'input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
                     const isWorkflow = type === 'run_workflow';
+
+                    // For branch conditions, determine if we need value field
+                    const branchNeedsValue = isBranch && ['text_equals', 'text_contains', 'variable_equals'].includes(conditionType);
+                    const branchNeedsSelector = isBranch && conditionType !== 'variable_equals';
+                    const actualNeedsSelector = isBranch ? branchNeedsSelector : needsSelector;
 
                     return (
                       <>
@@ -1418,9 +1457,14 @@ const WorkflowView: React.FC = () => {
                             </Text>
                           </div>
                         )}
-                        {needsSelector && (
+
+                        {actualNeedsSelector && (
                           <>
-                            <Form.Item label={isBranch ? t("workflow.branch_condition") : t("workflow.selector_type")}>
+                            <Form.Item label={
+                              isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
+                                isBranch ? t("workflow.branch_condition") :
+                                  t("workflow.selector_type")
+                            }>
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <Form.Item name="selectorType" noStyle>
                                   <Select style={{ flex: 1 }} options={[
@@ -1432,10 +1476,13 @@ const WorkflowView: React.FC = () => {
                                     { label: 'Bounds', value: 'bounds' },
                                   ]} />
                                 </Form.Item>
-                                <Button icon={<AimOutlined />} onClick={() => setElementPickerVisible(true)} />
+                                {!isBranch && <Button icon={<AimOutlined />} onClick={() => setElementPickerVisible(true)} />}
                               </div>
                             </Form.Item>
-                            <Form.Item name="selectorValue" label={t("workflow.selector_value")}>
+                            <Form.Item name="selectorValue" label={
+                              isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
+                                t("workflow.selector_value")
+                            }>
                               <AutoComplete
                                 options={variableOptions}
                                 filterOption={(inputValue, option) =>
@@ -1443,12 +1490,31 @@ const WorkflowView: React.FC = () => {
                                 }
                               >
                                 <Input.TextArea
-                                  placeholder={t("workflow.selector_placeholder")}
+                                  placeholder={
+                                    isBranch && conditionType === 'variable_equals' ?
+                                      t("workflow.var_key_placeholder") :
+                                      t("workflow.selector_placeholder")
+                                  }
                                   autoSize={{ minRows: 1, maxRows: 6 }}
                                 />
                               </AutoComplete>
                             </Form.Item>
                           </>
+                        )}
+
+                        {isBranch && (
+                          <Form.Item name="conditionType" label={t("workflow.condition_type")}>
+                            <Select
+                              placeholder={t("workflow.select_condition_type")}
+                              options={[
+                                { label: t("workflow.condition.exists"), value: "exists" },
+                                { label: t("workflow.condition.not_exists"), value: "not_exists" },
+                                { label: t("workflow.condition.text_equals"), value: "text_equals" },
+                                { label: t("workflow.condition.text_contains"), value: "text_contains" },
+                                { label: t("workflow.condition.variable_equals"), value: "variable_equals" },
+                              ]}
+                            />
+                          </Form.Item>
                         )}
 
                         {isWorkflow && (
@@ -1463,11 +1529,13 @@ const WorkflowView: React.FC = () => {
                           </Form.Item>
                         )}
 
-                        {needsValue && (
+                        {(needsValue || branchNeedsValue) && (
                           <Form.Item name="value" label={
-                            type === 'swipe_element' ? t("workflow.swipe_direction") :
-                              type === 'set_variable' ? t("workflow.variable_value") :
-                                t("workflow.value")
+                            isBranch && ['text_equals', 'text_contains'].includes(conditionType) ? t("workflow.expected_text") :
+                              isBranch && conditionType === 'variable_equals' ? t("workflow.expected_value") :
+                                type === 'swipe_element' ? t("workflow.swipe_direction") :
+                                  type === 'set_variable' ? t("workflow.variable_value") :
+                                    t("workflow.value")
                           }>
                             {type === 'script' ? (
                               <Select

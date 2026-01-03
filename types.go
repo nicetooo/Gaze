@@ -219,6 +219,7 @@ type WorkflowStep struct {
 	PreWait       int              `json:"preWait,omitempty"`
 	SwipeDistance int              `json:"swipeDistance,omitempty"`
 	SwipeDuration int              `json:"swipeDuration,omitempty"`
+	ConditionType string           `json:"conditionType,omitempty"` // "exists", "not_exists", "text_equals", "text_contains", "variable_equals"
 	// Graph Flow Control
 	NextStepId  string `json:"nextStepId,omitempty"`  // Default next step
 	NextSource  string `json:"nextSource,omitempty"`  // Handle ID for next step

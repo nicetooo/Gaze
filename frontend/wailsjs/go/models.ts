@@ -593,6 +593,7 @@ export namespace main {
 	    preWait?: number;
 	    swipeDistance?: number;
 	    swipeDuration?: number;
+	    conditionType?: string;
 	    nextStepId?: string;
 	    nextSource?: string;
 	    nextTarget?: string;
@@ -623,6 +624,7 @@ export namespace main {
 	        this.preWait = source["preWait"];
 	        this.swipeDistance = source["swipeDistance"];
 	        this.swipeDuration = source["swipeDuration"];
+	        this.conditionType = source["conditionType"];
 	        this.nextStepId = source["nextStepId"];
 	        this.nextSource = source["nextSource"];
 	        this.nextTarget = source["nextTarget"];
