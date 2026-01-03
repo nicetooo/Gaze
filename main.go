@@ -101,6 +101,7 @@ func main() {
 						ticker := time.NewTicker(2 * time.Second)
 						var lastDevices []Device
 						lastRecordingStates := make(map[string]bool)
+						lastWorkflows, _ := app.LoadWorkflows()
 
 						for {
 							select {
@@ -108,6 +109,7 @@ func main() {
 								return
 							case <-ticker.C:
 								currentDevices, _ := app.GetDevices(false)
+								currentWorkflows, _ := app.LoadWorkflows()
 								changed := false
 
 								// Check devices
@@ -132,9 +134,26 @@ func main() {
 									}
 								}
 
+								// Check workflows
+								if len(lastWorkflows) != len(currentWorkflows) {
+									changed = true
+								} else {
+									lastWfMap := make(map[string]string)
+									for _, w := range lastWorkflows {
+										lastWfMap[w.ID] = w.Name
+									}
+									for _, w := range currentWorkflows {
+										if name, exists := lastWfMap[w.ID]; !exists || name != w.Name {
+											changed = true
+											break
+										}
+									}
+								}
+
 								if changed {
 									lastDevices = currentDevices
 									lastRecordingStates = currentRecordingStates
+									lastWorkflows = currentWorkflows
 									systray.ResetMenu()
 									updateTrayMenu(ctx, app)
 								}
@@ -190,6 +209,7 @@ func updateTrayMenu(ctx context.Context, app *App) {
 	// 1. Get all devices
 	connectedDevices, _ := app.GetDevices(false)
 	historyDevices := app.GetHistoryDevices()
+	workflows, _ := app.LoadWorkflows()
 
 	// Check for any active recording
 	anyRecording := false
@@ -290,6 +310,20 @@ func updateTrayMenu(ctx context.Context, app *App) {
 				wailsRuntime.EventsEmit(ctx, "tray:navigate", map[string]string{"view": "files", "deviceId": d.ID})
 			}()
 		})
+
+		// 7. Run Workflow
+		if len(workflows) > 0 {
+			mWorkflowTop := systray.AddMenuItem("  Run Workflow", "")
+			for _, w := range workflows {
+				wf := w
+				mRunWf := mWorkflowTop.AddSubMenuItem(wf.Name, "")
+				mRunWf.Click(func() {
+					go func() {
+						app.RunWorkflow(d, wf)
+					}()
+				})
+			}
+		}
 
 		systray.AddSeparator()
 	}
@@ -435,6 +469,19 @@ func updateTrayMenu(ctx context.Context, app *App) {
 				})
 			}()
 		})
+
+		if len(workflows) > 0 {
+			mWf := devItem.AddSubMenuItem("Run Workflow", "")
+			for _, w := range workflows {
+				wf := w
+				mRun := mWf.AddSubMenuItem(wf.Name, "")
+				mRun.Click(func() {
+					go func() {
+						app.RunWorkflow(d, wf)
+					}()
+				})
+			}
+		}
 	}
 
 	// Process History (Connectable) Devices
