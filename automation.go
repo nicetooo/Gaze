@@ -1344,6 +1344,15 @@ func (a *App) playTouchScriptSync(ctx context.Context, deviceId string, script T
 				}
 			}
 			cmd = fmt.Sprintf("shell input tap %d %d", tapX, tapY)
+		case "long_press":
+			tapX, tapY := finalX, finalY
+			duration := event.Duration
+			if duration < 500 {
+				duration = 1000 // Default minimal duration for long press if missing
+			}
+			// Simulate long press using swipe on same coordinates
+			cmd = fmt.Sprintf("shell input swipe %d %d %d %d %d", tapX, tapY, tapX, tapY, duration)
+			fmt.Printf("[Automation] Executing LONG_PRESS: (%d, %d) for %dms\n", tapX, tapY, duration)
 		case "swipe":
 			finalX2 := int(float64(event.X2) * scaleX)
 			finalY2 := int(float64(event.Y2) * scaleY)
