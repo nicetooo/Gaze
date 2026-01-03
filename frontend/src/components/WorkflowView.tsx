@@ -48,6 +48,8 @@ import {
   LockOutlined,
   ForkOutlined,
   PartitionOutlined,
+  PicCenterOutlined,
+  PicRightOutlined,
 } from "@ant-design/icons";
 import {
   ReactFlow,
@@ -59,54 +61,22 @@ import {
   addEdge,
   Handle,
   Position,
-  Connection,
-  Edge,
-  Node,
   BackgroundVariant,
   MarkerType,
-  Panel as FlowPanel
+  ConnectionLineType,
+  SelectionMode,
+  Panel,
 } from '@xyflow/react';
+import type { Connection, Edge, Node, NodeChange } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
+
 
 import DeviceSelector from "./DeviceSelector";
 import ElementPicker, { ElementSelector } from "./ElementPicker";
 import { useDeviceStore, useAutomationStore } from "../stores";
 
 const { Text, Title } = Typography;
-
-// Workflow types
-interface WorkflowStep {
-  id: string;
-  type: string;
-  name?: string;
-  selector?: ElementSelector;
-  value?: string;
-  timeout?: number;
-  onError?: string;
-  loop?: number;
-  postDelay?: number;
-  nextStepId?: string;
-  nextSource?: string;
-  nextTarget?: string;
-  trueStepId?: string;
-  trueSource?: string;
-  trueTarget?: string;
-  falseStepId?: string;
-  falseSource?: string;
-  falseTarget?: string;
-  posX?: number;
-  posY?: number;
-}
-
-interface Workflow {
-  id: string;
-  name: string;
-  description?: string;
-  steps: WorkflowStep[];
-  createdAt: string;
-  updatedAt: string;
-}
 
 // Step type definitions
 const STEP_TYPES = {
@@ -153,6 +123,50 @@ const getStepTypeInfo = (type: string) => {
   }
   return { key: type, icon: <RobotOutlined />, color: 'default' };
 };
+
+// Workflow types
+interface WorkflowStep {
+  id: string;
+  type: string;
+  label?: string;
+  name?: string; // Some steps use name instead of label
+  selector?: ElementSelector;
+  value?: string;
+  loop?: number; // Number of times to loop (for wait/loop steps)
+  timeout?: number; // Timeout for element wait steps in ms
+  postDelay?: number; // Delay after execution in ms
+  onError?: 'stop' | 'continue'; // Error handling strategy
+
+  // Flow connections (next step IDs)
+  nextStepId?: string;
+  trueStepId?: string;
+  falseStepId?: string;
+
+  // Visual layout position on the graph
+  posX?: number;
+  posY?: number;
+
+  // Persistence for specific handle IDs
+  nextSource?: string;
+  trueSource?: string;
+  falseSource?: string;
+  nextTarget?: string;
+  trueTarget?: string;
+  falseTarget?: string;
+
+  children?: WorkflowStep[]; // For nested steps
+  scriptId?: string; // For script steps
+  workflowId?: string; // For run_workflow steps
+}
+
+interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  steps: WorkflowStep[];
+  createdAt?: string;
+  updatedAt?: string;
+}
 
 // Custom Node Component
 const WorkflowNode = ({ data, selected }: any) => {
@@ -275,6 +289,24 @@ const WorkflowView: React.FC = () => {
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+
+  // Wrapper for onNodesChange to protect Start node from deletion
+  const onNodesChangeWithProtection = useCallback(
+    (changes: NodeChange[]) => {
+      const filteredChanges = changes.filter(c => {
+        if (c.type === 'remove') {
+          const node = nodes.find(n => n.id === c.id);
+          if (node && (node.data.step as WorkflowStep).type === 'start') {
+            message.warning(t("workflow.error_delete_start"));
+            return false;
+          }
+        }
+        return true;
+      });
+      onNodesChange(filteredChanges);
+    },
+    [nodes, onNodesChange, t]
+  );
 
   // Node Editing
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
@@ -462,26 +494,35 @@ const WorkflowView: React.FC = () => {
     [setEdges],
   );
 
-  const handleAutoLayout = useCallback(() => {
+  const handleAutoLayout = useCallback((direction: 'TB' | 'LR' = 'TB') => {
     if (nodes.length === 0) return;
 
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setDefaultEdgeLabel(() => ({}));
-    const nodeWidth = 280;
-    const nodeHeight = 80;
 
-    // Configure with large spacing to avoid overlaps
+    // Ghost Size Strategy (slightly tuned)
+    // TB: Wide ghost width to push neighbors apart.
+    // LR: Tall ghost height to push neighbors apart.
+    const isHorizontal = direction === 'LR';
+
+    // Adjust spacing based on direction
     dagreGraph.setGraph({
-      rankdir: 'TB',
-      ranksep: 100,       // Large vertical spacing between levels
-      nodesep: 80,       // Widen the layout significantly to avoid overlaps
-      edgesep: 30,
+      rankdir: direction,
+      ranker: 'network-simplex',
+      ranksep: isHorizontal ? 150 : 120,
+      nodesep: isHorizontal ? 60 : 100, // In LR, nodesep is vertical distance.
+      edgesep: 50,
       marginx: 50,
       marginy: 50,
     });
 
     nodes.forEach((node) => {
-      dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
+      // In LR mode, we need more 'height' (vertical space) for the node ghost
+      // In TB mode, we need more 'width' (horizontal space)
+      const ghostWidth = isHorizontal ? 320 : 400;
+      const ghostHeight = isHorizontal ? 200 : 150;
+
+      dagreGraph.setNode(node.id, { width: ghostWidth, height: ghostHeight });
     });
 
     edges.forEach((edge) => {
@@ -492,17 +533,18 @@ const WorkflowView: React.FC = () => {
 
     const layoutedNodes = nodes.map((node) => {
       const nodeWithPosition = dagreGraph.node(node.id);
+
       return {
         ...node,
         position: {
-          x: nodeWithPosition.x - nodeWidth / 2,
-          y: nodeWithPosition.y - nodeHeight / 2,
+          x: nodeWithPosition.x - 140, // 280 / 2
+          y: nodeWithPosition.y - 40,  // 80 / 2
         },
       };
     });
 
     setNodes(layoutedNodes);
-    message.success(t("workflow.layout_applied"));
+    message.success(t("workflow.layout_applied") + (isHorizontal ? " (Horizontal)" : " (Vertical)"));
   }, [nodes, edges, setNodes, t]);
 
   const handleNodeClick = (event: React.MouseEvent, node: Node) => {
@@ -922,8 +964,11 @@ const WorkflowView: React.FC = () => {
           <DeviceSelector />
           {selectedWorkflow && (
             <>
-              <Tooltip title={t("workflow.auto_layout")}>
-                <Button icon={<PartitionOutlined />} onClick={handleAutoLayout} />
+              <Tooltip title={t("workflow.auto_layout") + " (Vertical)"}>
+                <Button icon={<PicCenterOutlined />} onClick={() => handleAutoLayout('TB')} />
+              </Tooltip>
+              <Tooltip title={t("workflow.auto_layout") + " (Horizontal)"}>
+                <Button icon={<PicRightOutlined />} onClick={() => handleAutoLayout('LR')} />
               </Tooltip>
               <Button icon={<SaveOutlined />} onClick={() => handleSaveGraph()}>
                 {t("workflow.save")}
@@ -990,13 +1035,16 @@ const WorkflowView: React.FC = () => {
             <ReactFlow
               nodes={nodes}
               edges={edges}
-              onNodesChange={onNodesChange}
+              onNodesChange={onNodesChangeWithProtection}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={handleNodeClick}
               nodeTypes={nodeTypes}
               fitView
               attributionPosition="bottom-right"
+              snapToGrid={true}
+              snapGrid={[15, 15]}
+              defaultEdgeOptions={{ type: 'smoothstep', animated: false }}
               style={{
                 backgroundColor: token.colorBgContainer,
                 // @ts-ignore
@@ -1021,7 +1069,7 @@ const WorkflowView: React.FC = () => {
               <MiniMap style={{ height: 120 }} zoomable pannable />
 
               {/* Tool Panel fixed to Top-Left of the Graph Canvas */}
-              <FlowPanel position="top-left" style={{ margin: 12 }}>
+              <Panel position="top-left" style={{ margin: 12 }}>
                 <div style={{
                   width: 260,
                   background: token.colorBgContainer,
@@ -1078,7 +1126,7 @@ const WorkflowView: React.FC = () => {
                     </Collapse.Panel>
                   </Collapse>
                 </div>
-              </FlowPanel>
+              </Panel>
             </ReactFlow>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', color: token.colorTextSecondary }}>

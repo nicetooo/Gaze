@@ -286,7 +286,7 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 }
 
 // Updated signature to return (result, error)
-func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, currentLoop, totalLoops, depth int) (bool, error) {
+func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, _currentLoop, _totalLoops, depth int) (bool, error) {
 	// Recursion guard
 	if depth > 10 {
 		return false, fmt.Errorf("maximum workflow nesting depth exceeded")
