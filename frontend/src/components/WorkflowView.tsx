@@ -50,6 +50,7 @@ import {
   PartitionOutlined,
   PicCenterOutlined,
   PicRightOutlined,
+  LoadingOutlined,
 } from "@ant-design/icons";
 import {
   ReactFlow,
@@ -135,6 +136,9 @@ interface WorkflowStep {
   loop?: number; // Number of times to loop (for wait/loop steps)
   timeout?: number; // Timeout for element wait steps in ms
   postDelay?: number; // Delay after execution in ms
+  preWait?: number; // Delay before execution in ms
+  swipeDistance?: number; // Distance for swipe actions
+  swipeDuration?: number; // Duration for swipe actions in ms
   onError?: 'stop' | 'continue'; // Error handling strategy
 
   // Flow connections (next step IDs)
@@ -170,7 +174,8 @@ interface Workflow {
 
 // Custom Node Component
 const WorkflowNode = ({ data, selected }: any) => {
-  const { step, isRunning, isCurrent } = data;
+  const { t } = useTranslation();
+  const { step, isRunning, isCurrent, isWaiting, waitingPhase } = data;
   const { token } = theme.useToken();
   const typeInfo = getStepTypeInfo(step.type);
   const isBranch = step.type === 'branch';
@@ -178,6 +183,35 @@ const WorkflowNode = ({ data, selected }: any) => {
 
   return (
     <div style={{ position: 'relative' }}>
+      {/* Pre-Wait Tag */}
+      {isWaiting && waitingPhase === 'pre' && (
+        <div style={{
+          position: 'absolute',
+          top: -24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+        }}>
+          <Tag color="warning" icon={<LoadingOutlined />} style={{ margin: 0 }}>
+            {t("workflow.pre_wait")}
+          </Tag>
+        </div>
+      )}
+
+      {/* Post-Wait Tag */}
+      {isWaiting && waitingPhase === 'post' && (
+        <div style={{
+          position: 'absolute',
+          bottom: -24,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 10,
+        }}>
+          <Tag color="processing" icon={<LoadingOutlined />} style={{ margin: 0 }}>
+            {t("workflow.post_delay")}
+          </Tag>
+        </div>
+      )}
       {/* Start node has no input handle */}
       {!isStart && (
         <>
@@ -284,6 +318,8 @@ const WorkflowView: React.FC = () => {
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepId, setCurrentStepId] = useState<string | null>(null);
+  const [waitingStepId, setWaitingStepId] = useState<string | null>(null);
+  const [waitingPhase, setWaitingPhase] = useState<'pre' | 'post' | null>(null);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
 
   // React Flow state
@@ -377,6 +413,14 @@ const WorkflowView: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Also clear waiting when workflow ends
+    if (!isRunning) {
+      setWaitingStepId(null);
+      setWaitingPhase(null);
+    }
+  }, [isRunning]);
+
+  useEffect(() => {
     // Skip re-rendering nodes if we just saved (nodes are already up-to-date)
     if (skipNextRenderRef.current) {
       skipNextRenderRef.current = false;
@@ -392,7 +436,8 @@ const WorkflowView: React.FC = () => {
           data: {
             step,
             label: step.name || t(`workflow.step_type.${step.type}`),
-            isCurrent: step.id === currentStepId
+            isCurrent: step.id === currentStepId,
+            isWaiting: step.id === waitingStepId
           },
         };
       });
@@ -474,16 +519,18 @@ const WorkflowView: React.FC = () => {
     setNodes((nds) =>
       nds.map((node) => {
         const isCurrent = node.id === currentStepId;
-        if (node.data.isCurrent !== isCurrent) {
+        const isWaiting = node.id === waitingStepId;
+        const phase = node.id === waitingStepId ? waitingPhase : null;
+        if (node.data.isCurrent !== isCurrent || node.data.isWaiting !== isWaiting || node.data.waitingPhase !== phase) {
           return {
             ...node,
-            data: { ...(node.data as object), isCurrent, isRunning }
+            data: { ...(node.data as object), isCurrent, isWaiting, isRunning, waitingPhase: phase }
           }
         }
         return node;
       })
     );
-  }, [currentStepId, isRunning]);
+  }, [currentStepId, waitingStepId, waitingPhase, isRunning]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({
@@ -788,11 +835,14 @@ const WorkflowView: React.FC = () => {
             type: values.selectorType || 'text',
             value: values.selectorValue,
           } : undefined,
-          value: values.value,
+          value: values.value !== undefined ? String(values.value) : undefined,
           timeout: values.timeout,
           onError: values.onError,
           loop: values.loop,
-          postDelay: values.postDelay,
+          preWait: Number(values.preWait || 0),
+          postDelay: Number(values.postDelay || 0),
+          swipeDistance: values.swipeDistance,
+          swipeDuration: values.swipeDuration,
           nextStepId: (node.data.step as WorkflowStep).nextStepId,
           trueStepId: (node.data.step as WorkflowStep).trueStepId,
           falseStepId: (node.data.step as WorkflowStep).falseStepId,
@@ -808,7 +858,6 @@ const WorkflowView: React.FC = () => {
       }
       return node;
     }));
-    message.success(t("workflow.step_updated"));
   };
 
   const handleDeleteNode = () => {
@@ -901,13 +950,25 @@ const WorkflowView: React.FC = () => {
 
       const onStep = (data: any) => {
         if (data.deviceId === deviceObj.id) {
+          console.log("[Workflow] Step running:", data.stepId);
           setCurrentStepId(data.stepId);
+          setWaitingStepId(null);
+          setWaitingPhase(null);
+        }
+      };
+
+      const onWait = (data: any) => {
+        if (data.deviceId === deviceObj.id) {
+          console.log("[Workflow] Step waiting:", data.stepId, "phase:", data.phase, "duration:", data.duration);
+          setWaitingStepId(data.stepId);
+          setWaitingPhase(data.phase);
         }
       };
 
       runtime.EventsOn("workflow-completed", onComplete);
       runtime.EventsOn("workflow-error", onError);
       runtime.EventsOn("workflow-step-running", onStep);
+      runtime.EventsOn("workflow-step-waiting", onWait);
     });
 
     try {
@@ -1139,15 +1200,22 @@ const WorkflowView: React.FC = () => {
         <Drawer
           title={t("workflow.edit_step")}
           placement="right"
-          onClose={() => setDrawerVisible(false)}
+          onClose={() => {
+            setDrawerVisible(false);
+            message.success(t("workflow.step_updated"));
+          }}
           open={drawerVisible}
-          width={320}
+          width={450}
           mask={false}
           style={{ background: token.colorBgContainer }}
         >
           {editingNodeId && (
             <>
-              <Form layout="vertical" form={stepForm}>
+              <Form
+                layout="vertical"
+                form={stepForm}
+                onValuesChange={(_, allValues) => handleUpdateStep(allValues)}
+              >
                 <Form.Item name="type" label={t("workflow.step_type_label")}>
                   <Select
                     disabled
@@ -1166,7 +1234,7 @@ const WorkflowView: React.FC = () => {
                     const type = getFieldValue('type');
                     const isBranch = type === 'branch';
                     const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
-                    const needsValue = ['input_text', 'wait', 'adb', 'script', 'run_workflow'].includes(type);
+                    const needsValue = ['input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type);
                     const isWorkflow = type === 'run_workflow';
 
                     return (
@@ -1223,7 +1291,7 @@ const WorkflowView: React.FC = () => {
                         )}
 
                         {needsValue && (
-                          <Form.Item name="value" label={t("workflow.value")}>
+                          <Form.Item name="value" label={type === 'swipe_element' ? t("workflow.swipe_direction") : t("workflow.value")}>
                             {type === 'script' ? (
                               <Select
                                 placeholder={t("workflow.select_script")}
@@ -1231,15 +1299,37 @@ const WorkflowView: React.FC = () => {
                               />
                             ) : type === 'wait' ? (
                               <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} />
+                            ) : type === 'swipe_element' ? (
+                              <Select options={[
+                                { label: t("workflow.direction_up"), value: 'up' },
+                                { label: t("workflow.direction_down"), value: 'down' },
+                                { label: t("workflow.direction_left"), value: 'left' },
+                                { label: t("workflow.direction_right"), value: 'right' },
+                              ]} placeholder={t("workflow.select_direction")} />
                             ) : (
                               <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
                             )}
                           </Form.Item>
                         )}
+
+                        {type === 'swipe_element' && (
+                          <div style={{ display: 'flex', gap: 16 }}>
+                            <Form.Item name="swipeDistance" label={t("workflow.distance")} style={{ flex: 1 }}>
+                              <InputNumber addonAfter="px" min={50} step={50} style={{ width: '100%' }} placeholder="500" />
+                            </Form.Item>
+                            <Form.Item name="swipeDuration" label={t("workflow.duration")} style={{ flex: 1 }}>
+                              <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} placeholder="500" />
+                            </Form.Item>
+                          </div>
+                        )}
                       </>
                     );
                   }}
                 </Form.Item>
+
+                <Divider plain style={{ margin: '16px 0 12px 0' }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{t("workflow.execution_control")}</Text>
+                </Divider>
 
                 <div style={{ display: 'flex', gap: 16 }}>
                   <Form.Item name="timeout" label={t("workflow.timeout")} style={{ flex: 1 }}>
@@ -1247,6 +1337,15 @@ const WorkflowView: React.FC = () => {
                   </Form.Item>
                   <Form.Item name="loop" label={t("workflow.loop")} style={{ width: 100 }}>
                     <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
+                  </Form.Item>
+                </div>
+
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <Form.Item name="preWait" label={t("workflow.pre_wait")} style={{ flex: 1 }}>
+                    <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
+                  </Form.Item>
+                  <Form.Item name="postDelay" label={t("workflow.post_delay")} style={{ flex: 1 }}>
+                    <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
                   </Form.Item>
                 </div>
 
@@ -1259,10 +1358,6 @@ const WorkflowView: React.FC = () => {
                     placeholder={t("workflow.error_stop")}
                   />
                 </Form.Item>
-
-                <Button type="primary" block onClick={() => handleUpdateStep(stepForm.getFieldsValue())}>
-                  {t("workflow.update")}
-                </Button>
 
                 <Divider style={{ margin: '12px 0' }} />
 

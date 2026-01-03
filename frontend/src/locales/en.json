@@ -711,6 +711,18 @@
     "branch_condition": "Condition (element to check)",
     "delete_step": "Delete Step",
     "auto_layout": "Auto Layout",
-    "layout_applied": "Layout applied"
+    "layout_applied": "Layout applied",
+    "swipe_direction": "Swipe Direction",
+    "direction_up": "Up",
+    "direction_down": "Down",
+    "direction_left": "Left",
+    "direction_right": "Right",
+    "select_direction": "Select direction",
+    "distance": "Distance",
+    "duration": "Duration",
+    "execution_control": "Execution Control",
+    "pre_wait": "Wait Before",
+    "post_delay": "Wait After",
+    "waiting": "Waiting..."
   }
 }

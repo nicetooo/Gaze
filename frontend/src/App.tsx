@@ -263,8 +263,8 @@ function App() {
                 { key: VIEW_KEYS.LOGCAT, icon: <FileTextOutlined />, label: t("menu.logcat") },
                 { key: VIEW_KEYS.PROXY, icon: <GlobalOutlined />, label: t("menu.proxy") || "Proxy" },
                 { key: VIEW_KEYS.RECORDING, icon: <VideoCameraOutlined />, label: t("menu.recording") },
-                { key: VIEW_KEYS.WORKFLOW, icon: <BranchesOutlined />, label: t("menu.workflow") },
                 { key: VIEW_KEYS.INSPECTOR, icon: <BlockOutlined />, label: t("menu.inspector") || "UI Inspector" },
+                { key: VIEW_KEYS.WORKFLOW, icon: <BranchesOutlined />, label: t("menu.workflow") },
               ]}
             />
           </div>

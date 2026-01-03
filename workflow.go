@@ -195,7 +195,8 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 			}
 
 			executedCount++
-			fmt.Printf(">>> Executing Step [%d] %s (%s)\n", executedCount, step.ID, step.Type)
+			stepJson, _ := json.Marshal(step)
+			fmt.Printf(">>> Executing Step [%d] %s: %s\n", executedCount, step.ID, string(stepJson))
 
 			select {
 			case <-ctx.Done():
@@ -222,13 +223,28 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 			var stepResult bool = true
 
 			for l := 0; l < loopCount; l++ {
+				// Pre-Wait
+				if step.PreWait > 0 {
+					fmt.Printf(">>> Step %s waiting for %dms...\n", step.ID, step.PreWait)
+					wailsRuntime.EventsEmit(a.ctx, "workflow-step-waiting", map[string]interface{}{
+						"deviceId": deviceId,
+						"stepId":   step.ID,
+						"duration": step.PreWait,
+						"phase":    "pre",
+					})
+					time.Sleep(time.Duration(step.PreWait) * time.Millisecond)
+				}
+
 				var err error
 				stepResult, err = a.runWorkflowStep(ctx, deviceId, *step, l+1, loopCount, 0)
 				if err != nil {
 					// Handle error
+					if err == context.Canceled {
+						return // Stop execution silently
+					}
 					if step.OnError == "continue" {
 						fmt.Printf("[Workflow] Step failed but continuing: %v\n", err)
-						continue
+						goto check_cancel
 					}
 
 					wailsRuntime.EventsEmit(a.ctx, "workflow-error", map[string]interface{}{
@@ -237,17 +253,26 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 					})
 					return // Stop execution
 				}
+
+				// Post Delay (Wait After)
+				if step.PostDelay > 0 {
+					fmt.Printf(">>> Step %s post-waiting for %dms...\n", step.ID, step.PostDelay)
+					wailsRuntime.EventsEmit(a.ctx, "workflow-step-waiting", map[string]interface{}{
+						"deviceId": deviceId,
+						"stepId":   step.ID,
+						"duration": step.PostDelay,
+						"phase":    "post",
+					})
+					time.Sleep(time.Duration(step.PostDelay) * time.Millisecond)
+				}
+
+			check_cancel:
 				// Check cancel between loops
 				select {
 				case <-ctx.Done():
 					return
 				default:
 				}
-			}
-
-			// Post Delay
-			if step.PostDelay > 0 {
-				time.Sleep(time.Duration(step.PostDelay) * time.Millisecond)
 			}
 
 			// Determine Next Step based on graph edges
@@ -404,11 +429,8 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 
 		return true, a.playTouchScriptSync(ctx, deviceId, script, nil)
 
-	case "click_element", "long_click_element", "input_text", "assert_element", "wait_element", "wait_gone":
+	case "click_element", "long_click_element", "input_text", "assert_element", "wait_element", "wait_gone", "swipe_element":
 		return true, a.handleElementAction(ctx, deviceId, step)
-
-	case "swipe_element":
-		return false, fmt.Errorf("swipe_element not fully implemented yet")
 
 	// System key events
 	case "key_back":
@@ -540,6 +562,36 @@ func (a *App) handleElementAction(ctx context.Context, deviceId string, step Wor
 				return err
 			}
 
+			if step.Type == "swipe_element" {
+				direction := strings.ToLower(step.Value)
+				x2, y2 := x, y
+				dist := step.SwipeDistance
+				if dist <= 0 {
+					dist = 500 // New default distance
+				}
+
+				switch direction {
+				case "up":
+					y2 = y - dist
+				case "down":
+					y2 = y + dist
+				case "left":
+					x2 = x - dist
+				case "right":
+					x2 = x + dist
+				default:
+					return fmt.Errorf("invalid swipe direction: %s", direction)
+				}
+
+				duration := step.SwipeDuration
+				if duration <= 0 {
+					duration = 500
+				}
+
+				_, err := a.RunAdbCommand(deviceId, fmt.Sprintf("shell input swipe %d %d %d %d %d", x, y, x2, y2, duration))
+				return err
+			}
+
 			return nil
 		}
 
@@ -649,17 +701,40 @@ func (a *App) loadAndRunSubWorkflow(ctx context.Context, deviceId, workflowID st
 		}
 
 		for l := 0; l < subLoopCount; l++ {
+			// Pre-Wait
+			if subStep.PreWait > 0 {
+				wailsRuntime.EventsEmit(a.ctx, "workflow-step-waiting", map[string]interface{}{
+					"deviceId": deviceId,
+					"stepId":   subStep.ID,
+					"duration": subStep.PreWait,
+					"phase":    "pre",
+				})
+				time.Sleep(time.Duration(subStep.PreWait) * time.Millisecond)
+			}
 			// Recursive call - discard bool result
 			if _, err := a.runWorkflowStep(ctx, deviceId, subStep, l+1, subLoopCount, depth+1); err != nil {
 				if subStep.OnError == "continue" {
-					continue
+					goto next_sub_loop
 				}
 				return err
 			}
-		}
 
-		if subStep.PostDelay > 0 {
-			time.Sleep(time.Duration(subStep.PostDelay) * time.Millisecond)
+			if subStep.PostDelay > 0 {
+				wailsRuntime.EventsEmit(a.ctx, "workflow-step-waiting", map[string]interface{}{
+					"deviceId": deviceId,
+					"stepId":   subStep.ID,
+					"duration": subStep.PostDelay,
+					"phase":    "post",
+				})
+				time.Sleep(time.Duration(subStep.PostDelay) * time.Millisecond)
+			}
+
+		next_sub_loop:
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
 		}
 	}
 	return nil

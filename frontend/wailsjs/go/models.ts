@@ -590,6 +590,9 @@ export namespace main {
 	    onError?: string;
 	    loop?: number;
 	    postDelay?: number;
+	    preWait?: number;
+	    swipeDistance?: number;
+	    swipeDuration?: number;
 	    nextStepId?: string;
 	    nextSource?: string;
 	    nextTarget?: string;
@@ -617,6 +620,9 @@ export namespace main {
 	        this.onError = source["onError"];
 	        this.loop = source["loop"];
 	        this.postDelay = source["postDelay"];
+	        this.preWait = source["preWait"];
+	        this.swipeDistance = source["swipeDistance"];
+	        this.swipeDuration = source["swipeDuration"];
 	        this.nextStepId = source["nextStepId"];
 	        this.nextSource = source["nextSource"];
 	        this.nextTarget = source["nextTarget"];

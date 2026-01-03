@@ -671,6 +671,18 @@
     "branch_condition": "条件 (检查的元素)",
     "delete_step": "删除步骤",
     "auto_layout": "自动整理",
-    "layout_applied": "已整理布局"
+    "layout_applied": "已整理布局",
+    "swipe_direction": "滑动方向",
+    "direction_up": "向上",
+    "direction_down": "向下",
+    "direction_left": "向左",
+    "direction_right": "向右",
+    "select_direction": "请选择方向",
+    "distance": "滑动距离",
+    "duration": "滑动耗时",
+    "execution_control": "执行控制",
+    "pre_wait": "执行前等待",
+    "post_delay": "执行后等待",
+    "waiting": "等待中..."
   }
 }
