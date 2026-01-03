@@ -28,6 +28,7 @@ import {
   EditOutlined,
   RobotOutlined,
   AimOutlined,
+  CloseOutlined,
   ClockCircleOutlined,
   PlayCircleOutlined,
   CheckCircleOutlined,
@@ -1685,7 +1686,7 @@ const WorkflowView: React.FC = () => {
           </div>
         </div>
 
-        <div style={{ flex: 1, position: 'relative' }}>
+        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
           {selectedWorkflow ? (
             <ReactFlow
               nodes={nodes}
@@ -1842,275 +1843,293 @@ const WorkflowView: React.FC = () => {
           )}
         </div>
 
-        <Drawer
-          title={t("workflow.edit_step")}
-          placement="right"
-          onClose={() => {
-            // Ensure the latest form values are saved before closing
-            if (editingNodeId) {
-              handleUpdateStep(stepForm.getFieldsValue());
-            }
-            setDrawerVisible(false);
-            message.success(t("workflow.step_updated"));
-          }}
-          open={drawerVisible}
-          styles={{ wrapper: { width: 450 } }}
-          mask={false}
-          style={{ background: token.colorBgContainer }}
-        >
-          {editingNodeId && (
-            <>
-              <Form
-                layout="vertical"
-                form={stepForm}
-                onValuesChange={(_, allValues) => handleUpdateStep(allValues)}
-              >
-                <Form.Item name="type" label={t("workflow.step_type_label")}>
-                  <Select
-                    disabled
-                    options={Object.values(STEP_TYPES).flat().map(t => ({ label: t.key, value: t.key }))}
-                  />
-                </Form.Item>
-                <Form.Item
-                  noStyle
-                  shouldUpdate={(prev, cur) => prev.type !== cur.type}
-                >
-                  {({ getFieldValue }) => {
-                    const type = getFieldValue('type');
-                    const label = type === 'set_variable' ? t("workflow.variable_name") : t("workflow.name");
-                    return (
-                      <Form.Item name="name" label={label}>
-                        <Input placeholder={label} />
-                      </Form.Item>
-                    );
-                  }}
-                </Form.Item>
+        {drawerVisible && (
+          <div style={{
+            width: 450,
+            borderLeft: `1px solid ${token.colorBorderSecondary}`,
+            background: token.colorBgContainer,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%'
+          }}>
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: `1px solid ${token.colorBorderSecondary}`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <Text strong style={{ fontSize: 16 }}>{t("workflow.edit_step")}</Text>
+              <Button
+                type="text"
+                icon={<CloseOutlined />}
+                onClick={() => {
+                  // Ensure the latest form values are saved before closing
+                  if (editingNodeId) {
+                    handleUpdateStep(stepForm.getFieldsValue());
+                  }
+                  setDrawerVisible(false);
+                  message.success(t("workflow.step_updated"));
+                }}
+              />
+            </div>
 
-                <Form.Item
-                  noStyle
-                  shouldUpdate={(prev, cur) => prev.type !== cur.type || prev.conditionType !== cur.conditionType}
-                >
-                  {({ getFieldValue }) => {
-                    const type = getFieldValue('type');
-                    const isBranch = type === 'branch';
-                    const conditionType = getFieldValue('conditionType') || 'exists';
-                    const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
-                    const isAppAction = ['launch_app', 'stop_app', 'clear_app', 'open_settings'].includes(type);
-                    const needsValue = ['set_variable', 'input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
-                    const isWorkflow = type === 'run_workflow';
+            <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+              {editingNodeId && (
+                <>
+                  <Form
+                    layout="vertical"
+                    form={stepForm}
+                    onValuesChange={(_, allValues) => handleUpdateStep(allValues)}
+                  >
+                    <Form.Item name="type" label={t("workflow.step_type_label")}>
+                      <Select
+                        disabled
+                        options={Object.values(STEP_TYPES).flat().map(t => ({ label: t.key, value: t.key }))}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prev, cur) => prev.type !== cur.type}
+                    >
+                      {({ getFieldValue }) => {
+                        const type = getFieldValue('type');
+                        const label = type === 'set_variable' ? t("workflow.variable_name") : t("workflow.name");
+                        return (
+                          <Form.Item name="name" label={label}>
+                            <Input placeholder={label} />
+                          </Form.Item>
+                        );
+                      }}
+                    </Form.Item>
 
-                    // For branch conditions, determine if we need value field
-                    const branchNeedsValue = isBranch && ['text_equals', 'text_contains', 'variable_equals'].includes(conditionType);
-                    const branchNeedsSelector = isBranch && conditionType !== 'variable_equals';
-                    const actualNeedsSelector = isBranch ? branchNeedsSelector : needsSelector;
+                    <Form.Item
+                      noStyle
+                      shouldUpdate={(prev, cur) => prev.type !== cur.type || prev.conditionType !== cur.conditionType}
+                    >
+                      {({ getFieldValue }) => {
+                        const type = getFieldValue('type');
+                        const isBranch = type === 'branch';
+                        const conditionType = getFieldValue('conditionType') || 'exists';
+                        const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
+                        const isAppAction = ['launch_app', 'stop_app', 'clear_app', 'open_settings'].includes(type);
+                        const needsValue = ['set_variable', 'input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
+                        const isWorkflow = type === 'run_workflow';
 
-                    return (
-                      <>
-                        {isBranch && (
-                          <div style={{
-                            padding: '8px 12px',
-                            marginBottom: 12,
-                            background: token.colorInfoBg,
-                            border: `1px solid ${token.colorInfoBorder}`,
-                            borderRadius: 6
-                          }}>
-                            <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
-                              {t("workflow.branch_description")}
-                            </Text>
-                          </div>
-                        )}
+                        // For branch conditions, determine if we need value field
+                        const branchNeedsValue = isBranch && ['text_equals', 'text_contains', 'variable_equals'].includes(conditionType);
+                        const branchNeedsSelector = isBranch && conditionType !== 'variable_equals';
+                        const actualNeedsSelector = isBranch ? branchNeedsSelector : needsSelector;
 
-                        {actualNeedsSelector && (
+                        return (
                           <>
-                            <Form.Item label={
-                              isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
-                                isBranch ? t("workflow.branch_condition") :
-                                  t("workflow.selector_type")
-                            }>
-                              <div style={{ display: 'flex', gap: 8 }}>
-                                <Form.Item name="selectorType" noStyle>
-                                  <Select style={{ flex: 1 }} options={[
-                                    { label: 'Text', value: 'text' },
-                                    { label: 'Resource ID', value: 'id' },
-                                    { label: 'XPath', value: 'xpath' },
-                                    { label: 'Content Desc', value: 'description' },
-                                    { label: 'Class', value: 'class' },
-                                    { label: 'Bounds', value: 'bounds' },
-                                  ]} />
-                                </Form.Item>
-                                {!isBranch && <Button icon={<AimOutlined />} onClick={() => setElementPickerVisible(true)} />}
+                            {isBranch && (
+                              <div style={{
+                                padding: '8px 12px',
+                                marginBottom: 12,
+                                background: token.colorInfoBg,
+                                border: `1px solid ${token.colorInfoBorder}`,
+                                borderRadius: 6
+                              }}>
+                                <Text style={{ fontSize: 12, color: token.colorTextSecondary }}>
+                                  {t("workflow.branch_description")}
+                                </Text>
                               </div>
-                            </Form.Item>
-                            <Form.Item name="selectorValue" label={
-                              isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
-                                t("workflow.selector_value")
-                            }>
-                              <AutoComplete
-                                options={variableOptions}
-                                filterOption={(inputValue, option) =>
-                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                                }
-                              >
-                                <Input.TextArea
-                                  placeholder={
-                                    isBranch && conditionType === 'variable_equals' ?
-                                      t("workflow.var_key_placeholder") :
-                                      t("workflow.selector_placeholder")
-                                  }
-                                  autoSize={{ minRows: 1, maxRows: 6 }}
-                                />
-                              </AutoComplete>
-                            </Form.Item>
-                          </>
-                        )}
-
-                        {isBranch && (
-                          <Form.Item name="conditionType" label={t("workflow.condition_type")}>
-                            <Select
-                              placeholder={t("workflow.select_condition_type")}
-                              options={[
-                                { label: t("workflow.condition.exists"), value: "exists" },
-                                { label: t("workflow.condition.not_exists"), value: "not_exists" },
-                                { label: t("workflow.condition.text_equals"), value: "text_equals" },
-                                { label: t("workflow.condition.text_contains"), value: "text_contains" },
-                                { label: t("workflow.condition.variable_equals"), value: "variable_equals" },
-                              ]}
-                            />
-                          </Form.Item>
-                        )}
-
-                        {isWorkflow && (
-                          <Form.Item name="value" label={t("workflow.select_workflow")} rules={[{ required: true }]}>
-                            <Select
-                              placeholder={t("workflow.select_workflow")}
-                              options={workflows
-                                .filter(w => w.id !== selectedWorkflow?.id)
-                                .map(w => ({ label: w.name, value: w.id }))
-                              }
-                            />
-                          </Form.Item>
-                        )}
-
-                        {(needsValue || branchNeedsValue) && (
-                          <Form.Item name="value" label={
-                            isBranch && ['text_equals', 'text_contains'].includes(conditionType) ? t("workflow.expected_text") :
-                              isBranch && conditionType === 'variable_equals' ? t("workflow.expected_value") :
-                                type === 'swipe_element' ? t("workflow.swipe_direction") :
-                                  type === 'set_variable' ? t("workflow.variable_value") :
-                                    t("workflow.value")
-                          }>
-                            {type === 'script' ? (
-                              <Select
-                                placeholder={t("workflow.select_script")}
-                                options={scripts.map(s => ({ label: s.name, value: s.name }))}
-                              />
-                            ) : type === 'wait' ? (
-                              <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} />
-                            ) : type === 'swipe_element' ? (
-                              <Select options={[
-                                { label: t("workflow.direction_up"), value: 'up' },
-                                { label: t("workflow.direction_down"), value: 'down' },
-                                { label: t("workflow.direction_left"), value: 'left' },
-                                { label: t("workflow.direction_right"), value: 'right' },
-                              ]} placeholder={t("workflow.select_direction")} />
-                            ) : type === 'set_variable' ? (
-                              <AutoComplete
-                                options={variableOptions}
-                                filterOption={(inputValue, option) =>
-                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                                }
-                              >
-                                <Input placeholder={t("workflow.variable_value_placeholder")} />
-                              </AutoComplete>
-                            ) : isAppAction ? (
-                              <Select
-                                showSearch
-                                placeholder={t("apps.filter_placeholder")}
-                                loading={appsLoading}
-                                onFocus={() => packages.length === 0 && fetchPackages()}
-                                options={packages.map(p => ({
-                                  content: (
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                                      <span>{p.label || p.name}</span>
-                                      <span style={{ fontSize: 10, color: token.colorTextSecondary }}>{p.name}</span>
-                                    </div>
-                                  ),
-                                  label: `${p.label || ''} ${p.name}`,
-                                  value: p.name
-                                }))}
-                                filterOption={(input, option) =>
-                                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
-                                }
-                              />
-                            ) : (
-                              <AutoComplete
-                                options={variableOptions}
-                                filterOption={(inputValue, option) =>
-                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
-                                }
-                              >
-                                <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
-                              </AutoComplete>
                             )}
-                          </Form.Item>
-                        )}
 
-                        {type === 'swipe_element' && (
-                          <div style={{ display: 'flex', gap: 16 }}>
-                            <Form.Item name="swipeDistance" label={t("workflow.distance")} style={{ flex: 1 }}>
-                              <InputNumber addonAfter="px" min={50} step={50} style={{ width: '100%' }} placeholder="500" />
-                            </Form.Item>
-                            <Form.Item name="swipeDuration" label={t("workflow.duration")} style={{ flex: 1 }}>
-                              <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} placeholder="500" />
-                            </Form.Item>
-                          </div>
-                        )}
-                      </>
-                    );
-                  }}
-                </Form.Item>
+                            {actualNeedsSelector && (
+                              <>
+                                <Form.Item label={
+                                  isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
+                                    isBranch ? t("workflow.branch_condition") :
+                                      t("workflow.selector_type")
+                                }>
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <Form.Item name="selectorType" noStyle>
+                                      <Select style={{ flex: 1 }} options={[
+                                        { label: 'Text', value: 'text' },
+                                        { label: 'Resource ID', value: 'id' },
+                                        { label: 'XPath', value: 'xpath' },
+                                        { label: 'Content Desc', value: 'description' },
+                                        { label: 'Class', value: 'class' },
+                                        { label: 'Bounds', value: 'bounds' },
+                                      ]} />
+                                    </Form.Item>
+                                    {!isBranch && <Button icon={<AimOutlined />} onClick={() => setElementPickerVisible(true)} />}
+                                  </div>
+                                </Form.Item>
+                                <Form.Item name="selectorValue" label={
+                                  isBranch && conditionType === 'variable_equals' ? t("workflow.variable_name") :
+                                    t("workflow.selector_value")
+                                }>
+                                  <AutoComplete
+                                    options={variableOptions}
+                                    filterOption={(inputValue, option) =>
+                                      (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                    }
+                                  >
+                                    <Input.TextArea
+                                      placeholder={
+                                        isBranch && conditionType === 'variable_equals' ?
+                                          t("workflow.var_key_placeholder") :
+                                          t("workflow.selector_placeholder")
+                                      }
+                                      autoSize={{ minRows: 1, maxRows: 6 }}
+                                    />
+                                  </AutoComplete>
+                                </Form.Item>
+                              </>
+                            )}
 
-                <Divider plain style={{ margin: '16px 0 12px 0' }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>{t("workflow.execution_control")}</Text>
-                </Divider>
+                            {isBranch && (
+                              <Form.Item name="conditionType" label={t("workflow.condition_type")}>
+                                <Select
+                                  placeholder={t("workflow.select_condition_type")}
+                                  options={[
+                                    { label: t("workflow.condition.exists"), value: "exists" },
+                                    { label: t("workflow.condition.not_exists"), value: "not_exists" },
+                                    { label: t("workflow.condition.text_equals"), value: "text_equals" },
+                                    { label: t("workflow.condition.text_contains"), value: "text_contains" },
+                                    { label: t("workflow.condition.variable_equals"), value: "variable_equals" },
+                                  ]}
+                                />
+                              </Form.Item>
+                            )}
 
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <Form.Item name="timeout" label={t("workflow.timeout")} style={{ flex: 1 }}>
-                    <InputNumber addonAfter="ms" min={100} step={1000} style={{ width: '100%' }} placeholder="5000" />
-                  </Form.Item>
-                  <Form.Item name="loop" label={t("workflow.loop")} style={{ width: 100 }}>
-                    <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
-                  </Form.Item>
-                </div>
+                            {isWorkflow && (
+                              <Form.Item name="value" label={t("workflow.select_workflow")} rules={[{ required: true }]}>
+                                <Select
+                                  placeholder={t("workflow.select_workflow")}
+                                  options={workflows
+                                    .filter(w => w.id !== selectedWorkflow?.id)
+                                    .map(w => ({ label: w.name, value: w.id }))
+                                  }
+                                />
+                              </Form.Item>
+                            )}
 
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <Form.Item name="preWait" label={t("workflow.pre_wait")} style={{ flex: 1 }}>
-                    <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
-                  </Form.Item>
-                  <Form.Item name="postDelay" label={t("workflow.post_delay")} style={{ flex: 1 }}>
-                    <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
-                  </Form.Item>
-                </div>
+                            {(needsValue || branchNeedsValue) && (
+                              <Form.Item name="value" label={
+                                isBranch && ['text_equals', 'text_contains'].includes(conditionType) ? t("workflow.expected_text") :
+                                  isBranch && conditionType === 'variable_equals' ? t("workflow.expected_value") :
+                                    type === 'swipe_element' ? t("workflow.swipe_direction") :
+                                      type === 'set_variable' ? t("workflow.variable_value") :
+                                        t("workflow.value")
+                              }>
+                                {type === 'script' ? (
+                                  <Select
+                                    placeholder={t("workflow.select_script")}
+                                    options={scripts.map(s => ({ label: s.name, value: s.name }))}
+                                  />
+                                ) : type === 'wait' ? (
+                                  <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} />
+                                ) : type === 'swipe_element' ? (
+                                  <Select options={[
+                                    { label: t("workflow.direction_up"), value: 'up' },
+                                    { label: t("workflow.direction_down"), value: 'down' },
+                                    { label: t("workflow.direction_left"), value: 'left' },
+                                    { label: t("workflow.direction_right"), value: 'right' },
+                                  ]} placeholder={t("workflow.select_direction")} />
+                                ) : type === 'set_variable' ? (
+                                  <AutoComplete
+                                    options={variableOptions}
+                                    filterOption={(inputValue, option) =>
+                                      (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                    }
+                                  >
+                                    <Input placeholder={t("workflow.variable_value_placeholder")} />
+                                  </AutoComplete>
+                                ) : isAppAction ? (
+                                  <Select
+                                    showSearch
+                                    placeholder={t("apps.filter_placeholder")}
+                                    loading={appsLoading}
+                                    onFocus={() => packages.length === 0 && fetchPackages()}
+                                    options={packages.map(p => ({
+                                      content: (
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+                                          <span>{p.label || p.name}</span>
+                                          <span style={{ fontSize: 10, color: token.colorTextSecondary }}>{p.name}</span>
+                                        </div>
+                                      ),
+                                      label: `${p.label || ''} ${p.name}`,
+                                      value: p.name
+                                    }))}
+                                    filterOption={(input, option) =>
+                                      (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                                    }
+                                  />
+                                ) : (
+                                  <AutoComplete
+                                    options={variableOptions}
+                                    filterOption={(inputValue, option) =>
+                                      (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                    }
+                                  >
+                                    <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
+                                  </AutoComplete>
+                                )}
+                              </Form.Item>
+                            )}
 
-                <Form.Item name="onError" label={t("workflow.on_error")}>
-                  <Select
-                    options={[
-                      { label: t("workflow.error_stop"), value: 'stop' },
-                      { label: t("workflow.error_continue"), value: 'continue' },
-                    ]}
-                    placeholder={t("workflow.error_stop")}
-                  />
-                </Form.Item>
+                            {type === 'swipe_element' && (
+                              <div style={{ display: 'flex', gap: 16 }}>
+                                <Form.Item name="swipeDistance" label={t("workflow.distance")} style={{ flex: 1 }}>
+                                  <InputNumber addonAfter="px" min={50} step={50} style={{ width: '100%' }} placeholder="500" />
+                                </Form.Item>
+                                <Form.Item name="swipeDuration" label={t("workflow.duration")} style={{ flex: 1 }}>
+                                  <InputNumber addonAfter="ms" min={100} step={100} style={{ width: '100%' }} placeholder="500" />
+                                </Form.Item>
+                              </div>
+                            )}
+                          </>
+                        );
+                      }}
+                    </Form.Item>
 
-                <Divider style={{ margin: '12px 0' }} />
+                    <Divider plain style={{ margin: '16px 0 12px 0' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>{t("workflow.execution_control")}</Text>
+                    </Divider>
 
-                <Button danger block icon={<DeleteOutlined />} onClick={handleDeleteNode}>
-                  {t("workflow.delete_step")}
-                </Button>
-              </Form>
-            </>
-          )}
-        </Drawer>
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <Form.Item name="timeout" label={t("workflow.timeout")} style={{ flex: 1 }}>
+                        <InputNumber addonAfter="ms" min={100} step={1000} style={{ width: '100%' }} placeholder="5000" />
+                      </Form.Item>
+                      <Form.Item name="loop" label={t("workflow.loop")} style={{ width: 100 }}>
+                        <InputNumber min={1} style={{ width: '100%' }} placeholder="1" />
+                      </Form.Item>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 16 }}>
+                      <Form.Item name="preWait" label={t("workflow.pre_wait")} style={{ flex: 1 }}>
+                        <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
+                      </Form.Item>
+                      <Form.Item name="postDelay" label={t("workflow.post_delay")} style={{ flex: 1 }}>
+                        <InputNumber addonAfter="ms" min={0} step={500} style={{ width: '100%' }} placeholder="0" />
+                      </Form.Item>
+                    </div>
+
+                    <Form.Item name="onError" label={t("workflow.on_error")}>
+                      <Select
+                        options={[
+                          { label: t("workflow.error_stop"), value: 'stop' },
+                          { label: t("workflow.error_continue"), value: 'continue' },
+                        ]}
+                        placeholder={t("workflow.error_stop")}
+                      />
+                    </Form.Item>
+
+                    <Divider style={{ margin: '12px 0' }} />
+
+                    <Button danger block icon={<DeleteOutlined />} onClick={handleDeleteNode}>
+                      {t("workflow.delete_step")}
+                    </Button>
+                  </Form>
+                </>
+              )}
+            </div>
+          </div>
+        )}
       </div >
 
       <Modal
