@@ -136,7 +136,15 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 			"steps":        len(workflow.Steps),
 		})
 
-		err := a.runWorkflowInternal(ctx, deviceId, workflow, 0)
+		// Initialize variable context
+		vars := make(map[string]string)
+		if workflow.Variables != nil {
+			for k, v := range workflow.Variables {
+				vars[k] = v
+			}
+		}
+
+		err := a.runWorkflowInternal(ctx, deviceId, workflow, 0, vars)
 		if err != nil && err != context.Canceled {
 			wailsRuntime.EventsEmit(a.ctx, "workflow-error", map[string]interface{}{
 				"deviceId":   deviceId,
@@ -156,7 +164,7 @@ func (a *App) RunWorkflow(device Device, workflow Workflow) error {
 }
 
 // runWorkflowInternal contains the core graph traversal logic
-func (a *App) runWorkflowInternal(ctx context.Context, deviceId string, workflow Workflow, depth int) error {
+func (a *App) runWorkflowInternal(ctx context.Context, deviceId string, workflow Workflow, depth int, vars map[string]string) error {
 	// Build ID->Step map for graph navigation
 	stepMap := make(map[string]*WorkflowStep)
 	var startStep *WorkflowStep
@@ -237,7 +245,7 @@ func (a *App) runWorkflowInternal(ctx context.Context, deviceId string, workflow
 			}
 
 			var err error
-			stepResult, err = a.runWorkflowStep(ctx, deviceId, *step, l+1, loopCount, depth)
+			stepResult, err = a.runWorkflowStep(ctx, deviceId, *step, l+1, loopCount, depth, vars)
 			if err != nil {
 				if err == context.Canceled {
 					return context.Canceled
@@ -289,29 +297,55 @@ func (a *App) runWorkflowInternal(ctx context.Context, deviceId string, workflow
 	return nil
 }
 
+// processWorkflowVariables replaces placeholders like {{var}} with actual values
+func (a *App) processWorkflowVariables(text string, vars map[string]string) string {
+	if text == "" {
+		return ""
+	}
+	for k, v := range vars {
+		placeholder := "{{" + k + "}}"
+		text = strings.ReplaceAll(text, placeholder, v)
+	}
+	return text
+}
+
 // Updated signature to return (result, error)
-func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, _, _, depth int) (bool, error) {
+func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step WorkflowStep, _, _, depth int, vars map[string]string) (bool, error) {
 	// Recursion guard
 	if depth > 10 {
 		return false, fmt.Errorf("maximum workflow nesting depth exceeded")
 	}
 
+	// Process variables in step value and selector before execution
+	processedValue := a.processWorkflowVariables(step.Value, vars)
+	var processedSelectorValue string
+	if step.Selector != nil {
+		processedSelectorValue = a.processWorkflowVariables(step.Selector.Value, vars)
+	}
+
 	switch step.Type {
+	case "set_variable":
+		if step.Name != "" {
+			vars[step.Name] = processedValue
+			fmt.Printf("[Workflow] Set variable: %s = %s\n", step.Name, processedValue)
+		}
+		return true, nil
+
 	case "wait":
 		duration := 1000
-		if val, err := strconv.Atoi(step.Value); err == nil {
+		if val, err := strconv.Atoi(processedValue); err == nil {
 			duration = val
 		}
 		time.Sleep(time.Duration(duration) * time.Millisecond)
 
 	case "adb":
 		// Raw ADB Command
-		if _, err := a.RunAdbCommand(deviceId, step.Value); err != nil {
+		if _, err := a.RunAdbCommand(deviceId, processedValue); err != nil {
 			return false, fmt.Errorf("adb command failed: %w", err)
 		}
 
 	case "run_workflow":
-		return true, a.loadAndRunSubWorkflow(ctx, deviceId, step.Value, depth)
+		return true, a.loadAndRunSubWorkflow(ctx, deviceId, processedValue, depth, vars)
 
 	case "branch":
 		// 1. Check condition (Selector)
@@ -335,13 +369,13 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 			hierarchy, err := a.GetUIHierarchy(deviceId)
 			if err == nil && step.Selector != nil {
 				if step.Selector.Type == "xpath" {
-					results := a.SearchElementsXPath(hierarchy.Root, step.Selector.Value)
+					results := a.SearchElementsXPath(hierarchy.Root, processedSelectorValue)
 					if len(results) > 0 {
 						found = true
 						break
 					}
 				} else {
-					if node := a.findElementNode(hierarchy.Root, step.Selector.Type, step.Selector.Value); node != nil {
+					if node := a.findElementNode(hierarchy.Root, step.Selector.Type, processedSelectorValue); node != nil {
 						found = true
 						break
 					}
@@ -383,7 +417,7 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 		}
 
 		// Run the selected workflow recursively
-		return true, a.loadAndRunSubWorkflow(ctx, deviceId, targetID, depth)
+		return true, a.loadAndRunSubWorkflow(ctx, deviceId, targetID, depth, vars)
 
 	case "script":
 		// Run recorded script
@@ -425,7 +459,13 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 		return true, err
 
 	case "click_element", "long_click_element", "input_text", "assert_element", "wait_element", "wait_gone", "swipe_element":
-		return true, a.handleElementAction(ctx, deviceId, step)
+		// Create a copy of the step with processed values for the handler
+		processedStep := step
+		processedStep.Value = processedValue
+		if processedStep.Selector != nil {
+			processedStep.Selector.Value = processedSelectorValue
+		}
+		return true, a.handleElementAction(ctx, deviceId, processedStep)
 
 	// System key events
 	case "key_back":
@@ -652,7 +692,7 @@ func parseBoundsCenter(bounds string) (int, int, error) {
 	return centerX, centerY, nil
 }
 
-func (a *App) loadAndRunSubWorkflow(ctx context.Context, deviceId, workflowID string, depth int) error {
+func (a *App) loadAndRunSubWorkflow(ctx context.Context, deviceId, workflowID string, depth int, vars map[string]string) error {
 	workflowsPath := a.getWorkflowsPath()
 
 	safeName := regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(workflowID, "_")
@@ -675,7 +715,18 @@ func (a *App) loadAndRunSubWorkflow(ctx context.Context, deviceId, workflowID st
 		"steps":        len(subWorkflow.Steps),
 	})
 
-	err = a.runWorkflowInternal(ctx, deviceId, subWorkflow, depth+1)
+	// Inherit variables from parent but also load sub-workflow defaults
+	subVars := make(map[string]string)
+	for k, v := range vars {
+		subVars[k] = v
+	}
+	if subWorkflow.Variables != nil {
+		for k, v := range subWorkflow.Variables {
+			subVars[k] = v
+		}
+	}
+
+	err = a.runWorkflowInternal(ctx, deviceId, subWorkflow, depth+1, subVars)
 
 	if err != nil && err != context.Canceled {
 		wailsRuntime.EventsEmit(a.ctx, "workflow-error", map[string]interface{}{

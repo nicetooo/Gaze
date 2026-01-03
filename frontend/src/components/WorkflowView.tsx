@@ -18,7 +18,8 @@ import {
   Collapse,
   Divider,
   Drawer,
-  Typography
+  Typography,
+  AutoComplete
 } from "antd";
 import { useTranslation } from "react-i18next";
 import {
@@ -52,6 +53,7 @@ import {
   PicRightOutlined,
   LoadingOutlined,
   SettingOutlined,
+  IdcardOutlined,
 } from "@ant-design/icons";
 import {
   ReactFlow,
@@ -98,6 +100,7 @@ const STEP_TYPES = {
     { key: 'branch', icon: <ForkOutlined />, color: 'purple' },
     { key: 'scroll_to', icon: <ReloadOutlined />, color: 'magenta' },
     { key: 'assert_element', icon: <CheckCircleOutlined />, color: 'lime' },
+    { key: 'set_variable', icon: <IdcardOutlined />, color: 'orange' },
   ],
   SCRIPT_ACTIONS: [
     { key: 'script', icon: <PlayCircleOutlined />, color: 'geekblue' },
@@ -175,6 +178,7 @@ interface Workflow {
   name: string;
   description?: string;
   steps: WorkflowStep[];
+  variables?: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -332,6 +336,17 @@ const WorkflowView: React.FC = () => {
   const [waitingStepId, setWaitingStepId] = useState<string | null>(null);
   const [waitingPhase, setWaitingPhase] = useState<'pre' | 'post' | null>(null);
   const [executionLogs, setExecutionLogs] = useState<string[]>([]);
+  const [variablesModalVisible, setVariablesModalVisible] = useState(false);
+  const [tempVariables, setTempVariables] = useState<{ key: string, value: string }[]>([]);
+
+  // Variable options for AutoComplete
+  const variableOptions = useMemo(() => {
+    if (!selectedWorkflow?.variables) return [];
+    return Object.keys(selectedWorkflow.variables).map(key => ({
+      label: `{{${key}}}`,
+      value: `{{${key}}}`,
+    }));
+  }, [selectedWorkflow?.variables]);
 
   // React Flow state
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
@@ -1048,6 +1063,31 @@ const WorkflowView: React.FC = () => {
     }
   };
 
+  const handleOpenVariablesModal = () => {
+    if (!selectedWorkflow) return;
+    const vars = selectedWorkflow.variables || {};
+    setTempVariables(Object.entries(vars).map(([key, value]) => ({ key, value })));
+    setVariablesModalVisible(true);
+  };
+
+  const handleSaveVariables = () => {
+    if (!selectedWorkflow) return;
+    const variables: Record<string, string> = {};
+    tempVariables.forEach(({ key, value }) => {
+      if (key.trim()) {
+        variables[key.trim()] = value;
+      }
+    });
+
+    const updatedWorkflow = {
+      ...selectedWorkflow,
+      variables
+    };
+    setSelectedWorkflow(updatedWorkflow);
+    setVariablesModalVisible(false);
+    message.success(t("workflow.variables_updated"));
+  };
+
   const handleStopWorkflow = async () => {
     const deviceObj = useDeviceStore.getState().devices.find(d => d.id === selectedDevice);
     if (!deviceObj) {
@@ -1106,6 +1146,9 @@ const WorkflowView: React.FC = () => {
               <Tooltip title={t("workflow.auto_layout") + " (Horizontal)"}>
                 <Button icon={<PicRightOutlined />} onClick={() => handleAutoLayout('LR')} />
               </Tooltip>
+              <Button icon={<SettingOutlined />} onClick={handleOpenVariablesModal}>
+                {t("workflow.variables")}
+              </Button>
               <Button icon={<SaveOutlined />} onClick={() => handleSaveGraph()}>
                 {t("workflow.save")}
               </Button>
@@ -1333,8 +1376,19 @@ const WorkflowView: React.FC = () => {
                     options={Object.values(STEP_TYPES).flat().map(t => ({ label: t.key, value: t.key }))}
                   />
                 </Form.Item>
-                <Form.Item name="name" label={t("workflow.name")}>
-                  <Input placeholder={t("workflow.name")} />
+                <Form.Item
+                  noStyle
+                  shouldUpdate={(prev, cur) => prev.type !== cur.type}
+                >
+                  {({ getFieldValue }) => {
+                    const type = getFieldValue('type');
+                    const label = type === 'set_variable' ? t("workflow.variable_name") : t("workflow.name");
+                    return (
+                      <Form.Item name="name" label={label}>
+                        <Input placeholder={label} />
+                      </Form.Item>
+                    );
+                  }}
                 </Form.Item>
 
                 <Form.Item
@@ -1346,7 +1400,7 @@ const WorkflowView: React.FC = () => {
                     const isBranch = type === 'branch';
                     const needsSelector = ['click_element', 'long_click_element', 'input_text', 'swipe_element', 'wait_element', 'wait_gone', 'assert_element', 'branch'].includes(type);
                     const isAppAction = ['launch_app', 'stop_app', 'clear_app', 'open_settings'].includes(type);
-                    const needsValue = ['input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
+                    const needsValue = ['set_variable', 'input_text', 'swipe_element', 'wait', 'adb', 'script', 'run_workflow'].includes(type) || isAppAction;
                     const isWorkflow = type === 'run_workflow';
 
                     return (
@@ -1382,10 +1436,17 @@ const WorkflowView: React.FC = () => {
                               </div>
                             </Form.Item>
                             <Form.Item name="selectorValue" label={t("workflow.selector_value")}>
-                              <Input.TextArea
-                                placeholder={t("workflow.selector_placeholder")}
-                                autoSize={{ minRows: 1, maxRows: 6 }}
-                              />
+                              <AutoComplete
+                                options={variableOptions}
+                                filterOption={(inputValue, option) =>
+                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                }
+                              >
+                                <Input.TextArea
+                                  placeholder={t("workflow.selector_placeholder")}
+                                  autoSize={{ minRows: 1, maxRows: 6 }}
+                                />
+                              </AutoComplete>
                             </Form.Item>
                           </>
                         )}
@@ -1403,7 +1464,11 @@ const WorkflowView: React.FC = () => {
                         )}
 
                         {needsValue && (
-                          <Form.Item name="value" label={type === 'swipe_element' ? t("workflow.swipe_direction") : t("workflow.value")}>
+                          <Form.Item name="value" label={
+                            type === 'swipe_element' ? t("workflow.swipe_direction") :
+                              type === 'set_variable' ? t("workflow.variable_value") :
+                                t("workflow.value")
+                          }>
                             {type === 'script' ? (
                               <Select
                                 placeholder={t("workflow.select_script")}
@@ -1418,6 +1483,15 @@ const WorkflowView: React.FC = () => {
                                 { label: t("workflow.direction_left"), value: 'left' },
                                 { label: t("workflow.direction_right"), value: 'right' },
                               ]} placeholder={t("workflow.select_direction")} />
+                            ) : type === 'set_variable' ? (
+                              <AutoComplete
+                                options={variableOptions}
+                                filterOption={(inputValue, option) =>
+                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                }
+                              >
+                                <Input placeholder={t("workflow.variable_value_placeholder")} />
+                              </AutoComplete>
                             ) : isAppAction ? (
                               <Select
                                 showSearch
@@ -1439,7 +1513,14 @@ const WorkflowView: React.FC = () => {
                                 }
                               />
                             ) : (
-                              <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
+                              <AutoComplete
+                                options={variableOptions}
+                                filterOption={(inputValue, option) =>
+                                  (option?.value as string || '').toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                                }
+                              >
+                                <Input placeholder={type === 'adb' ? 'shell input keyevent 4' : t("workflow.value_placeholder")} />
+                              </AutoComplete>
                             )}
                           </Form.Item>
                         )}
@@ -1520,6 +1601,62 @@ const WorkflowView: React.FC = () => {
             <Input.TextArea placeholder={t("workflow.description_placeholder")} rows={2} />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={t("workflow.global_variables")}
+        open={variablesModalVisible}
+        onOk={handleSaveVariables}
+        onCancel={() => setVariablesModalVisible(false)}
+        width={600}
+        modalRender={(modal) => (
+          <div onMouseDown={(e) => e.stopPropagation()}>{modal}</div>
+        )}
+      >
+        <div style={{ marginBottom: 16 }}>
+          <Text type="secondary">{t("workflow.variables_tip")}</Text>
+        </div>
+        <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+          {tempVariables.map((item, index) => (
+            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <Input
+                placeholder={t("workflow.var_key_placeholder")}
+                value={item.key}
+                onChange={(e) => {
+                  const newVars = [...tempVariables];
+                  newVars[index].key = e.target.value;
+                  setTempVariables(newVars);
+                }}
+                style={{ width: 180 }}
+              />
+              <Input
+                placeholder={t("workflow.var_val_placeholder")}
+                value={item.value}
+                onChange={(e) => {
+                  const newVars = [...tempVariables];
+                  newVars[index].value = e.target.value;
+                  setTempVariables(newVars);
+                }}
+                style={{ flex: 1 }}
+              />
+              <Button
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                onClick={() => setTempVariables(prev => prev.filter((_, i) => i !== index))}
+              />
+            </div>
+          ))}
+        </div>
+        <Button
+          type="dashed"
+          onClick={() => setTempVariables(prev => [...prev, { key: '', value: '' }])}
+          block
+          icon={<PlusOutlined />}
+          style={{ marginTop: 8 }}
+        >
+          {t("workflow.add_variable")}
+        </Button>
       </Modal>
 
       <ElementPicker

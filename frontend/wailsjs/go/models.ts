@@ -659,6 +659,7 @@ export namespace main {
 	    name: string;
 	    description?: string;
 	    steps: WorkflowStep[];
+	    variables?: {[key: string]: string};
 	    createdAt: string;
 	    updatedAt: string;
 	
@@ -672,6 +673,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.description = source["description"];
 	        this.steps = this.convertValues(source["steps"], WorkflowStep);
+	        this.variables = source["variables"];
 	        this.createdAt = source["createdAt"];
 	        this.updatedAt = source["updatedAt"];
 	    }

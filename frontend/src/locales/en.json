@@ -686,8 +686,17 @@
       "launch_app": "Launch App",
       "stop_app": "Force Stop App",
       "clear_app": "Clear Data",
-      "open_settings": "App Settings"
+      "open_settings": "App Settings",
+      "set_variable": "Set Variable"
     },
+    "variable_name": "Variable Name",
+    "variable_value": "Variable Value",
+    "variable_value_placeholder": "Value or {{other_var}}",
+    "global_variables": "Workflow Variables",
+    "add_variable": "Add Variable",
+    "var_key_placeholder": "Key (e.g. username)",
+    "var_val_placeholder": "Default value",
+    "variables": "Variables",
     "element_picker": "Element Picker",
     "pick_element": "Pick Element from Screen",
     "pick_element_tip": "Click an element from the tree to select it",
