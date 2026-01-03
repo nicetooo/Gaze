@@ -487,7 +487,7 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
   };
 
   const searchHelpContent = (
-    <div style={{ maxWidth: 320 }}>
+    <div style={{ maxWidth: 380 }}>
       <div style={{ marginBottom: 8 }}>
         <strong>{t("automation.search_modes")}</strong>
       </div>
@@ -506,10 +506,47 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
         <div style={{ color: token.colorPrimary, marginBottom: 4 }}>
           {t("automation.advanced_mode")}
         </div>
-        <code style={{ fontSize: 11, display: "block", marginBottom: 2 }}>
-          clickable:true AND text:OK
-        </code>
-        <code style={{ fontSize: 11, display: "block" }}>id~login</code>
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            {t("automation.advanced_operators")}
+          </div>
+          <div style={{ display: "flex", marginBottom: 2 }}>
+            <code>attr:value</code>
+            <span>{t("automation.op_contains")}</span>
+          </div>
+          <div style={{ display: "flex", marginBottom: 2 }}>
+            <code>attr=value</code>
+            <span>{t("automation.op_equals")}</span>
+          </div>
+          <div style={{ display: "flex", marginBottom: 2 }}>
+            <code>attr^value</code>
+            <span>{t("automation.op_starts")}</span>
+          </div>
+          <div style={{ display: "flex", marginBottom: 2 }}>
+            <code>attr$value</code>
+            <span>{t("automation.op_ends")}</span>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, marginBottom: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            {t("automation.advanced_attrs")}
+          </div>
+          <code>
+            text, id, desc, class, clickable, enabled, bounds...
+          </code>
+        </div>
+        <div style={{ fontSize: 11 }}>
+          <div style={{ marginBottom: 4 }}>
+            {t("automation.advanced_examples")}
+          </div>
+          <code style={{ display: "block", marginBottom: 2 }}>
+            clickable:true AND text:OK
+          </code>
+          <code style={{ display: "block", marginBottom: 2 }}>
+            id~login OR desc~登录
+          </code>
+          <code style={{ display: "block" }}>id^com.app</code>
+        </div>
       </div>
     </div>
   );
@@ -766,8 +803,8 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
                               : token.colorBgContainer,
                           borderRadius: 6,
                           border: `1px solid ${selectedSelectorIndex === index
-                              ? token.colorPrimary
-                              : token.colorBorder
+                            ? token.colorPrimary
+                            : token.colorBorder
                             }`,
                           marginRight: 0,
                         }}

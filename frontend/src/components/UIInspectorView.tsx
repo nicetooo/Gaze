@@ -105,29 +105,65 @@ const UIInspectorView: React.FC = () => {
     };
 
     const searchHelpContent = (
-        <div style={{ maxWidth: 320 }}>
+        <div style={{ maxWidth: 380 }}>
             <div style={{ marginBottom: 8 }}>
                 <strong>{t("automation.search_modes")}</strong>
             </div>
             <div style={{ marginBottom: 12 }}>
-                <div style={{ color: token.colorPrimary, marginBottom: 4 }}>{t("automation.xpath_mode")}</div>
-                <code style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>//Button[@text='OK']</code>
-                <code style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>//node[contains(@text,'确定')]</code>
-                <code style={{ fontSize: 11, display: 'block' }}>//EditText[@clickable='true']</code>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-                <div style={{ color: token.colorPrimary, marginBottom: 4 }}>{t("automation.advanced_mode")}</div>
-                <code style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>clickable:true AND text:确定</code>
-                <code style={{ fontSize: 11, display: 'block', marginBottom: 2 }}>class:Button OR class:ImageButton</code>
-                <code style={{ fontSize: 11, display: 'block' }}>id~login AND enabled=true</code>
+                <div style={{ color: token.colorPrimary, marginBottom: 4 }}>
+                    {t("automation.xpath_mode")}
+                </div>
+                <code style={{ fontSize: 11, display: "block", marginBottom: 2 }}>
+                    //Button[@text='OK']
+                </code>
+                <code style={{ fontSize: 11, display: "block" }}>
+                    //EditText[@clickable='true']
+                </code>
             </div>
             <div>
-                <div style={{ color: token.colorTextSecondary, fontSize: 11 }}>
-                    {t("automation.search_operators")}:
-                    <span style={{ marginLeft: 4 }}><code>:</code> {t("automation.op_contains")}</span>
-                    <span style={{ marginLeft: 4 }}><code>=</code> {t("automation.op_equals")}</span>
-                    <span style={{ marginLeft: 4 }}><code>^</code> {t("automation.op_starts")}</span>
-                    <span style={{ marginLeft: 4 }}><code>$</code> {t("automation.op_ends")}</span>
+                <div style={{ color: token.colorPrimary, marginBottom: 4 }}>
+                    {t("automation.advanced_mode")}
+                </div>
+                <div style={{ fontSize: 11, marginBottom: 6 }}>
+                    <div style={{ marginBottom: 4 }}>
+                        {t("automation.advanced_operators")}
+                    </div>
+                    <div style={{ display: "flex", marginBottom: 2 }}>
+                        <code style={{ width: 80 }}>attr:value</code>
+                        <span>{t("automation.op_contains")}</span>
+                    </div>
+                    <div style={{ display: "flex", marginBottom: 2 }}>
+                        <code style={{ width: 80 }}>attr=value</code>
+                        <span>{t("automation.op_equals")}</span>
+                    </div>
+                    <div style={{ display: "flex", marginBottom: 2 }}>
+                        <code style={{ width: 80 }}>attr^value</code>
+                        <span>{t("automation.op_starts")}</span>
+                    </div>
+                    <div style={{ display: "flex", marginBottom: 2 }}>
+                        <code style={{ width: 80 }}>attr$value</code>
+                        <span>{t("automation.op_ends")}</span>
+                    </div>
+                </div>
+                <div style={{ fontSize: 11, marginBottom: 6 }}>
+                    <div style={{ marginBottom: 4 }}>
+                        {t("automation.advanced_attrs")}
+                    </div>
+                    <code>
+                        text, id, desc, class, clickable, enabled, bounds...
+                    </code>
+                </div>
+                <div style={{ fontSize: 11 }}>
+                    <div style={{ marginBottom: 4 }}>
+                        {t("automation.advanced_examples")}
+                    </div>
+                    <code style={{ display: "block", marginBottom: 2 }}>
+                        clickable:true AND text:OK
+                    </code>
+                    <code style={{ display: "block", marginBottom: 2 }}>
+                        id~login OR desc~登录
+                    </code>
+                    <code style={{ display: "block" }}>id^com.app</code>
                 </div>
             </div>
         </div>
@@ -196,8 +232,8 @@ const UIInspectorView: React.FC = () => {
             // No operator, treat as text contains
             const lowerCond = condition.toLowerCase();
             return (node.text || "").toLowerCase().includes(lowerCond) ||
-                   (node.contentDesc || "").toLowerCase().includes(lowerCond) ||
-                   (node.resourceId || "").toLowerCase().includes(lowerCond);
+                (node.contentDesc || "").toLowerCase().includes(lowerCond) ||
+                (node.resourceId || "").toLowerCase().includes(lowerCond);
         }
 
         const attrValue = getNodeAttr(node, attr).toLowerCase();
@@ -291,9 +327,9 @@ const UIInspectorView: React.FC = () => {
                     // Simple text search
                     const lowerSearch = trimmedSearch.toLowerCase();
                     match = (node.text || "").toLowerCase().includes(lowerSearch) ||
-                            (node.resourceId || "").toLowerCase().includes(lowerSearch) ||
-                            (node.class || "").toLowerCase().includes(lowerSearch) ||
-                            (node.contentDesc || "").toLowerCase().includes(lowerSearch);
+                        (node.resourceId || "").toLowerCase().includes(lowerSearch) ||
+                        (node.class || "").toLowerCase().includes(lowerSearch) ||
+                        (node.contentDesc || "").toLowerCase().includes(lowerSearch);
                 }
             }
 

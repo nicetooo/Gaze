@@ -140,6 +140,8 @@ export function findElementsBySelector(
         return n.text.includes(selector.value) || n.contentDesc.includes(selector.value);
       case 'bounds':
         return n.bounds === selector.value;
+      case 'advanced':
+        return matchAdvancedQuery(n, selector.value);
       default:
         return false;
     }
@@ -156,6 +158,97 @@ export function findElementsBySelector(
 
   traverse(node);
   return results;
+}
+
+// Advanced query matching: "attr:value", "attr~value", "cond1 AND cond2"
+function matchAdvancedQuery(node: UINode, query: string): boolean {
+  query = query.trim();
+  if (!query) return false;
+
+  // Handle OR (lower precedence)
+  const orParts = splitQuery(query, / OR /i);
+  if (orParts.length > 1) {
+    return orParts.some(part => matchAdvancedQuery(node, part));
+  }
+
+  // Handle AND (higher precedence)
+  const andParts = splitQuery(query, / AND /i);
+  if (andParts.length > 1) {
+    return andParts.every(part => matchAdvancedQuery(node, part));
+  }
+
+  // Single condition
+  return evaluateCondition(node, query);
+}
+
+function splitQuery(query: string, separator: RegExp): string[] {
+  return query.split(separator).map(s => s.trim()).filter(s => s);
+}
+
+function evaluateCondition(node: UINode, condition: string): boolean {
+  condition = condition.trim();
+
+  // Find operator: ~, ^, $, =, :
+  const operators = ['~', '^', '$', '=', ':'];
+  let attr = '', op = '', value = '';
+
+  for (const operator of operators) {
+    const idx = condition.indexOf(operator);
+    if (idx !== -1) {
+      attr = condition.slice(0, idx).trim();
+      op = operator;
+      value = condition.slice(idx + 1).trim();
+      break;
+    }
+  }
+
+  // No operator - text contains search
+  if (!attr) {
+    const lowerCond = condition.toLowerCase();
+    return (node.text || '').toLowerCase().includes(lowerCond) ||
+           (node.contentDesc || '').toLowerCase().includes(lowerCond) ||
+           (node.resourceId || '').toLowerCase().includes(lowerCond);
+  }
+
+  const attrValue = getNodeAttribute(node, attr).toLowerCase();
+  const lowerValue = value.toLowerCase();
+
+  switch (op) {
+    case '=': return attrValue === lowerValue;
+    case ':':
+    case '~': return attrValue.includes(lowerValue);
+    case '^': return attrValue.startsWith(lowerValue);
+    case '$': return attrValue.endsWith(lowerValue);
+    default: return false;
+  }
+}
+
+function getNodeAttribute(node: UINode, attr: string): string {
+  const lowerAttr = attr.toLowerCase();
+  switch (lowerAttr) {
+    case 'text': return node.text || '';
+    case 'resource-id':
+    case 'resourceid':
+    case 'id': return node.resourceId || '';
+    case 'class': return node.class || '';
+    case 'package': return node.package || '';
+    case 'content-desc':
+    case 'contentdesc':
+    case 'desc': return node.contentDesc || '';
+    case 'bounds': return node.bounds || '';
+    case 'clickable': return node.clickable || '';
+    case 'enabled': return node.enabled || '';
+    case 'focused': return node.focused || '';
+    case 'focusable': return node.focusable || '';
+    case 'scrollable': return node.scrollable || '';
+    case 'checkable': return node.checkable || '';
+    case 'checked': return node.checked || '';
+    case 'selected': return node.selected || '';
+    case 'longclickable':
+    case 'long-clickable': return node.longClickable || '';
+    case 'password': return node.password || '';
+    default: return '';
+  }
 }
 
 // Get the best selector for a node

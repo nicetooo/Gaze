@@ -370,13 +370,17 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
 
   fetchUIHierarchy: async (deviceId: string) => {
     if (!deviceId) return;
-    set({ isFetchingHierarchy: true, uiHierarchy: null, rawXml: null });
+    set({ isFetchingHierarchy: true });
     try {
-      const result = await (window as any).go.main.App.GetUIHierarchy(deviceId);
-      set({ 
-        uiHierarchy: result.root, 
-        rawXml: result.rawXml, 
-        isFetchingHierarchy: false 
+      // Delegate to elementStore for shared caching
+      const { useElementStore } = await import('./elementStore');
+      const elementStore = useElementStore.getState();
+      const hierarchy = await elementStore.fetchHierarchy(deviceId, true);
+      // Sync state for backward compatibility
+      set({
+        uiHierarchy: hierarchy,
+        rawXml: elementStore.rawXml,
+        isFetchingHierarchy: false
       });
     } catch (err) {
       console.error('Failed to fetch UI hierarchy:', err);
@@ -388,11 +392,15 @@ export const useAutomationStore = create<AutomationState>((set, get) => ({
   checkAndRefreshUIHierarchy: async (deviceId: string) => {
     if (!deviceId) return false;
     try {
-      const result = await (window as any).go.main.App.GetUIHierarchy(deviceId);
-      if (result.rawXml !== get().rawXml) {
-        set({ 
-          uiHierarchy: result.root, 
-          rawXml: result.rawXml 
+      // Delegate to elementStore for shared caching
+      const { useElementStore } = await import('./elementStore');
+      const elementStore = useElementStore.getState();
+      const oldRawXml = get().rawXml;
+      await elementStore.fetchHierarchy(deviceId, false);
+      if (elementStore.rawXml !== oldRawXml) {
+        set({
+          uiHierarchy: elementStore.hierarchy,
+          rawXml: elementStore.rawXml
         });
         return true;
       }

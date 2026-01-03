@@ -90,6 +90,9 @@ func (a *App) FindElementBySelector(root *UINode, selector *ElementSelector) *UI
 			return a.FindElementAtPoint(root, x, y)
 		}
 		return nil
+	case "advanced":
+		// Advanced query syntax: "attr:value", "attr~value", "cond1 AND cond2"
+		return a.findElementByAdvanced(root, selector.Value, selector.Index)
 	default:
 		return nil
 	}
@@ -129,6 +132,10 @@ func (a *App) FindAllElementsBySelector(root *UINode, selector *ElementSelector)
 			nodes[i] = r.Node
 		}
 		return nodes
+	case "advanced":
+		return a.collectMatchingNodes(root, func(n *UINode) bool {
+			return a.matchAdvancedQuery(n, selector.Value)
+		})
 	default:
 		return nil
 	}
@@ -185,6 +192,120 @@ func (a *App) findElementByContains(root *UINode, text string, index int) *UINod
 	}
 	return nil
 }
+
+// findElementByAdvanced finds element using advanced query syntax
+// Supports: "attr:value", "attr~value" (contains), "attr=value" (exact)
+// Boolean: "cond1 AND cond2", "cond1 OR cond2"
+func (a *App) findElementByAdvanced(root *UINode, query string, index int) *UINode {
+	nodes := a.collectMatchingNodes(root, func(n *UINode) bool {
+		return a.matchAdvancedQuery(n, query)
+	})
+	if index < len(nodes) {
+		return nodes[index]
+	}
+	return nil
+}
+
+// matchAdvancedQuery evaluates an advanced query against a node
+func (a *App) matchAdvancedQuery(node *UINode, query string) bool {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return false
+	}
+
+	// Handle OR (lower precedence)
+	orParts := splitAdvancedQuery(query, " OR ")
+	if len(orParts) > 1 {
+		for _, part := range orParts {
+			if a.matchAdvancedQuery(node, part) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// Handle AND (higher precedence)
+	andParts := splitAdvancedQuery(query, " AND ")
+	if len(andParts) > 1 {
+		for _, part := range andParts {
+			if !a.matchAdvancedQuery(node, part) {
+				return false
+			}
+		}
+		return true
+	}
+
+	// Single condition: "attr:value", "attr~value", "attr=value", "attr^value", "attr$value"
+	return a.evaluateAdvancedCondition(node, query)
+}
+
+// splitAdvancedQuery splits query by separator (case insensitive)
+func splitAdvancedQuery(query, sep string) []string {
+	// Case insensitive split
+	lowerQuery := strings.ToLower(query)
+	lowerSep := strings.ToLower(sep)
+
+	var parts []string
+	start := 0
+	for {
+		idx := strings.Index(lowerQuery[start:], lowerSep)
+		if idx == -1 {
+			parts = append(parts, strings.TrimSpace(query[start:]))
+			break
+		}
+		parts = append(parts, strings.TrimSpace(query[start:start+idx]))
+		start += idx + len(sep)
+	}
+	return parts
+}
+
+// evaluateAdvancedCondition evaluates a single condition
+func (a *App) evaluateAdvancedCondition(node *UINode, condition string) bool {
+	condition = strings.TrimSpace(condition)
+
+	// Find operator: ~, ^, $, =, :
+	operators := []string{"~", "^", "$", "=", ":"}
+	var attr, op, value string
+
+	for _, operator := range operators {
+		idx := strings.Index(condition, operator)
+		if idx != -1 {
+			attr = strings.TrimSpace(condition[:idx])
+			op = operator
+			value = strings.TrimSpace(condition[idx+1:])
+			break
+		}
+	}
+
+	// No operator found - treat as text contains search
+	if attr == "" {
+		lowerCond := strings.ToLower(condition)
+		return strings.Contains(strings.ToLower(node.Text), lowerCond) ||
+			strings.Contains(strings.ToLower(node.ContentDesc), lowerCond) ||
+			strings.Contains(strings.ToLower(node.ResourceID), lowerCond)
+	}
+
+	// Get attribute value from node
+	attrValue := a.getNodeAttribute(node, attr)
+	lowerAttrValue := strings.ToLower(attrValue)
+	lowerValue := strings.ToLower(value)
+
+	// Evaluate based on operator
+	switch op {
+	case "=":
+		return lowerAttrValue == lowerValue
+	case ":", "~":
+		return strings.Contains(lowerAttrValue, lowerValue)
+	case "^":
+		return strings.HasPrefix(lowerAttrValue, lowerValue)
+	case "$":
+		return strings.HasSuffix(lowerAttrValue, lowerValue)
+	default:
+		return false
+	}
+}
+
+// Note: getNodeAttribute is defined in automation.go and reused here
 
 // collectMatchingNodes traverses the tree and collects nodes matching the predicate
 func (a *App) collectMatchingNodes(node *UINode, predicate func(*UINode) bool) []*UINode {
