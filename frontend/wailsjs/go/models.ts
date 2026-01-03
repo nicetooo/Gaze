@@ -177,6 +177,26 @@ export namespace main {
 	        this.props = source["props"];
 	    }
 	}
+	export class ElementActionConfig {
+	    Timeout: number;
+	    RetryInterval: number;
+	    PreWait: number;
+	    PostDelay: number;
+	    OnError: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new ElementActionConfig(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.Timeout = source["Timeout"];
+	        this.RetryInterval = source["RetryInterval"];
+	        this.PreWait = source["PreWait"];
+	        this.PostDelay = source["PostDelay"];
+	        this.OnError = source["OnError"];
+	    }
+	}
 	export class ElementSelector {
 	    type: string;
 	    value: string;

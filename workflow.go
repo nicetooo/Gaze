@@ -509,184 +509,52 @@ func (a *App) runWorkflowStep(ctx context.Context, deviceId string, step Workflo
 }
 
 func (a *App) handleElementAction(ctx context.Context, deviceId string, step WorkflowStep) error {
-	// ... (No change needed here as it returns error)
-	// Wait, I am not rewriting this function, so I just need to make sure I don't lose it if I overwrite.
-	// I AM overwriting the file. I MUST include all content.
-	// I'll reuse the existing content for handleElementAction using "view_file" content I read earlier.
-	// Copied from Step 536.
-
-	timeout := 10000
-	if step.Timeout > 0 {
-		timeout = step.Timeout
+	// Use unified element service for all element operations
+	config := &ElementActionConfig{
+		Timeout:       step.Timeout,
+		RetryInterval: 1000,
+		OnError:       step.OnError,
+	}
+	if config.Timeout <= 0 {
+		config.Timeout = 10000
 	}
 
-	startTime := time.Now()
+	switch step.Type {
+	case "click_element":
+		return a.ClickElement(ctx, deviceId, step.Selector, config)
 
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	case "long_click_element":
+		return a.LongClickElement(ctx, deviceId, step.Selector, 1000, config)
 
-		var foundNode *UINode
+	case "input_text":
+		return a.InputTextToElement(ctx, deviceId, step.Selector, step.Value, false, config)
 
-		if step.Selector != nil {
-			if step.Selector.Type == "bounds" {
-				foundNode = &UINode{Bounds: step.Selector.Value}
-			} else {
-				hierarchy, err := a.GetUIHierarchy(deviceId)
-				if err != nil {
-					time.Sleep(1 * time.Second)
-					if time.Since(startTime) > time.Duration(timeout)*time.Millisecond {
-						return fmt.Errorf("UI dump failed: %w", err)
-					}
-					continue
-				}
+	case "swipe_element":
+		return a.SwipeOnElement(ctx, deviceId, step.Selector, step.Value, step.SwipeDistance, step.SwipeDuration, config)
 
-				if step.Selector.Type == "xpath" {
-					results := a.SearchElementsXPath(hierarchy.Root, step.Selector.Value)
-					if len(results) > 0 {
-						idx := step.Selector.Index
-						if idx < len(results) {
-							foundNode = results[idx].Node
-						}
-					}
-				} else {
-					foundNode = a.findElementNode(hierarchy.Root, step.Selector.Type, step.Selector.Value)
-				}
-			}
-		}
+	case "wait_element", "assert_element":
+		return a.WaitForElement(ctx, deviceId, step.Selector, config.Timeout)
 
-		if step.Type == "wait_gone" {
-			if foundNode == nil {
-				return nil
-			}
-			if time.Since(startTime) > time.Duration(timeout)*time.Millisecond {
-				return fmt.Errorf("timeout waiting for element to disappear")
-			}
-			time.Sleep(1 * time.Second)
-			continue
-		}
+	case "wait_gone":
+		return a.WaitElementGone(ctx, deviceId, step.Selector, config.Timeout)
 
-		if foundNode != nil {
-			if step.Type == "wait_element" || step.Type == "assert_element" {
-				return nil
-			}
-
-			bounds := foundNode.Bounds
-			x, y, err := parseBoundsCenter(bounds)
-			if err != nil {
-				return fmt.Errorf("invalid bounds: %s", bounds)
-			}
-
-			if step.Type == "click_element" {
-				_, err := a.RunAdbCommand(deviceId, fmt.Sprintf("shell input tap %d %d", x, y))
-				return err
-			}
-
-			if step.Type == "long_click_element" {
-				_, err := a.RunAdbCommand(deviceId, fmt.Sprintf("shell input swipe %d %d %d %d 1000", x, y, x, y))
-				return err
-			}
-
-			if step.Type == "input_text" {
-				a.RunAdbCommand(deviceId, fmt.Sprintf("shell input tap %d %d", x, y))
-				time.Sleep(500 * time.Millisecond)
-
-				text := step.Value
-				text = strings.ReplaceAll(text, " ", "%s")
-				text = strings.ReplaceAll(text, "'", "\\'")
-
-				_, err := a.RunAdbCommand(deviceId, fmt.Sprintf("shell input text '%s'", text))
-				return err
-			}
-
-			if step.Type == "swipe_element" {
-				direction := strings.ToLower(step.Value)
-				x2, y2 := x, y
-				dist := step.SwipeDistance
-				if dist <= 0 {
-					dist = 500 // New default distance
-				}
-
-				switch direction {
-				case "up":
-					y2 = y - dist
-				case "down":
-					y2 = y + dist
-				case "left":
-					x2 = x - dist
-				case "right":
-					x2 = x + dist
-				default:
-					return fmt.Errorf("invalid swipe direction: %s", direction)
-				}
-
-				duration := step.SwipeDuration
-				if duration <= 0 {
-					duration = 500
-				}
-
-				_, err := a.RunAdbCommand(deviceId, fmt.Sprintf("shell input swipe %d %d %d %d %d", x, y, x2, y2, duration))
-				return err
-			}
-
-			return nil
-		}
-
-		if time.Since(startTime) > time.Duration(timeout)*time.Millisecond {
-			return fmt.Errorf("element not found within timeout")
-		}
-
-		time.Sleep(1 * time.Second)
+	default:
+		return fmt.Errorf("unknown element action: %s", step.Type)
 	}
 }
 
-// Helper to find node and return pointer (returns first match)
+// findElementNode is a legacy wrapper that uses the unified selector service
+// Deprecated: Use FindElementBySelector with ElementSelector instead
 func (a *App) findElementNode(node *UINode, checkType, checkValue string) *UINode {
-	matches := a.findAllElementNodes(node, checkType, checkValue)
-	if len(matches) > 0 {
-		return matches[0]
-	}
-	return nil
+	selector := &ElementSelector{Type: checkType, Value: checkValue, Index: 0}
+	return a.FindElementBySelector(node, selector)
 }
 
-// Helper to find all matching nodes
+// findAllElementNodes is a legacy wrapper that uses the unified selector service
+// Deprecated: Use FindAllElementsBySelector with ElementSelector instead
 func (a *App) findAllElementNodes(node *UINode, checkType, checkValue string) []*UINode {
-	if node == nil {
-		return nil
-	}
-
-	var results []*UINode
-
-	match := false
-	switch checkType {
-	case "text":
-		// For robustness, check both text and description in "text" mode
-		match = node.Text == checkValue || node.ContentDesc == checkValue
-	case "id":
-		match = node.ResourceID == checkValue || strings.HasSuffix(node.ResourceID, ":id/"+checkValue)
-	case "class":
-		match = node.Class == checkValue
-	case "contains":
-		match = strings.Contains(node.Text, checkValue) || strings.Contains(node.ContentDesc, checkValue)
-	case "desc", "description":
-		match = node.ContentDesc == checkValue
-	case "bounds":
-		match = node.Bounds == checkValue
-	}
-
-	if match {
-		results = append(results, node)
-	}
-
-	for i := range node.Nodes {
-		found := a.findAllElementNodes(&node.Nodes[i], checkType, checkValue)
-		results = append(results, found...)
-	}
-
-	return results
+	selector := &ElementSelector{Type: checkType, Value: checkValue}
+	return a.FindAllElementsBySelector(node, selector)
 }
 
 // evaluateBranchCondition evaluates different types of branch conditions
@@ -792,22 +660,15 @@ func (a *App) evaluateBranchCondition(deviceId string, step WorkflowStep, condit
 	return false
 }
 
+// parseBoundsCenter is a legacy wrapper that uses the unified ParseBounds
+// Deprecated: Use ParseBounds().Center() instead
 func parseBoundsCenter(bounds string) (int, int, error) {
-	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-	matches := re.FindStringSubmatch(bounds)
-	if len(matches) != 5 {
-		return 0, 0, fmt.Errorf("invalid bounds format")
+	rect, err := ParseBounds(bounds)
+	if err != nil {
+		return 0, 0, err
 	}
-
-	x1, _ := strconv.Atoi(matches[1])
-	y1, _ := strconv.Atoi(matches[2])
-	x2, _ := strconv.Atoi(matches[3])
-	y2, _ := strconv.Atoi(matches[4])
-
-	centerX := x1 + (x2-x1)/2
-	centerY := y1 + (y2-y1)/2
-
-	return centerX, centerY, nil
+	x, y := rect.Center()
+	return x, y, nil
 }
 
 func (a *App) loadAndRunSubWorkflow(ctx context.Context, deviceId, workflowID string, depth int, vars map[string]string) error {

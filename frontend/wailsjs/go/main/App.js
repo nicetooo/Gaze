@@ -18,12 +18,24 @@ export function AnalyzeElementSelectors(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['AnalyzeElementSelectors'](arg1, arg2, arg3, arg4);
 }
 
+export function AssertElementExists(arg1, arg2) {
+  return window['go']['main']['App']['AssertElementExists'](arg1, arg2);
+}
+
+export function AssertElementText(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['AssertElementText'](arg1, arg2, arg3, arg4);
+}
+
 export function CancelOpenFile(arg1) {
   return window['go']['main']['App']['CancelOpenFile'](arg1);
 }
 
 export function ClearAppData(arg1, arg2) {
   return window['go']['main']['App']['ClearAppData'](arg1, arg2);
+}
+
+export function ClickElement(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['ClickElement'](arg1, arg2, arg3, arg4);
 }
 
 export function CopyFile(arg1, arg2, arg3) {
@@ -74,6 +86,10 @@ export function ExportAPK(arg1, arg2) {
   return window['go']['main']['App']['ExportAPK'](arg1, arg2);
 }
 
+export function FindAllElementsBySelector(arg1, arg2) {
+  return window['go']['main']['App']['FindAllElementsBySelector'](arg1, arg2);
+}
+
 export function FindElement(arg1, arg2, arg3) {
   return window['go']['main']['App']['FindElement'](arg1, arg2, arg3);
 }
@@ -82,8 +98,16 @@ export function FindElementAtPoint(arg1, arg2, arg3) {
   return window['go']['main']['App']['FindElementAtPoint'](arg1, arg2, arg3);
 }
 
+export function FindElementBySelector(arg1, arg2) {
+  return window['go']['main']['App']['FindElementBySelector'](arg1, arg2);
+}
+
 export function ForceStopApp(arg1, arg2) {
   return window['go']['main']['App']['ForceStopApp'](arg1, arg2);
+}
+
+export function GenerateSelectorSuggestions(arg1, arg2) {
+  return window['go']['main']['App']['GenerateSelectorSuggestions'](arg1, arg2);
 }
 
 export function GetAppInfo(arg1, arg2, arg3) {
@@ -96,6 +120,10 @@ export function GetAppVersion() {
 
 export function GetBackendLogs() {
   return window['go']['main']['App']['GetBackendLogs']();
+}
+
+export function GetBestSelector(arg1, arg2) {
+  return window['go']['main']['App']['GetBestSelector'](arg1, arg2);
 }
 
 export function GetDeviceIP(arg1) {
@@ -112,6 +140,10 @@ export function GetDeviceResolution(arg1) {
 
 export function GetDevices(arg1) {
   return window['go']['main']['App']['GetDevices'](arg1);
+}
+
+export function GetElementProperties(arg1, arg2) {
+  return window['go']['main']['App']['GetElementProperties'](arg1, arg2);
 }
 
 export function GetElementsWithText(arg1, arg2) {
@@ -146,6 +178,10 @@ export function GetRecordingStatus(arg1) {
   return window['go']['main']['App']['GetRecordingStatus'](arg1);
 }
 
+export function GetSelectorMatchCount(arg1, arg2) {
+  return window['go']['main']['App']['GetSelectorMatchCount'](arg1, arg2);
+}
+
 export function GetThumbnail(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetThumbnail'](arg1, arg2, arg3);
 }
@@ -164,6 +200,10 @@ export function Greet(arg1) {
 
 export function InputNodeText(arg1, arg2, arg3) {
   return window['go']['main']['App']['InputNodeText'](arg1, arg2, arg3);
+}
+
+export function InputTextToElement(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['InputTextToElement'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function InstallAPK(arg1, arg2) {
@@ -220,6 +260,14 @@ export function LoadWorkflows() {
 
 export function Log(arg1, arg2) {
   return window['go']['main']['App']['Log'](arg1, arg2);
+}
+
+export function LongClickElement(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['LongClickElement'](arg1, arg2, arg3, arg4, arg5);
+}
+
+export function LongPressAtCoordinates(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['LongPressAtCoordinates'](arg1, arg2, arg3, arg4);
 }
 
 export function Mkdir(arg1, arg2) {
@@ -296,6 +344,10 @@ export function SaveTouchScript(arg1) {
 
 export function SaveWorkflow(arg1) {
   return window['go']['main']['App']['SaveWorkflow'](arg1);
+}
+
+export function ScrollToElement(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['ScrollToElement'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SearchElementsAdvanced(arg1, arg2) {
@@ -442,12 +494,24 @@ export function SubmitSelectorChoice(arg1, arg2, arg3) {
   return window['go']['main']['App']['SubmitSelectorChoice'](arg1, arg2, arg3);
 }
 
+export function SwipeCoordinates(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['SwipeCoordinates'](arg1, arg2, arg3, arg4, arg5, arg6);
+}
+
+export function SwipeOnElement(arg1, arg2, arg3, arg4, arg5, arg6, arg7) {
+  return window['go']['main']['App']['SwipeOnElement'](arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
 export function SwitchToWireless(arg1) {
   return window['go']['main']['App']['SwitchToWireless'](arg1);
 }
 
 export function TakeScreenshot(arg1, arg2) {
   return window['go']['main']['App']['TakeScreenshot'](arg1, arg2);
+}
+
+export function TapAtCoordinates(arg1, arg2, arg3) {
+  return window['go']['main']['App']['TapAtCoordinates'](arg1, arg2, arg3);
 }
 
 export function TogglePinDevice(arg1) {
@@ -460,4 +524,12 @@ export function UninstallApp(arg1, arg2) {
 
 export function UploadFile(arg1, arg2, arg3) {
   return window['go']['main']['App']['UploadFile'](arg1, arg2, arg3);
+}
+
+export function WaitElementGone(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['WaitElementGone'](arg1, arg2, arg3, arg4);
+}
+
+export function WaitForElement(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['WaitForElement'](arg1, arg2, arg3, arg4);
 }

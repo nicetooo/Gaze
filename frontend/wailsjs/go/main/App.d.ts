@@ -12,9 +12,15 @@ export function AdbPair(arg1:string,arg2:string):Promise<string>;
 
 export function AnalyzeElementSelectors(arg1:string,arg2:number,arg3:number,arg4:time.Time):Promise<Array<main.SelectorSuggestion>>;
 
+export function AssertElementExists(arg1:string,arg2:main.ElementSelector):Promise<boolean>;
+
+export function AssertElementText(arg1:string,arg2:main.ElementSelector,arg3:string,arg4:boolean):Promise<boolean>;
+
 export function CancelOpenFile(arg1:string):Promise<void>;
 
 export function ClearAppData(arg1:string,arg2:string):Promise<string>;
+
+export function ClickElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:main.ElementActionConfig):Promise<void>;
 
 export function CopyFile(arg1:string,arg2:string,arg3:string):Promise<void>;
 
@@ -40,17 +46,25 @@ export function ExecuteSingleWorkflowStep(arg1:string,arg2:main.WorkflowStep):Pr
 
 export function ExportAPK(arg1:string,arg2:string):Promise<string>;
 
+export function FindAllElementsBySelector(arg1:main.UINode,arg2:main.ElementSelector):Promise<Array<main.UINode>>;
+
 export function FindElement(arg1:main.UINode,arg2:string,arg3:string):Promise<boolean>;
 
 export function FindElementAtPoint(arg1:main.UINode,arg2:number,arg3:number):Promise<main.UINode>;
 
+export function FindElementBySelector(arg1:main.UINode,arg2:main.ElementSelector):Promise<main.UINode>;
+
 export function ForceStopApp(arg1:string,arg2:string):Promise<string>;
+
+export function GenerateSelectorSuggestions(arg1:main.UINode,arg2:main.UINode):Promise<Array<main.SelectorSuggestion>>;
 
 export function GetAppInfo(arg1:string,arg2:string,arg3:boolean):Promise<main.AppPackage>;
 
 export function GetAppVersion():Promise<string>;
 
 export function GetBackendLogs():Promise<Array<string>>;
+
+export function GetBestSelector(arg1:main.UINode,arg2:main.UINode):Promise<main.ElementSelector>;
 
 export function GetDeviceIP(arg1:string):Promise<string>;
 
@@ -59,6 +73,8 @@ export function GetDeviceInfo(arg1:string):Promise<main.DeviceInfo>;
 export function GetDeviceResolution(arg1:string):Promise<string>;
 
 export function GetDevices(arg1:boolean):Promise<Array<main.Device>>;
+
+export function GetElementProperties(arg1:string,arg2:main.ElementSelector):Promise<{[key: string]: any}>;
 
 export function GetElementsWithText(arg1:string,arg2:string):Promise<Array<{[key: string]: any}>>;
 
@@ -76,6 +92,8 @@ export function GetRecordingEventCount(arg1:string):Promise<number>;
 
 export function GetRecordingStatus(arg1:string):Promise<{[key: string]: any}>;
 
+export function GetSelectorMatchCount(arg1:main.UINode,arg2:main.ElementSelector):Promise<number>;
+
 export function GetThumbnail(arg1:string,arg2:string,arg3:string):Promise<string>;
 
 export function GetTouchInputDevice(arg1:string):Promise<string>;
@@ -85,6 +103,8 @@ export function GetUIHierarchy(arg1:string):Promise<main.UIHierarchyResult>;
 export function Greet(arg1:string):Promise<string>;
 
 export function InputNodeText(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function InputTextToElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:string,arg5:boolean,arg6:main.ElementActionConfig):Promise<void>;
 
 export function InstallAPK(arg1:string,arg2:string):Promise<string>;
 
@@ -113,6 +133,10 @@ export function LoadTouchScripts():Promise<Array<main.TouchScript>>;
 export function LoadWorkflows():Promise<Array<main.Workflow>>;
 
 export function Log(arg1:string,arg2:Array<any>):Promise<void>;
+
+export function LongClickElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:number,arg5:main.ElementActionConfig):Promise<void>;
+
+export function LongPressAtCoordinates(arg1:string,arg2:number,arg3:number,arg4:number):Promise<void>;
 
 export function Mkdir(arg1:string,arg2:string):Promise<void>;
 
@@ -151,6 +175,8 @@ export function SaveScriptTask(arg1:main.ScriptTask):Promise<void>;
 export function SaveTouchScript(arg1:main.TouchScript):Promise<void>;
 
 export function SaveWorkflow(arg1:main.Workflow):Promise<void>;
+
+export function ScrollToElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:string,arg5:number):Promise<void>;
 
 export function SearchElementsAdvanced(arg1:main.UINode,arg2:string):Promise<Array<main.SearchResult>>;
 
@@ -224,12 +250,22 @@ export function StopWorkflow(arg1:main.Device):Promise<void>;
 
 export function SubmitSelectorChoice(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function SwipeCoordinates(arg1:string,arg2:number,arg3:number,arg4:number,arg5:number,arg6:number):Promise<void>;
+
+export function SwipeOnElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:string,arg5:number,arg6:number,arg7:main.ElementActionConfig):Promise<void>;
+
 export function SwitchToWireless(arg1:string):Promise<string>;
 
 export function TakeScreenshot(arg1:string,arg2:string):Promise<string>;
+
+export function TapAtCoordinates(arg1:string,arg2:number,arg3:number):Promise<void>;
 
 export function TogglePinDevice(arg1:string):Promise<void>;
 
 export function UninstallApp(arg1:string,arg2:string):Promise<string>;
 
 export function UploadFile(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function WaitElementGone(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:number):Promise<void>;
+
+export function WaitForElement(arg1:context.Context,arg2:string,arg3:main.ElementSelector,arg4:number):Promise<void>;

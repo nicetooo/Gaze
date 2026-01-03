@@ -26,13 +26,11 @@ import {
   WarningOutlined,
   SelectOutlined,
 } from "@ant-design/icons";
-import { useDeviceStore, useAutomationStore } from "../stores";
+import { useDeviceStore } from "../stores";
+import { useElementStore, type ElementSelector } from "../stores/elementStore";
 
-export interface ElementSelector {
-  type: "text" | "id" | "xpath" | "advanced" | "bounds";
-  value: string;
-  index?: number;
-}
+// Re-export ElementSelector for backward compatibility
+export type { ElementSelector } from "../stores/elementStore";
 
 interface ElementPickerProps {
   visible: boolean;
@@ -136,8 +134,12 @@ const ElementPicker: React.FC<ElementPickerProps> = ({
   onCancel,
 }) => {
   const { selectedDevice } = useDeviceStore();
-  const { uiHierarchy, isFetchingHierarchy, fetchUIHierarchy } =
-    useAutomationStore();
+  // Use unified element store instead of automation store
+  const {
+    hierarchy: uiHierarchy,
+    isLoading: isFetchingHierarchy,
+    fetchHierarchy: fetchUIHierarchy
+  } = useElementStore();
 
   const { t } = useTranslation();
   const { token } = theme.useToken();

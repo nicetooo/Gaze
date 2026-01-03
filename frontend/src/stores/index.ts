@@ -6,3 +6,5 @@ export { useLogcatStore } from './logcatStore';
 export { useUIStore } from './uiStore';
 export { useAutomationStore } from './automationStore';
 export type { TouchEvent, TouchScript, ScriptTask, TaskStep } from './automationStore';
+export { useElementStore } from './elementStore';
+export type { ElementSelector, UINode, SelectorSuggestion, ElementInfo } from './elementStore';
