@@ -357,6 +357,8 @@ const WorkflowView: React.FC = () => {
   const [workflowForm] = Form.useForm();
   const [packages, setPackages] = useState<any[]>([]);
   const [appsLoading, setAppsLoading] = useState(false);
+  const [editingWorkflowId, setEditingWorkflowId] = useState<string | null>(null);
+  const [editingWorkflowName, setEditingWorkflowName] = useState("");
 
   // Execution state
   const [isRunning, setIsRunning] = useState(false);
@@ -1451,6 +1453,48 @@ const WorkflowView: React.FC = () => {
     }
   };
 
+  const handleRenameWorkflow = async (id: string, newName: string) => {
+    if (!newName.trim()) {
+      message.error(t("workflow.name_required"));
+      return;
+    }
+
+    const workflow = workflows.find(w => w.id === id);
+    if (!workflow) return;
+
+    const updatedWorkflow = {
+      ...workflow,
+      name: newName.trim(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await (window as any).go.main.App.SaveWorkflow(updatedWorkflow);
+
+      // Update local state
+      setWorkflows(prev => {
+        const idx = prev.findIndex(w => w.id === id);
+        if (idx >= 0) {
+          const newList = [...prev];
+          newList[idx] = updatedWorkflow;
+          return newList;
+        }
+        return prev;
+      });
+
+      // Update selected workflow if it's the one being renamed
+      if (selectedWorkflow?.id === id) {
+        setSelectedWorkflow(updatedWorkflow);
+      }
+
+      setEditingWorkflowId(null);
+      setEditingWorkflowName("");
+      message.success(t("workflow.renamed"));
+    } catch (err) {
+      message.error(`Failed to rename workflow: ${err}`);
+    }
+  };
+
   const handlePauseWorkflow = async () => {
     if (!selectedDevice) return;
     await (window as any).go.main.App.PauseTask(selectedDevice);
@@ -1525,31 +1569,103 @@ const WorkflowView: React.FC = () => {
                 renderItem={(workflow) => (
                   <List.Item
                     onClick={() => {
-                      if (selectedWorkflow?.id !== workflow.id) {
+                      if (editingWorkflowId !== workflow.id && selectedWorkflow?.id !== workflow.id) {
                         setSelectedWorkflow(workflow);
                       }
                     }}
                     style={{
-                      cursor: 'pointer',
+                      cursor: editingWorkflowId === workflow.id ? 'default' : 'pointer',
                       padding: '12px 16px',
                       borderLeft: selectedWorkflow?.id === workflow.id ? `3px solid ${token.colorPrimary}` : '3px solid transparent',
                       backgroundColor: selectedWorkflow?.id === workflow.id ? token.colorPrimaryBg : undefined
                     }}
-                    actions={[
-                      <Popconfirm key="del" title={t("workflow.delete_confirm")} onConfirm={(e) => { e?.stopPropagation(); handleDeleteWorkflow(workflow.id); }}>
-                        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={(e) => e.stopPropagation()} />
-                      </Popconfirm>
-                    ]}
+                    actions={
+                      editingWorkflowId === workflow.id ? [
+                        <Button
+                          key="save"
+                          type="text"
+                          size="small"
+                          icon={<CheckCircleOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRenameWorkflow(workflow.id, editingWorkflowName);
+                          }}
+                        />,
+                        <Button
+                          key="cancel"
+                          type="text"
+                          size="small"
+                          icon={<StopOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingWorkflowId(null);
+                            setEditingWorkflowName("");
+                          }}
+                        />
+                      ] : [
+                        <Button
+                          key="edit"
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingWorkflowId(workflow.id);
+                            setEditingWorkflowName(workflow.name);
+                          }}
+                        />,
+                        <Popconfirm
+                          key="del"
+                          title={t("workflow.delete_confirm")}
+                          onConfirm={(e) => {
+                            e?.stopPropagation();
+                            handleDeleteWorkflow(workflow.id);
+                          }}
+                        >
+                          <Button
+                            type="text"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </Popconfirm>
+                      ]
+                    }
                   >
                     <div style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {workflow.name}
-                          {runningWorkflowIds.includes(workflow.id) && (
-                            <LoadingOutlined style={{ color: token.colorPrimary, fontSize: 12 }} />
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: token.colorTextSecondary }}>{workflow.steps.length} steps</div>
+                        {editingWorkflowId === workflow.id ? (
+                          <Input
+                            size="small"
+                            value={editingWorkflowName}
+                            onChange={(e) => setEditingWorkflowName(e.target.value)}
+                            onPressEnter={(e) => {
+                              e.stopPropagation();
+                              handleRenameWorkflow(workflow.id, editingWorkflowName);
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            autoFocus
+                            style={{ fontWeight: 500 }}
+                          />
+                        ) : (
+                          <div
+                            style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setEditingWorkflowId(workflow.id);
+                              setEditingWorkflowName(workflow.name);
+                            }}
+                          >
+                            {workflow.name}
+                            {runningWorkflowIds.includes(workflow.id) && (
+                              <LoadingOutlined style={{ color: token.colorPrimary, fontSize: 12 }} />
+                            )}
+                          </div>
+                        )}
+                        {editingWorkflowId !== workflow.id && (
+                          <div style={{ fontSize: 12, color: token.colorTextSecondary }}>{workflow.steps.length} steps</div>
+                        )}
                       </div>
                     </div>
                   </List.Item>

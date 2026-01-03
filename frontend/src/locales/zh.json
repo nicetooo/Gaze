@@ -660,6 +660,8 @@
     "error": "工作流出错",
     "stopped": "工作流已停止",
     "deleted": "工作流已删除",
+    "renamed": "工作流已重命名",
+    "name_required": "工作流名称不能为空",
     "execute_step": "执行此步骤",
     "step_executed": "步骤已执行",
     "branch_conditions": "分支条件",

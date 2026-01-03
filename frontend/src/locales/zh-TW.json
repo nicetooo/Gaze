@@ -611,6 +611,8 @@
     "error": "工作流出錯",
     "stopped": "工作流已停止",
     "deleted": "工作流已刪除",
+    "renamed": "工作流已重新命名",
+    "name_required": "工作流名稱不能為空",
     "no_workflows": "暫無工作流",
     "select_or_create": "請選擇或建立一個工作流",
     "edit_step": "編輯步驟",

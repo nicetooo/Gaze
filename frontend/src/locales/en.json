@@ -640,6 +640,8 @@
     "resume": "Resume",
     "saved": "Workflow saved",
     "deleted": "Workflow deleted",
+    "renamed": "Workflow renamed",
+    "name_required": "Workflow name is required",
     "no_workflows": "No workflows yet",
     "select_or_create": "Select a workflow or create a new one",
     "name": "Workflow Name",

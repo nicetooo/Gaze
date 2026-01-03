@@ -596,6 +596,8 @@
     "error": "워크플로 오류",
     "stopped": "워크플로가 중지되었습니다",
     "deleted": "워크플로가 삭제되었습니다",
+    "renamed": "워크플로 이름이 변경되었습니다",
+    "name_required": "워크플로 이름은 필수입니다",
     "no_workflows": "워크플로가 없습니다",
     "select_or_create": "워크플로를 선택하거나 새로 만드세요",
     "edit_step": "단계 편집",
