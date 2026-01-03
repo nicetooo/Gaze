@@ -33,6 +33,7 @@
     "proxy": "网络代理",
     "inspector": "UI 分析",
     "automation": "触控自动化",
+    "recording": "触控录制",
     "workflow": "工作流编排"
   },
   "about": {
@@ -566,6 +567,7 @@
     "op_equals": "等于",
     "op_starts": "开头",
     "op_ends": "结尾",
+    "convert": "转换",
     "convert_to_workflow": "转换为工作流",
     "converted_success": "已成功转换为工作流",
     "convert_failed": "转换失败",
@@ -784,6 +786,18 @@
     "pre_wait": "执行前等待",
     "post_delay": "执行后等待",
     "waiting": "等待中...",
-    "execution_log": "执行日志"
+    "execution_log": "执行日志",
+    "converted_suffix": " (已转换)",
+    "converted_desc": "于 {{date}} 从录制转换",
+    "branch_true": "成立",
+    "branch_false": "不成立",
+    "error_device_not_found": "未找到设备",
+    "error_empty_steps": "运行中止：工作流没有步骤",
+    "generated_step_name": {
+      "click": "点击",
+      "long_press": "长按",
+      "swipe": "滑动",
+      "wait": "等待"
+    }
   }
 }

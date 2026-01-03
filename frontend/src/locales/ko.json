@@ -32,7 +32,9 @@
     "mirror": "화면 미러링",
     "proxy": "네트워크 프록시",
     "inspector": "UI 분석",
-    "automation": "터치 자동화"
+    "automation": "터치 자동화",
+    "recording": "터치 녹화",
+    "workflow": "워크플로"
   },
   "about": {
     "title": "Gaze 정보",
@@ -549,7 +551,14 @@
     "op_contains": "포함",
     "op_equals": "일치",
     "op_starts": "시작",
-    "op_ends": "끝"
+    "op_ends": "끝",
+    "convert": "변환",
+    "convert_to_workflow": "워크플로로 변환",
+    "converted_success": "워크플로로 성공적으로 변환되었습니다",
+    "convert_failed": "변환 실패",
+    "no_events_to_convert": "변환할 이벤트가 없습니다",
+    "execute_event": "이 이벤트 실행",
+    "event_executed": "이벤트가 실행되었습니다"
   },
   "workflow": {
     "title": "워크플로 편성",
@@ -671,6 +680,19 @@
     "execution_control": "실행 제어",
     "pre_wait": "실행 전 대기",
     "post_delay": "실행 후 대기",
-    "waiting": "대기 중..."
+    "waiting": "대기 중...",
+    "converted_suffix": " (변환됨)",
+    "converted_desc": "{{date}}에 녹화에서 변환됨",
+    "branch_true": "참 (True)",
+    "branch_false": "거짓 (False)",
+    "error_device_not_found": "장치를 찾을 수 없음",
+    "error_empty_steps": "실행 중단: 워크플로에 단계가 없습니다",
+    "node_deleted_reconnected": "노드가 삭제되고 워크플로가 자동으로 다시 연결되었습니다",
+    "generated_step_name": {
+      "click": "클릭",
+      "long_press": "길게 누르기",
+      "swipe": "스와이프",
+      "wait": "대기"
+    }
   }
 }

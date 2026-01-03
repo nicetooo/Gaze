@@ -32,7 +32,9 @@
     "mirror": "画面ミラーリング",
     "proxy": "ネットワークプロキシ",
     "inspector": "UI 分析",
-    "automation": "タッチ自動化"
+    "automation": "タッチ自動化",
+    "recording": "タッチ記録",
+    "workflow": "ワークフロー"
   },
   "about": {
     "title": "Gaze について",
@@ -549,7 +551,14 @@
     "op_contains": "含む",
     "op_equals": "一致",
     "op_starts": "開始",
-    "op_ends": "終了"
+    "op_ends": "終了",
+    "convert": "変換",
+    "convert_to_workflow": "ワークフローに変換",
+    "converted_success": "ワークフローに正常に変換されました",
+    "convert_failed": "変換に失敗しました",
+    "no_events_to_convert": "変換するイベントがありません",
+    "execute_event": "このイベントを実行",
+    "event_executed": "イベントが実行されました"
   },
   "workflow": {
     "title": "ワークフロー編成",
@@ -671,6 +680,19 @@
     "execution_control": "実行制御",
     "pre_wait": "実行前待機",
     "post_delay": "実行後待機",
-    "waiting": "待機中..."
+    "waiting": "待機中...",
+    "converted_suffix": " (変換済み)",
+    "converted_desc": "{{date}} に録画から変換されました",
+    "branch_true": "True (真)",
+    "branch_false": "False (偽)",
+    "error_device_not_found": "デバイスが見つかりません",
+    "error_empty_steps": "実行中止: ワークフローにステップがありません",
+    "node_deleted_reconnected": "ノードが削除され、ワークフローが自動再接続されました",
+    "generated_step_name": {
+      "click": "クリック",
+      "long_press": "長押し",
+      "swipe": "スワイプ",
+      "wait": "待機"
+    }
   }
 }

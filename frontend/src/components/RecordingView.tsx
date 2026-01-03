@@ -249,7 +249,7 @@ const RecordingView: React.FC = () => {
     steps.push({
       id: startId,
       type: 'start',
-      name: 'Start',
+      name: t('workflow.step_type.start'),
       posX: 250,
       posY: 50,
     } as main.WorkflowStep);
@@ -261,7 +261,7 @@ const RecordingView: React.FC = () => {
         steps.push({
           id: `step_wait_${now}_${idx}`,
           type: 'wait',
-          name: `Wait ${delay}ms`,
+          name: `${t('workflow.generated_step_name.wait')} ${delay}ms`,
           value: String(delay),
           loop: 1,
           postDelay: 0,
@@ -289,7 +289,7 @@ const RecordingView: React.FC = () => {
           steps.push({
             id,
             type: 'click_element',
-            name: buildStepName('Click', event, `Click ${idx + 1}`),
+            name: buildStepName(t('workflow.generated_step_name.click'), event, `${t('workflow.generated_step_name.click')} ${idx + 1}`),
             selector: { ...selector },
             loop: 1,
             postDelay: 0,
@@ -309,7 +309,7 @@ const RecordingView: React.FC = () => {
           steps.push({
             id,
             type: 'click_element',
-            name: `Click (${event.x}, ${event.y})`,
+            name: `${t('workflow.generated_step_name.click')} (${event.x}, ${event.y})`,
             selector: { type: 'bounds', value: bounds, index: 0 },
             loop: 1,
             postDelay: 0,
@@ -324,7 +324,7 @@ const RecordingView: React.FC = () => {
           steps.push({
             id,
             type: 'long_click_element',
-            name: buildStepName('Long Click', event, `Long Click ${idx + 1}`),
+            name: buildStepName(t('workflow.generated_step_name.long_press'), event, `${t('workflow.generated_step_name.long_press')} ${idx + 1}`),
             selector: { ...selector },
             loop: 1,
             postDelay: 0,
@@ -336,7 +336,7 @@ const RecordingView: React.FC = () => {
           steps.push({
             id,
             type: 'adb',
-            name: `Long Press (${event.x}, ${event.y})`,
+            name: `${t('workflow.generated_step_name.long_press')} (${event.x}, ${event.y})`,
             value: `shell input swipe ${event.x} ${event.y} ${event.x} ${event.y} ${event.duration || 1000}`,
             loop: 1,
             postDelay: 0,
@@ -349,7 +349,7 @@ const RecordingView: React.FC = () => {
         steps.push({
           id,
           type: 'adb',
-          name: `Swipe ${idx + 1}`,
+          name: `${t('workflow.generated_step_name.swipe')} ${idx + 1}`,
           value: `shell input swipe ${event.x} ${event.y} ${event.x2 || event.x} ${event.y2 || event.y} ${event.duration || 300}`,
           loop: 1,
           postDelay: 0,
@@ -361,7 +361,7 @@ const RecordingView: React.FC = () => {
         steps.push({
           id,
           type: 'wait',
-          name: `Wait ${idx + 1}`,
+          name: `${t('workflow.generated_step_name.wait')} ${idx + 1}`,
           value: String(event.duration || 1000),
           loop: 1,
           postDelay: 0,
@@ -378,8 +378,8 @@ const RecordingView: React.FC = () => {
 
     const newWorkflow = new (main as any).Workflow({
       id: `wf_converted_${now}`,
-      name: `${script.name} (Converted)`,
-      description: `Converted from recording on ${new Date().toLocaleString()}`,
+      name: `${script.name}${t('workflow.converted_suffix')}`,
+      description: t('workflow.converted_desc', { date: new Date().toLocaleString() }),
       steps: steps,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

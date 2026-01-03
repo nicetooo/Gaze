@@ -565,7 +565,14 @@
     "op_contains": "contains",
     "op_equals": "equals",
     "op_starts": "starts with",
-    "op_ends": "ends with"
+    "op_ends": "ends with",
+    "convert": "Convert",
+    "convert_to_workflow": "Convert to Workflow",
+    "converted_success": "Successfully converted to workflow",
+    "convert_failed": "Conversion failed",
+    "no_events_to_convert": "No events to convert",
+    "execute_event": "Execute this event",
+    "event_executed": "Event executed"
   },
   "recording": {
     "title": "Touch Recording",
@@ -777,6 +784,18 @@
     "execution_control": "Execution Control",
     "pre_wait": "Wait Before",
     "post_delay": "Wait After",
-    "waiting": "Waiting..."
+    "waiting": "Waiting...",
+    "converted_suffix": " (Converted)",
+    "converted_desc": "Converted from recording on {{date}}",
+    "branch_true": "True",
+    "branch_false": "False",
+    "error_device_not_found": "Device not found",
+    "error_empty_steps": "Run aborted: Workflow has 0 steps.",
+    "generated_step_name": {
+      "click": "Click",
+      "long_press": "Long Press",
+      "swipe": "Swipe",
+      "wait": "Wait"
+    }
   }
 }

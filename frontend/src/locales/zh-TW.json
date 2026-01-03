@@ -32,7 +32,9 @@
     "mirror": "投屏控制",
     "proxy": "網路代理",
     "inspector": "UI 分析",
-    "automation": "觸控自動化"
+    "automation": "觸控自動化",
+    "recording": "觸控錄製",
+    "workflow": "工作流編排"
   },
   "about": {
     "title": "關於 Gaze",
@@ -564,7 +566,14 @@
     "op_contains": "包含",
     "op_equals": "等於",
     "op_starts": "開頭",
-    "op_ends": "結尾"
+    "op_ends": "結尾",
+    "convert": "轉換",
+    "convert_to_workflow": "轉換為工作流",
+    "converted_success": "已成功轉換為工作流",
+    "convert_failed": "轉換失敗",
+    "no_events_to_convert": "沒有可轉換的事件",
+    "execute_event": "執行此事件",
+    "event_executed": "事件已執行"
   },
   "workflow": {
     "title": "工作流編排",
@@ -686,6 +695,19 @@
     "execution_control": "執行控制",
     "pre_wait": "執行前等待",
     "post_delay": "執行後等待",
-    "waiting": "等待中..."
+    "waiting": "等待中...",
+    "converted_suffix": " (已轉換)",
+    "converted_desc": "於 {{date}} 從錄製轉換",
+    "branch_true": "成立",
+    "branch_false": "不成立",
+    "error_device_not_found": "未找到裝置",
+    "error_empty_steps": "運行中止：工作流沒有步驟",
+    "node_deleted_reconnected": "節點已刪除，工作流已自動重連",
+    "generated_step_name": {
+      "click": "點擊",
+      "long_press": "長按",
+      "swipe": "滑動",
+      "wait": "等待"
+    }
   }
 }

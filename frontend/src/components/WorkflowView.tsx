@@ -302,7 +302,7 @@ const WorkflowNode = ({ data, selected }: any) => {
 
       {isBranch ? (
         <>
-          <div style={{ position: 'absolute', bottom: -14, left: '25%', fontSize: 9, color: token.colorSuccess, fontWeight: 'bold' }}>True</div>
+          <div style={{ position: 'absolute', bottom: -14, left: '25%', fontSize: 9, color: token.colorSuccess, fontWeight: 'bold' }}>{t('workflow.branch_true')}</div>
           <Handle
             type="source"
             position={Position.Bottom}
@@ -316,7 +316,7 @@ const WorkflowNode = ({ data, selected }: any) => {
             style={{ top: '70%', background: token.colorSuccess }}
           />
 
-          <div style={{ position: 'absolute', bottom: -14, right: '25%', fontSize: 9, color: token.colorError, fontWeight: 'bold' }}>False</div>
+          <div style={{ position: 'absolute', bottom: -14, right: '25%', fontSize: 9, color: token.colorError, fontWeight: 'bold' }}>{t('workflow.branch_false')}</div>
           <Handle
             type="source"
             position={Position.Bottom}
@@ -682,7 +682,7 @@ const WorkflowView: React.FC = () => {
               target: step.trueStepId,
               type: 'smoothstep',
               sourceHandle: step.trueSource || 'true',
-              label: 'True',
+              label: t('workflow.branch_true'),
               style: { stroke: token.colorSuccess },
               labelStyle: { fill: token.colorSuccess, fontWeight: 700 },
               markerEnd: { type: MarkerType.ArrowClosed, color: token.colorSuccess }
@@ -700,7 +700,7 @@ const WorkflowView: React.FC = () => {
               target: step.falseStepId,
               type: 'smoothstep',
               sourceHandle: step.falseSource || 'false',
-              label: 'False',
+              label: t('workflow.branch_false'),
               style: { stroke: token.colorError },
               labelStyle: { fill: token.colorError, fontWeight: 700 },
               markerEnd: { type: MarkerType.ArrowClosed, color: token.colorError }
@@ -1204,7 +1204,7 @@ const WorkflowView: React.FC = () => {
 
     const deviceObj = useDeviceStore.getState().devices.find(d => d.id === selectedDevice);
     if (!deviceObj) {
-      message.error("Device not found");
+      message.error(t("workflow.error_device_not_found"));
       return;
     }
 
@@ -1212,7 +1212,7 @@ const WorkflowView: React.FC = () => {
     if (!workflowToRun) return;
 
     if (workflowToRun.steps.length === 0) {
-      message.warning("Run aborted: Workflow has 0 steps.");
+      message.warning(t("workflow.error_empty_steps"));
       return;
     }
 
@@ -1425,7 +1425,7 @@ const WorkflowView: React.FC = () => {
   const handleStopWorkflow = async () => {
     const deviceObj = useDeviceStore.getState().devices.find(d => d.id === selectedDevice);
     if (!deviceObj) {
-      message.error("Device not found");
+      message.error(t("workflow.error_device_not_found"));
       return;
     }
 
