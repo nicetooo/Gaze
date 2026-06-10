@@ -13,8 +13,6 @@ import { main } from '../../wailsjs/go/models';
 
 // @ts-ignore
 const EventsOn = (window as any).runtime?.EventsOn;
-// @ts-ignore
-const EventsOff = (window as any).runtime?.EventsOff;
 
 // ========================================
 // Types
@@ -371,7 +369,9 @@ export const usePerfStore = create<PerfState>()(
         }
       };
 
-      EventsOn('session-events-batch', handler);
+      // 'session-events-batch' 是共享通道：用 EventsOn 返回的 cancel 函数精确退订，
+      // EventsOff(name) 会误删其他 store/组件的监听器
+      const offBatch = EventsOn('session-events-batch', handler);
 
       // Also listen for perf status changes
       const statusHandler = (status: any) => {
@@ -385,11 +385,11 @@ export const usePerfStore = create<PerfState>()(
         }
       };
 
-      EventsOn('perf-status', statusHandler);
+      const offStatus = EventsOn('perf-status', statusHandler);
 
       return () => {
-        EventsOff?.('session-events-batch', handler);
-        EventsOff?.('perf-status', statusHandler);
+        offBatch?.();
+        offStatus?.();
       };
     },
   }))

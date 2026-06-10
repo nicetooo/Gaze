@@ -15,11 +15,19 @@ fi
 
 echo "🚀 准备发布版本: $VERSION"
 
-# 1. 检查是否有未提交的改动
+# 1. 检查是否有未提交的改动（仅自动提交已跟踪文件，避免把未跟踪的大文件/临时文件扫进发布提交）
 if [[ -n $(git status -s) ]]; then
-    echo "📦 发现未提交的改动，正在自动提交..."
-    git add .
-    git commit -m "chore: release $VERSION"
+    echo "📦 发现未提交的改动，正在自动提交（仅已跟踪文件）..."
+    git add -u
+    if [[ -n $(git diff --cached --name-only) ]]; then
+        git commit -m "chore: release $VERSION"
+    fi
+fi
+
+# 提醒未跟踪文件不会进入发布提交
+if [[ -n $(git status -s) ]]; then
+    echo "⚠️  以下未跟踪/未提交文件不会包含在本次发布中，如需提交请手动 git add 后重新运行："
+    git status -s
 fi
 
 # 2. 检查标签是否已存在

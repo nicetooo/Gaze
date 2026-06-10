@@ -16,6 +16,36 @@ type WorkflowWatcher struct {
 	watcher *fsnotify.Watcher
 	stopCh  chan struct{}
 	mu      sync.Mutex
+
+	selfWriteMu sync.Mutex
+	selfWrites  map[string]time.Time // safeName -> time of our own write/delete
+}
+
+// MarkSelfWrite records a file write/delete initiated by this process, so the
+// watcher can skip the resulting fsnotify events (prevent self-triggering).
+// workflowId must be the sanitized file name (safeName), matching what the
+// watcher extracts from the file path.
+func (w *WorkflowWatcher) MarkSelfWrite(workflowId string) {
+	w.selfWriteMu.Lock()
+	defer w.selfWriteMu.Unlock()
+	if w.selfWrites == nil {
+		w.selfWrites = make(map[string]time.Time)
+	}
+	w.selfWrites[workflowId] = time.Now()
+}
+
+func (w *WorkflowWatcher) isSelfWrite(workflowId string) bool {
+	w.selfWriteMu.Lock()
+	defer w.selfWriteMu.Unlock()
+	t, ok := w.selfWrites[workflowId]
+	if !ok {
+		return false
+	}
+	if time.Since(t) < time.Second { // debounce delay (300ms) + margin
+		return true
+	}
+	delete(w.selfWrites, workflowId) // lazily evict expired entries
+	return false
 }
 
 // NewWorkflowWatcher creates a new workflow directory watcher
@@ -71,15 +101,9 @@ func (w *WorkflowWatcher) Stop() {
 func (w *WorkflowWatcher) watch() {
 	// Debounce: wait for events to settle before notifying
 	var debounceTimer *time.Timer
-	var lastEvent time.Time
 	debounceDelay := 300 * time.Millisecond
 
 	notifyChange := func(action, workflowId string) {
-		// Skip if too soon after the last internal save (prevent self-triggering)
-		if time.Since(lastEvent) < 100*time.Millisecond {
-			return
-		}
-
 		if !w.app.mcpMode && w.app.ctx != nil {
 			wailsRuntime.EventsEmit(w.app.ctx, "workflow-list-changed", map[string]interface{}{
 				"action":     action,
@@ -114,6 +138,13 @@ func (w *WorkflowWatcher) watch() {
 			// Extract workflow ID from filename
 			workflowId := strings.TrimSuffix(filepath.Base(event.Name), ".json")
 
+			// Skip events caused by our own SaveWorkflow/DeleteWorkflow before
+			// touching the shared debounce timer, so a self-write can't swallow
+			// a pending notification for an external change to another workflow
+			if w.isSelfWrite(workflowId) {
+				continue
+			}
+
 			// Debounce: reset timer on each event
 			if debounceTimer != nil {
 				debounceTimer.Stop()
@@ -132,7 +163,6 @@ func (w *WorkflowWatcher) watch() {
 			}
 
 			if action != "" {
-				lastEvent = time.Now()
 				debounceTimer = time.AfterFunc(debounceDelay, func() {
 					notifyChange(action, workflowId)
 				})

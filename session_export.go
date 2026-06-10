@@ -387,8 +387,7 @@ func (a *App) importSessionFromFile(inputPath string) (string, error) {
 		}
 
 		// Save to recordings directory
-		homeDir, _ := os.UserHomeDir()
-		recordDir := filepath.Join(homeDir, ".adbGUI", "recordings")
+		recordDir := a.GetRecordingsDir()
 		os.MkdirAll(recordDir, 0755)
 
 		timestamp := time.Now().Format("2006-01-02_15-04-05")

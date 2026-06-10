@@ -70,6 +70,10 @@ func (a *App) SaveWorkflow(workflow Workflow) error {
 		return fmt.Errorf("failed to marshal workflow: %w", err)
 	}
 
+	if a.workflowWatcher != nil {
+		a.workflowWatcher.MarkSelfWrite(safeName)
+	}
+
 	if err := os.WriteFile(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write workflow file: %w", err)
 	}
@@ -160,6 +164,10 @@ func (a *App) DeleteWorkflow(id string) error {
 
 	safeName := regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(id, "_")
 	filePath := filepath.Join(workflowsPath, safeName+".json")
+
+	if a.workflowWatcher != nil {
+		a.workflowWatcher.MarkSelfWrite(safeName)
+	}
 
 	if err := os.Remove(filePath); err != nil {
 		if os.IsNotExist(err) {

@@ -488,7 +488,7 @@ missing required fields (id, timestamp, deviceId, sessionId).
 MINIMAL EVENT DATA:
   {
     "source": "network",
-    "type": "http_request",
+    "type": "network_request",
     "level": "info",
     "title": "GET /api/users",
     "data": {
@@ -507,7 +507,7 @@ FULL EVENT DATA EXAMPLE:
     "relativeTime": 1000,
     "source": "network",
     "category": "network",
-    "type": "http_request",
+    "type": "network_request",
     "level": "info",
     "title": "POST /api/tracking",
     "data": {
@@ -523,7 +523,7 @@ FULL EVENT DATA EXAMPLE:
 EXAMPLE:
   plugin_test_custom \
     script='const plugin: Plugin = { onEvent: (e, ctx) => { ... } }' \
-    event_data='{"source":"network","type":"http_request","title":"Test","data":{"url":"https://example.com"}}'
+    event_data='{"source":"network","type":"network_request","title":"Test","data":{"url":"https://example.com"}}'
 
 RETURNS: Same detailed result as plugin_test_detailed`),
 			mcp.WithString("script",
@@ -607,7 +607,7 @@ COMMON USE CASE:
 
 FILTERS:
   - sources: Array of event sources (e.g., ["network", "logcat", "app"])
-  - types: Array of event types (e.g., ["http_request", "websocket_message"])
+  - types: Array of event types (e.g., ["network_request", "websocket_message"])
   - limit: Number of events to return (default: 20, max: 100)
 
 EXAMPLE:
@@ -615,7 +615,7 @@ EXAMPLE:
   plugin_sample_events \
     session_id="session-abc" \
     sources='["network"]' \
-    types='["http_request"]' \
+    types='["network_request"]' \
     limit=5
 
 RETURNS:
@@ -628,7 +628,7 @@ RETURNS:
 				mcp.Description("JSON array of event sources (e.g., [\"network\",\"logcat\"])"),
 			),
 			mcp.WithString("types",
-				mcp.Description("JSON array of event types (e.g., [\"http_request\"])"),
+				mcp.Description("JSON array of event types (e.g., [\"network_request\"])"),
 			),
 			mcp.WithNumber("limit",
 				mcp.Description("Number of events to return (default: 20, max: 100)"),

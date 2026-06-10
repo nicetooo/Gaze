@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 
+	"Gaze/proxy"
+
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
@@ -737,39 +739,5 @@ func (r *ProtoRegistry) GetAvailableMessageTypes() []string {
 
 // matchWildcard performs simple wildcard matching using proxy.MatchPattern.
 func matchWildcard(pattern, url string) bool {
-	// Simple wildcard: * matches any sequence of characters
-	return wildcardMatch(pattern, url)
-}
-
-// wildcardMatch is a simple wildcard matcher supporting *.
-func wildcardMatch(pattern, s string) bool {
-	if pattern == "*" {
-		return true
-	}
-	// Split pattern by * and match sequentially
-	parts := strings.Split(pattern, "*")
-	if len(parts) == 1 {
-		return pattern == s
-	}
-
-	pos := 0
-	for i, part := range parts {
-		if part == "" {
-			continue
-		}
-		idx := strings.Index(s[pos:], part)
-		if idx < 0 {
-			return false
-		}
-		if i == 0 && idx != 0 {
-			// First part must match at start if pattern doesn't start with *
-			return false
-		}
-		pos += idx + len(part)
-	}
-	// If pattern doesn't end with *, the string must end at pos
-	if !strings.HasSuffix(pattern, "*") && pos != len(s) {
-		return false
-	}
-	return true
+	return proxy.MatchPattern(url, pattern)
 }

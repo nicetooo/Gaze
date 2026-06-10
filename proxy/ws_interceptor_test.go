@@ -325,6 +325,66 @@ func TestWSFrameParser_OversizedFrame(t *testing.T) {
 	}
 }
 
+func TestWSFrameParser_MaxUint64LengthFrame(t *testing.T) {
+	var received []WSMessage
+	parser := newWSFrameParser("conn1", "receive", "", func(msg WSMessage) {
+		received = append(received, msg)
+	})
+
+	// RFC 6455 violation: 64-bit length with the MSB set. The naive
+	// total = offset + payloadLen computation would overflow uint64 and
+	// consume almost nothing — must be rejected outright instead.
+	header := []byte{0x81, 127}
+	lenBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(lenBytes, ^uint64(0)) // 2^64-1
+	header = append(header, lenBytes...)
+	parser.feed(append(header, []byte("garbage")...))
+
+	if len(received) != 0 {
+		t.Fatalf("Protocol-violating frame must not emit messages, got %d", len(received))
+	}
+
+	// Parser must still handle a clean frame afterwards (buffer was dropped)
+	parser.feed(buildWSFrame(true, 1, false, []byte("recovered")))
+	if len(received) != 1 || received[0].Payload != "recovered" {
+		t.Fatalf("Expected recovery after protocol violation, got %v", received)
+	}
+}
+
+func TestWSFrameParser_OversizedFrameThenNormalFrame(t *testing.T) {
+	var received []WSMessage
+	parser := newWSFrameParser("conn1", "receive", "", func(msg WSMessage) {
+		received = append(received, msg)
+	})
+
+	// Build a complete 20MB frame and feed it in chunks, followed by a normal
+	// frame. The parser must skip exactly the oversized frame and stay aligned.
+	bigPayload := make([]byte, 20*1024*1024)
+	bigFrame := buildWSFrame(true, 1, false, bigPayload)
+	const chunkSize = 32 * 1024
+	for i := 0; i < len(bigFrame); i += chunkSize {
+		end := i + chunkSize
+		if end > len(bigFrame) {
+			end = len(bigFrame)
+		}
+		parser.feed(bigFrame[i:end])
+	}
+
+	if len(received) != 0 {
+		t.Fatalf("Oversized frame should be skipped, got %d messages", len(received))
+	}
+
+	normalFrame := buildWSFrame(true, 1, false, []byte("hello after big frame"))
+	parser.feed(normalFrame)
+
+	if len(received) != 1 {
+		t.Fatalf("Expected 1 message after oversized frame, got %d", len(received))
+	}
+	if received[0].Payload != "hello after big frame" {
+		t.Errorf("Expected payload 'hello after big frame', got %q", received[0].Payload)
+	}
+}
+
 // ==================== New Protobuf-related tests ====================
 
 func TestWSFrameParser_BinaryFramePreservesRawPayload(t *testing.T) {

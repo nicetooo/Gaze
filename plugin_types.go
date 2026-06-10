@@ -30,7 +30,7 @@ type PluginMetadata struct {
 // PluginFilters 插件事件过滤器
 type PluginFilters struct {
 	Sources    []string `json:"sources"`    // 事件来源过滤 (如 ["network", "logcat"])
-	Types      []string `json:"types"`      // 事件类型过滤 (如 ["http_request"])
+	Types      []string `json:"types"`      // 事件类型过滤 (如 ["network_request"])
 	Levels     []string `json:"levels"`     // 事件级别过滤 (如 ["error", "warn"])
 	URLPattern string   `json:"urlPattern"` // URL 通配符 (仅对 network 事件有效)
 	TitleMatch string   `json:"titleMatch"` // 标题正则匹配

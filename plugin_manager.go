@@ -500,8 +500,8 @@ func (pm *PluginManager) executePlugin(plugin *Plugin, event UnifiedEvent, sessi
 
 // injectHelpers 注入辅助函数到 VM
 func (pm *PluginManager) injectHelpers(vm *goja.Runtime, plugin *Plugin) error {
-	// matchURL: URL 通配符匹配
-	vm.Set("matchURL", func(pattern, url string) bool {
+	// matchURL: URL 通配符匹配（参数顺序与 context.matchURL 及 plugin.d.ts 声明一致）
+	vm.Set("matchURL", func(url, pattern string) bool {
 		return matchURLPattern(pattern, url)
 	})
 

@@ -25,7 +25,6 @@ import {
 enableMapSet();
 
 const EventsOn = (window as any).runtime?.EventsOn;
-const EventsOff = (window as any).runtime?.EventsOff;
 
 // ========================================
 // Store State & Actions
@@ -730,17 +729,17 @@ export const useEventStore = create<EventStoreState & EventStoreActions>()(
       };
 
       // 订阅事件 (统一使用 session-events-batch)
-      EventsOn('session-events-batch', handleEventsBatch);
-      EventsOn('session-started', handleSessionStarted);
-      EventsOn('session-ended', handleSessionEnded);
+      // 共享通道必须用 EventsOn 返回的 cancel 函数精确退订，
+      // EventsOff(name) 会误删 logcatStore/perfStore/ProxyView 的监听器
+      const offBatch = EventsOn('session-events-batch', handleEventsBatch);
+      const offStarted = EventsOn('session-started', handleSessionStarted);
+      const offEnded = EventsOn('session-ended', handleSessionEnded);
 
       // 返回取消订阅函数
       return () => {
-        if (EventsOff) {
-          EventsOff('session-events-batch');
-          EventsOff('session-started');
-          EventsOff('session-ended');
-        }
+        offBatch?.();
+        offStarted?.();
+        offEnded?.();
       };
     },
   }))

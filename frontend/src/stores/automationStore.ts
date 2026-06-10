@@ -21,7 +21,6 @@ import {
 } from '../../wailsjs/go/main/App';
 
 const EventsOn = (window as any).runtime.EventsOn;
-const EventsOff = (window as any).runtime.EventsOff;
 
 // Re-export types from Wails models for convenience
 export type TouchEvent = main.TouchEvent;
@@ -1006,37 +1005,29 @@ export const useAutomationStore = create<AutomationState>()(
         });
       });
 
-      EventsOn('touch-record-started', handleRecordStarted);
-      EventsOn('touch-record-stopped', handleRecordStopped);
-      EventsOn('touch-action-recorded', handleTouchActionRecorded);
-      EventsOn('touch-playback-started', handlePlaybackStarted);
-      EventsOn('touch-playback-progress', handlePlaybackProgress);
-      EventsOn('touch-playback-completed', handlePlaybackCompleted);
-      EventsOn('task-started', handleTaskStarted);
-      EventsOn('task-completed', handleTaskCompleted);
-      EventsOn('task-step-running', handleTaskStepRunning);
-      EventsOn('task-paused', handleTaskPaused);
-      EventsOn('task-resumed', handleTaskResumed);
-      EventsOn('recording-paused-for-selector', handleRecordingPausedForSelector);
-      EventsOn('recording-resumed', handleRecordingResumed);
+      // 用 EventsOn 返回的 cancel 函数精确退订：task-paused/task-resumed 与
+      // WorkflowView 共享，EventsOff(name) 会误删对方的监听器（其余通道顺带统一）
+      const cancels = [
+        EventsOn('touch-record-started', handleRecordStarted),
+        EventsOn('touch-record-stopped', handleRecordStopped),
+        EventsOn('touch-action-recorded', handleTouchActionRecorded),
+        EventsOn('touch-playback-started', handlePlaybackStarted),
+        EventsOn('touch-playback-progress', handlePlaybackProgress),
+        EventsOn('touch-playback-completed', handlePlaybackCompleted),
+        EventsOn('task-started', handleTaskStarted),
+        EventsOn('task-completed', handleTaskCompleted),
+        EventsOn('task-step-running', handleTaskStepRunning),
+        EventsOn('task-paused', handleTaskPaused),
+        EventsOn('task-resumed', handleTaskResumed),
+        EventsOn('recording-paused-for-selector', handleRecordingPausedForSelector),
+        EventsOn('recording-resumed', handleRecordingResumed),
+        offPreCaptureStarted,
+        offPreCaptureFinished,
+        offAnalysisStarted,
+      ];
 
       return () => {
-        EventsOff('touch-record-started');
-        EventsOff('touch-record-stopped');
-        EventsOff('touch-action-recorded');
-        EventsOff('touch-playback-started');
-        EventsOff('touch-playback-progress');
-        EventsOff('touch-playback-completed');
-        EventsOff('task-started');
-        EventsOff('task-completed');
-        EventsOff('task-step-running');
-        EventsOff('task-paused');
-        EventsOff('task-resumed');
-        EventsOff('recording-paused-for-selector');
-        EventsOff('recording-resumed');
-        EventsOff('recording-pre-capture-started');
-        EventsOff('recording-pre-capture-finished');
-        EventsOff('recording-analysis-started');
+        cancels.forEach((off) => off?.());
       };
     },
   }))

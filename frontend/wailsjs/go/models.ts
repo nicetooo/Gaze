@@ -2374,6 +2374,7 @@ export namespace tls {
 	    HandshakeComplete: boolean;
 	    DidResume: boolean;
 	    CipherSuite: number;
+	    CurveID: number;
 	    NegotiatedProtocol: string;
 	    NegotiatedProtocolIsMutual: boolean;
 	    ServerName: string;
@@ -2394,6 +2395,7 @@ export namespace tls {
 	        this.HandshakeComplete = source["HandshakeComplete"];
 	        this.DidResume = source["DidResume"];
 	        this.CipherSuite = source["CipherSuite"];
+	        this.CurveID = source["CurveID"];
 	        this.NegotiatedProtocol = source["NegotiatedProtocol"];
 	        this.NegotiatedProtocolIsMutual = source["NegotiatedProtocolIsMutual"];
 	        this.ServerName = source["ServerName"];

@@ -73,7 +73,7 @@ type UnifiedEvent struct {
 	// === 分类字段 ===
 	Source   EventSource   `json:"source"`   // 事件来源
 	Category EventCategory `json:"category"` // 事件大类
-	Type     string        `json:"type"`     // 具体类型 (如 "http_request", "activity_start")
+	Type     string        `json:"type"`     // 具体类型 (如 "network_request", "activity_start")
 	Level    EventLevel    `json:"level"`    // 事件级别
 
 	// === 内容字段 ===

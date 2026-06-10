@@ -117,6 +117,10 @@ type ProxyServer struct {
 	// regexCache caches compiled regular expressions to avoid recompilation per request.
 	regexCache   map[string]*regexp.Regexp
 	regexCacheMu sync.RWMutex
+
+	// debugLogFile is a lazily-opened persistent handle for debugLog output.
+	debugLogMu   sync.Mutex
+	debugLogFile *os.File
 }
 
 // cachedReqBody holds both the display text and raw bytes for a request body.
@@ -562,18 +566,23 @@ func (p *ProxyServer) simulateLatency() {
 }
 
 func (p *ProxyServer) debugLog(format string, args ...interface{}) {
-	// Disk IO is slow. Perform it asynchronously to never block the proxy pipeline.
+	// Keep a persistent handle (lazily opened) instead of open/close per line:
+	// appending to an open file is microseconds, far cheaper than the previous
+	// per-call goroutine + MkdirAll + open/close, and lines stay in order.
 	msg := fmt.Sprintf("[%s] ", time.Now().Format("15:04:05.000")) + fmt.Sprintf(format, args...) + "\n"
-	go func() {
-		_ = os.MkdirAll(".log", 0755)
-		logPath := filepath.Join(".log", "proxy_debug.log")
-		f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	p.debugLogMu.Lock()
+	defer p.debugLogMu.Unlock()
+	if p.debugLogFile == nil {
+		if err := os.MkdirAll(".log", 0755); err != nil {
+			return
+		}
+		f, err := os.OpenFile(filepath.Join(".log", "proxy_debug.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return
 		}
-		defer f.Close()
-		f.WriteString(msg)
-	}()
+		p.debugLogFile = f
+	}
+	p.debugLogFile.WriteString(msg)
 }
 
 // RequestLog contains details about a proxied request
@@ -1380,6 +1389,14 @@ func (p *ProxyServer) Stop() error {
 	p.reqBodyCache = make(map[string]cachedReqBody)
 	p.reqBodyCacheMu.Unlock()
 
+	// Close the debug log handle (in-flight debugLog calls reopen it lazily)
+	p.debugLogMu.Lock()
+	if p.debugLogFile != nil {
+		p.debugLogFile.Close()
+		p.debugLogFile = nil
+	}
+	p.debugLogMu.Unlock()
+
 	// Gracefully shutdown the server (wait for existing connections)
 	// This call is safe outside the lock and won't block port reuse
 	return server.Shutdown(context.Background())
@@ -1657,27 +1674,17 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 		return AnalyzedBody{}
 	}
 
-	// Log initial state
-	log.Printf("[analyzeBodyFull] Start: size=%d bytes, encoding=%q, contentType=%q", len(data), encoding, contentType)
-
-	// Log magic number if present
-	if len(data) >= 4 {
-		log.Printf("[analyzeBodyFull] Magic bytes: %02X %02X %02X %02X", data[0], data[1], data[2], data[3])
-	}
-
 	raw := data
 	decompressed := false // Track if decompression succeeded
 	// 1. Decompress if needed (Shadow copy only)
 	// First check Content-Encoding header
 	if strings.Contains(encoding, "gzip") {
-		log.Printf("[analyzeBodyFull] Attempting gzip decompression (from header)")
 		gr, err := gzip.NewReader(bytes.NewReader(data))
 		if err == nil {
 			decompressedData, err := io.ReadAll(gr)
 			if err == nil {
 				raw = decompressedData
 				decompressed = true
-				log.Printf("[analyzeBodyFull] Gzip decompression successful: %d -> %d bytes", len(data), len(raw))
 			} else {
 				log.Printf("[analyzeBodyFull] Gzip decompression failed: %v", err)
 			}
@@ -1686,31 +1693,26 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 			log.Printf("[analyzeBodyFull] Gzip reader creation failed: %v", err)
 		}
 	} else if strings.Contains(encoding, "br") {
-		log.Printf("[analyzeBodyFull] Attempting brotli decompression (from header)")
 		br := brotli.NewReader(bytes.NewReader(data))
 		decompressedData, err := io.ReadAll(br)
 		if err == nil {
 			raw = decompressedData
 			decompressed = true
-			log.Printf("[analyzeBodyFull] Brotli decompression successful: %d -> %d bytes", len(data), len(raw))
 		} else {
 			log.Printf("[analyzeBodyFull] Brotli decompression failed: %v", err)
 		}
 	} else if strings.Contains(encoding, "deflate") {
-		log.Printf("[analyzeBodyFull] Attempting deflate decompression (from header)")
 		fr := flate.NewReader(bytes.NewReader(data))
 		decompressedData, err := io.ReadAll(fr)
 		if err == nil {
 			raw = decompressedData
 			decompressed = true
-			log.Printf("[analyzeBodyFull] Deflate decompression successful: %d -> %d bytes", len(data), len(raw))
 		} else {
 			log.Printf("[analyzeBodyFull] Deflate decompression failed: %v", err)
 		}
 		fr.Close()
 	} else if strings.Contains(encoding, "zstd") {
 		// Try standard zstd decompression
-		log.Printf("[analyzeBodyFull] Attempting zstd decompression (from header, encoding=%q)", encoding)
 		decoder, err := zstd.NewReader(bytes.NewReader(data))
 		if err == nil {
 			decompressedData, err := io.ReadAll(decoder)
@@ -1718,7 +1720,6 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 			if err == nil {
 				raw = decompressedData
 				decompressed = true
-				log.Printf("[analyzeBodyFull] Zstd decompression successful: %d -> %d bytes", len(data), len(raw))
 			} else {
 				// Decompression failed - return error message directly
 				log.Printf("[analyzeBodyFull] Zstd decompression FAILED: %v", err)
@@ -1749,18 +1750,15 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 		}
 	} else {
 		// Auto-detect compression if Content-Encoding not set
-		log.Printf("[analyzeBodyFull] No Content-Encoding header, attempting auto-detection")
 
 		// 1. Check gzip magic number (0x1f 0x8b)
 		if len(data) >= 2 && data[0] == 0x1f && data[1] == 0x8b {
-			log.Printf("[analyzeBodyFull] Gzip magic number detected, attempting decompression")
 			gr, err := gzip.NewReader(bytes.NewReader(data))
 			if err == nil {
 				decompressedData, err := io.ReadAll(gr)
 				if err == nil {
 					raw = decompressedData
 					decompressed = true
-					log.Printf("[analyzeBodyFull] Gzip auto-detect decompression successful: %d -> %d bytes", len(data), len(raw))
 				} else {
 					log.Printf("[analyzeBodyFull] Gzip auto-detect decompression failed: %v", err)
 				}
@@ -1772,7 +1770,6 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 
 		// 2. Check zstd magic number (0x28 0xB5 0x2F 0xFD)
 		if !decompressed && len(data) >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD {
-			log.Printf("[analyzeBodyFull] Zstd magic number detected, attempting decompression")
 			decoder, err := zstd.NewReader(bytes.NewReader(data))
 			if err == nil {
 				decompressedData, err := io.ReadAll(decoder)
@@ -1780,7 +1777,6 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 				if err == nil {
 					raw = decompressedData
 					decompressed = true
-					log.Printf("[analyzeBodyFull] Zstd auto-detect decompression successful: %d -> %d bytes", len(data), len(raw))
 				} else {
 					// Auto-detected zstd but decompression failed
 					log.Printf("[analyzeBodyFull] Zstd auto-detect decompression FAILED: %v", err)
@@ -1801,13 +1797,9 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 			}
 		}
 
-		if !decompressed {
-			log.Printf("[analyzeBodyFull] No compression detected or auto-detection skipped")
-		}
 	}
 
 	// 2. Binary Detection
-	log.Printf("[analyzeBodyFull] Checking for binary data (null bytes in first 512 bytes)")
 	isBinary := false
 	limit := len(raw)
 	if limit > 512 {
@@ -1816,7 +1808,6 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 	for i := 0; i < limit; i++ {
 		if raw[i] == 0 {
 			isBinary = true
-			log.Printf("[analyzeBodyFull] Binary data detected (null byte at position %d)", i)
 			break
 		}
 	}
@@ -1827,13 +1818,9 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 		if decompressed {
 			// Successfully decompressed but result is binary (e.g. Protobuf)
 			msg = fmt.Sprintf("[Binary Data after decompression: %d bytes - possibly Protobuf/MessagePack/etc]", len(raw))
-			log.Printf("[analyzeBodyFull] Result: Binary data after successful decompression")
 		} else if encoding != "" {
 			// Had encoding header but data still binary (decompression might have failed silently)
 			msg = fmt.Sprintf("[Binary Data: %d bytes - encoding: %s]", len(raw), encoding)
-			log.Printf("[analyzeBodyFull] Result: Binary data with encoding header %q", encoding)
-		} else {
-			log.Printf("[analyzeBodyFull] Result: Binary data (no encoding)")
 		}
 		return AnalyzedBody{
 			Text:     msg,
@@ -1843,7 +1830,6 @@ func (p *ProxyServer) analyzeBodyFull(data []byte, encoding string, contentType 
 	}
 
 	// 3. String Truncation removed: Send full string to UI as requested
-	log.Printf("[analyzeBodyFull] Result: Text data, %d bytes", len(raw))
 	return AnalyzedBody{
 		Text: string(raw),
 	}

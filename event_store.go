@@ -13,8 +13,27 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	sqlite3 "github.com/mattn/go-sqlite3"
 )
+
+// init registers a custom SQLite driver exposing gz_text(), which transparently
+// decompresses gzip-compressed event_data so SQL LIKE can search inside it.
+// sql.Register panics on duplicate names, so this must run exactly once.
+func init() {
+	sql.Register("sqlite3_gaze", &sqlite3.SQLiteDriver{
+		ConnectHook: func(conn *sqlite3.SQLiteConn) error {
+			// gz_text: decompress gzip data to text; non-gzip data passes through
+			// unchanged (same semantics as decompressData)
+			return conn.RegisterFunc("gz_text", func(data []byte) string {
+				out, err := decompressData(data)
+				if err != nil {
+					return string(data)
+				}
+				return string(out)
+			}, true)
+		},
+	})
+}
 
 // ========================================
 // EventStore - SQLite 事件存储
@@ -317,7 +336,7 @@ func NewEventStore(dataDir string) (*EventStore, error) {
 
 	// 打开数据库连接
 	// WAL 模式支持并发读取，但写入仍需串行
-	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=-64000&_foreign_keys=ON&_busy_timeout=5000")
+	db, err := sql.Open("sqlite3_gaze", dbPath+"?_journal_mode=WAL&_synchronous=NORMAL&_cache_size=-64000&_foreign_keys=ON&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -858,6 +877,27 @@ type EventQueryResult struct {
 	HasMore bool           `json:"hasMore"`
 }
 
+// escapeFTS5Query 将用户输入转换为安全的 FTS5 MATCH 查询：
+// 按空白拆分 token，每个 token 用双引号包裹为短语（内部双引号翻倍），
+// token 间以空格连接（FTS5 隐式 AND）；末尾 * 保留为前缀匹配（"tok"* 语法）。
+// 防止 URL 冒号、AND/OR、不配对引号等输入触发 FTS5 语法错误。
+func escapeFTS5Query(input string) string {
+	fields := strings.Fields(input)
+	tokens := make([]string, 0, len(fields))
+	for _, f := range fields {
+		prefix := ""
+		if strings.HasSuffix(f, "*") && len(f) > 1 {
+			f = strings.TrimRight(f, "*")
+			prefix = "*"
+		}
+		if f == "" {
+			continue
+		}
+		tokens = append(tokens, `"`+strings.ReplaceAll(f, `"`, `""`)+`"`+prefix)
+	}
+	return strings.Join(tokens, " ")
+}
+
 // QueryEvents 查询事件 (优化版：不加载 event_data，只加载列表需要的字段)
 func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 	// 构建查询条件
@@ -936,17 +976,21 @@ func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 	var searchArgs []interface{}
 
 	// 全文搜索 (深度搜索: title + summary + event_data.data)
+	// event_data.data 可能是 gzip 压缩存储的（见 compressData），LIKE 前必须经
+	// gz_text() 解压，否则 ≥1KB 的网络请求体等大数据永远搜不到
 	if hasSearch {
 		searchPattern := "%" + q.SearchText + "%"
+		ftsQuery := escapeFTS5Query(q.SearchText)
 
-		if s.hasFTS {
+		if s.hasFTS && ftsQuery != "" {
 			// FTS5 搜索 title/summary + LIKE 搜索 event_data 详情内容
 			// 使用 LEFT JOIN，避免子查询性能问题
-			searchCondition = "(e.id IN (SELECT id FROM events_fts WHERE events_fts MATCH ?) OR COALESCE(ed.data, '') LIKE ?)"
-			searchArgs = []interface{}{q.SearchText, searchPattern}
+			searchCondition = "(e.id IN (SELECT id FROM events_fts WHERE events_fts MATCH ?) OR gz_text(COALESCE(ed.data, '')) LIKE ?)"
+			searchArgs = []interface{}{ftsQuery, searchPattern}
 		} else {
 			// 降级: LIKE 搜索 title/summary + event_data 详情内容
-			searchCondition = "(e.title LIKE ? OR COALESCE(e.summary, '') LIKE ? OR COALESCE(ed.data, '') LIKE ?)"
+			// （FTS 不可用，或输入转义后为空——如仅含空白/星号）
+			searchCondition = "(e.title LIKE ? OR COALESCE(e.summary, '') LIKE ? OR gz_text(COALESCE(ed.data, '')) LIKE ?)"
 			searchArgs = []interface{}{searchPattern, searchPattern, searchPattern}
 		}
 	}
@@ -994,6 +1038,7 @@ func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 			e.source, e.category, e.type, e.level, e.title, e.summary,
 			e.parent_id, e.step_id, e.trace_id,
 			e.aggregate_count, e.aggregate_first, e.aggregate_last,
+			e.tags, e.metadata, e.parent_event_id, e.generated_by_plugin,
 			ed.data`
 
 		fromClause := `FROM events e LEFT JOIN event_data ed ON e.id = ed.event_id`
@@ -1021,7 +1066,8 @@ func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 			SELECT id, session_id, device_id, timestamp, relative_time, duration,
 				source, category, type, level, title, summary,
 				parent_id, step_id, trace_id,
-				aggregate_count, aggregate_first, aggregate_last
+				aggregate_count, aggregate_first, aggregate_last,
+				tags, metadata, parent_event_id, generated_by_plugin
 			FROM events
 			%s
 			ORDER BY relative_time %s
@@ -1078,6 +1124,7 @@ func (s *EventStore) GetEvent(id string) (*UnifiedEvent, error) {
 			e.source, e.category, e.type, e.level, e.title, e.summary,
 			e.parent_id, e.step_id, e.trace_id,
 			e.aggregate_count, e.aggregate_first, e.aggregate_last,
+			e.tags, e.metadata, e.parent_event_id, e.generated_by_plugin,
 			ed.data
 		FROM events e
 		LEFT JOIN event_data ed ON e.id = ed.event_id
@@ -1087,10 +1134,27 @@ func (s *EventStore) GetEvent(id string) (*UnifiedEvent, error) {
 	return s.scanEventSingle(row)
 }
 
+// applyPluginFields 反序列化插件相关列 (tags/metadata/parent_event_id/generated_by_plugin) 到事件
+func applyPluginFields(event *UnifiedEvent, tags, metadata, parentEventID, generatedByPlugin sql.NullString) {
+	if tags.Valid && tags.String != "" {
+		if err := json.Unmarshal([]byte(tags.String), &event.Tags); err != nil {
+			LogWarn("event_store").Err(err).Str("eventId", event.ID).Msg("Failed to unmarshal event tags")
+		}
+	}
+	if metadata.Valid && metadata.String != "" {
+		if err := json.Unmarshal([]byte(metadata.String), &event.Metadata); err != nil {
+			LogWarn("event_store").Err(err).Str("eventId", event.ID).Msg("Failed to unmarshal event metadata")
+		}
+	}
+	event.ParentEventID = parentEventID.String
+	event.GeneratedByPlugin = generatedByPlugin.String
+}
+
 // scanEventRow 扫描事件行 (包含 data)
 func (s *EventStore) scanEventRow(rows *sql.Rows) (*UnifiedEvent, error) {
 	var event UnifiedEvent
 	var summary, parentID, stepID, traceID, data sql.NullString
+	var tags, metadata, parentEventID, generatedByPlugin sql.NullString
 	var source, category, level string
 
 	err := rows.Scan(
@@ -1100,6 +1164,7 @@ func (s *EventStore) scanEventRow(rows *sql.Rows) (*UnifiedEvent, error) {
 		&event.Title, &summary,
 		&parentID, &stepID, &traceID,
 		&event.AggregateCount, &event.AggregateFirst, &event.AggregateLast,
+		&tags, &metadata, &parentEventID, &generatedByPlugin,
 		&data,
 	)
 	if err != nil {
@@ -1113,6 +1178,7 @@ func (s *EventStore) scanEventRow(rows *sql.Rows) (*UnifiedEvent, error) {
 	event.ParentID = parentID.String
 	event.StepID = stepID.String
 	event.TraceID = traceID.String
+	applyPluginFields(&event, tags, metadata, parentEventID, generatedByPlugin)
 
 	if data.Valid && data.String != "" {
 		// 解压数据（自动检测是否压缩）
@@ -1132,6 +1198,7 @@ func (s *EventStore) scanEventRow(rows *sql.Rows) (*UnifiedEvent, error) {
 func (s *EventStore) scanEventRowWithoutData(rows *sql.Rows) (*UnifiedEvent, error) {
 	var event UnifiedEvent
 	var summary, parentID, stepID, traceID sql.NullString
+	var tags, metadata, parentEventID, generatedByPlugin sql.NullString
 	var source, category, level string
 
 	err := rows.Scan(
@@ -1141,6 +1208,7 @@ func (s *EventStore) scanEventRowWithoutData(rows *sql.Rows) (*UnifiedEvent, err
 		&event.Title, &summary,
 		&parentID, &stepID, &traceID,
 		&event.AggregateCount, &event.AggregateFirst, &event.AggregateLast,
+		&tags, &metadata, &parentEventID, &generatedByPlugin,
 	)
 	if err != nil {
 		return nil, err
@@ -1153,6 +1221,7 @@ func (s *EventStore) scanEventRowWithoutData(rows *sql.Rows) (*UnifiedEvent, err
 	event.ParentID = parentID.String
 	event.StepID = stepID.String
 	event.TraceID = traceID.String
+	applyPluginFields(&event, tags, metadata, parentEventID, generatedByPlugin)
 
 	return &event, nil
 }
@@ -1161,6 +1230,7 @@ func (s *EventStore) scanEventRowWithoutData(rows *sql.Rows) (*UnifiedEvent, err
 func (s *EventStore) scanEventSingle(row *sql.Row) (*UnifiedEvent, error) {
 	var event UnifiedEvent
 	var summary, parentID, stepID, traceID, data sql.NullString
+	var tags, metadata, parentEventID, generatedByPlugin sql.NullString
 	var source, category, level string
 
 	err := row.Scan(
@@ -1170,6 +1240,7 @@ func (s *EventStore) scanEventSingle(row *sql.Row) (*UnifiedEvent, error) {
 		&event.Title, &summary,
 		&parentID, &stepID, &traceID,
 		&event.AggregateCount, &event.AggregateFirst, &event.AggregateLast,
+		&tags, &metadata, &parentEventID, &generatedByPlugin,
 		&data,
 	)
 	if err == sql.ErrNoRows {
@@ -1186,6 +1257,7 @@ func (s *EventStore) scanEventSingle(row *sql.Row) (*UnifiedEvent, error) {
 	event.ParentID = parentID.String
 	event.StepID = stepID.String
 	event.TraceID = traceID.String
+	applyPluginFields(&event, tags, metadata, parentEventID, generatedByPlugin)
 
 	if data.Valid && data.String != "" {
 		// 解压数据（自动检测是否压缩）
@@ -1541,6 +1613,7 @@ func (s *EventStore) ExportSessionEvents(sessionID string) ([]UnifiedEvent, erro
 			e.source, e.category, e.type, e.level, e.title, e.summary,
 			e.parent_id, e.step_id, e.trace_id,
 			e.aggregate_count, e.aggregate_first, e.aggregate_last,
+			e.tags, e.metadata, e.parent_event_id, e.generated_by_plugin,
 			ed.data
 		FROM events e
 		LEFT JOIN event_data ed ON e.id = ed.event_id
@@ -1597,8 +1670,9 @@ func (s *EventStore) ImportSession(session *DeviceSession, events []UnifiedEvent
 			id, session_id, device_id, timestamp, relative_time, duration,
 			source, category, type, level, title, summary,
 			parent_id, step_id, trace_id,
-			aggregate_count, aggregate_first, aggregate_last
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			aggregate_count, aggregate_first, aggregate_last,
+			tags, metadata, parent_event_id, generated_by_plugin
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare insert event: %w", err)
@@ -1614,6 +1688,18 @@ func (s *EventStore) ImportSession(session *DeviceSession, events []UnifiedEvent
 	defer stmtData.Close()
 
 	for _, event := range events {
+		var tagsJSON, metadataJSON string
+		if len(event.Tags) > 0 {
+			if b, err := json.Marshal(event.Tags); err == nil {
+				tagsJSON = string(b)
+			}
+		}
+		if len(event.Metadata) > 0 {
+			if b, err := json.Marshal(event.Metadata); err == nil {
+				metadataJSON = string(b)
+			}
+		}
+
 		_, err = stmtEvent.Exec(
 			event.ID, event.SessionID, event.DeviceID,
 			event.Timestamp, event.RelativeTime, event.Duration,
@@ -1621,13 +1707,20 @@ func (s *EventStore) ImportSession(session *DeviceSession, events []UnifiedEvent
 			event.Title, nullString(event.Summary),
 			nullString(event.ParentID), nullString(event.StepID), nullString(event.TraceID),
 			event.AggregateCount, event.AggregateFirst, event.AggregateLast,
+			nullString(tagsJSON), nullString(metadataJSON),
+			nullString(event.ParentEventID), nullString(event.GeneratedByPlugin),
 		)
 		if err != nil {
 			return fmt.Errorf("insert event %s: %w", event.ID, err)
 		}
 
 		if len(event.Data) > 0 {
-			_, err = stmtData.Exec(event.ID, string(event.Data), len(event.Data))
+			compressedData, cerr := compressData([]byte(event.Data))
+			if cerr != nil {
+				LogWarn("event_store").Err(cerr).Str("eventId", event.ID).Msg("Failed to compress event data, using raw data")
+				compressedData = []byte(event.Data)
+			}
+			_, err = stmtData.Exec(event.ID, compressedData, len(event.Data))
 			if err != nil {
 				return fmt.Errorf("insert event data %s: %w", event.ID, err)
 			}

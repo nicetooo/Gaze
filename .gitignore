@@ -7,6 +7,13 @@ frontend/dist
 Gaze
 wails_dev.log
 *.test
+build.zip
+.opencode/
+
+# 根目录调试截图（screenshots/、build/、frontend/ 下的合法 PNG 不受影响）
+/plugin-*.png
+/plugins-*.png
+/session-list-*.png
 
 # 开发过程文档（规划/Bug/测试/决策等），仅本地使用，禁止提交
 docs/

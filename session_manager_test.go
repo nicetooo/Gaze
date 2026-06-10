@@ -402,6 +402,11 @@ func TestEndSession_CleansUpState(t *testing.T) {
 		t.Errorf("Expected no active session after EndSession, got %s", activeID)
 	}
 
+	// In-memory session state should be released (RingBuffer freed)
+	if s := app.eventPipeline.GetSession(sessionID); s != nil {
+		t.Errorf("Expected in-memory session state to be released after EndSession, got %+v", s)
+	}
+
 	// Session data should be updated in store
 	waitForPipeline()
 	stored, err := app.eventStore.GetSession(sessionID)

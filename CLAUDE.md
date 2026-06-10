@@ -41,7 +41,7 @@ Gaze 是一个跨平台的 Android 设备管理工具，使用 **Go + React** �
 | Source      | 描述         | 典型事件类型                                        |
 | ----------- | ------------ | --------------------------------------------------- |
 | `logcat`    | 设备日志     | logcat, logcat_aggregated                           |
-| `network`   | 网络请求     | http_request, websocket_message                     |
+| `network`   | 网络请求     | network_request, websocket_message                  |
 | `device`    | 设备状态     | battery_change, network_change, screen_change       |
 | `app`       | 应用生命周期 | app_start, app_stop, app_crash, app_anr             |
 | `touch`     | 触摸事件     | touch, gesture                                      |
@@ -66,7 +66,7 @@ Gaze 是一个跨平台的 Android 设备管理工具，使用 **Go + React** �
 a.eventPipeline.EmitRaw(
     deviceID,           // 设备 ID
     SourceNetwork,      // 事件来源
-    "http_request",     // 事件类型
+    "network_request",  // 事件类型
     LevelInfo,          // 事件级别
     "GET /api/users",   // 标题
     networkRequestData, // 详细数据 (会被 JSON 序列化)
@@ -114,7 +114,7 @@ a.eventPipeline.Emit(UnifiedEvent{
 
 3. **前端处理** (`frontend/src/stores/eventStore.ts`):
    ```typescript
-   // 事件会自动通过 "events-batch" 推送到前端
+   // 事件会自动通过 "session-events-batch" 推送到前端
    // 在 eventStore 中按需添加处理逻辑
    ```
 
@@ -647,7 +647,7 @@ log.Printf("Active session: %v", session)
 
 ```typescript
 // 在浏览器控制台监听事件
-window.runtime.EventsOn("events-batch", (events) => {
+window.runtime.EventsOn("session-events-batch", (events) => {
   console.log("Events received:", events);
 });
 ```

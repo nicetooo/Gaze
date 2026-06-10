@@ -43,7 +43,8 @@ type EventPipeline struct {
 	backpressure *BackpressureController
 
 	// 插件管理器
-	pluginManager *PluginManager
+	pluginManager  *PluginManager
+	pluginWarnOnce sync.Once
 
 	// 停止信号
 	stopChan chan struct{}
@@ -638,7 +639,9 @@ func (p *EventPipeline) processEvent(event UnifiedEvent) {
 			p.Emit(derived)
 		}
 	} else {
-		log.Printf("[EventPipeline] ⚠️ pluginManager is nil, skipping plugin processing")
+		p.pluginWarnOnce.Do(func() {
+			log.Printf("[EventPipeline] ⚠️ pluginManager is nil, plugin processing disabled")
+		})
 	}
 
 	// 8. 更新时间索引
@@ -775,6 +778,8 @@ func (p *EventPipeline) StartSession(deviceID, sessionType, name string, config 
 			if !p.mcpMode {
 				wailsRuntime.EventsEmit(p.wailsCtx, "session-ended", state.Session)
 			}
+			// 释放内存中的 Session 状态（含 1000 容量的 RecentEvents RingBuffer）
+			delete(p.sessions, oldID)
 		}
 	}
 
@@ -858,6 +863,9 @@ func (p *EventPipeline) EndSession(sessionID, status string) {
 	if !p.mcpMode {
 		wailsRuntime.EventsEmit(p.wailsCtx, "session-ended", state.Session)
 	}
+
+	// 释放内存中的 Session 状态（含 1000 容量的 RecentEvents RingBuffer）
+	delete(p.sessions, sessionID)
 }
 
 // EnsureActiveSession ensures an active session exists for the device.
@@ -918,6 +926,13 @@ func (p *EventPipeline) UpdateSessionVideoPath(sessionID, videoPath string) {
 	if state := p.sessions[sessionID]; state != nil {
 		state.Session.VideoPath = videoPath
 		p.store.UpdateSession(state.Session)
+		return
+	}
+
+	// Session 已结束并从内存释放（如录制启动晚于 EndSession）：直接更新数据库
+	if session, err := p.store.GetSession(sessionID); err == nil && session != nil {
+		session.VideoPath = videoPath
+		p.store.UpdateSession(session)
 	}
 }
 

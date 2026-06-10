@@ -379,10 +379,16 @@ func (a *App) generateImageThumbnail(path string) ([]byte, error) {
 }
 
 func (a *App) generateVideoThumbnail(localPath string) ([]byte, error) {
+	ffmpegPath := a.ffmpegPath
+	if ffmpegPath == "" {
+		// Fall back to PATH lookup if embedded binary is unavailable
+		ffmpegPath = "ffmpeg"
+	}
+
 	tmpThumb := localPath + ".jpg"
 	defer os.Remove(tmpThumb)
 
-	cmd := exec.Command("ffmpeg", "-y", "-i", localPath, "-ss", "00:00:01", "-vframes", "1", "-s", "512x512", "-f", "image2", tmpThumb)
+	cmd := exec.Command(ffmpegPath, "-y", "-i", localPath, "-ss", "00:00:01", "-vframes", "1", "-s", "512x512", "-f", "image2", tmpThumb)
 	if err := cmd.Run(); err != nil {
 		return nil, fmt.Errorf("ffmpeg not available or failed: %w", err)
 	}

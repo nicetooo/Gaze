@@ -103,7 +103,7 @@ export interface UnifiedEvent {
   // 分类字段
   source: EventSource;
   category: EventCategory;
-  type: string;           // 具体类型 (如 "http_request", "activity_start")
+  type: string;           // 具体类型 (如 "network_request", "activity_start")
   level: EventLevel;
 
   // 内容字段
@@ -310,6 +310,8 @@ export const eventTypeConfig: Record<string, { label: string; icon: string; icon
   logcat_aggregated: { label: 'Logs', icon: '📝', iconComponent: React.createElement(FileTextOutlined) },
 
   // Network
+  // network_request 是生产代码实际发送的类型；http_request 为废弃旧名，保留以渲染历史数据
+  network_request: { label: 'HTTP Request', icon: '🌐', iconComponent: React.createElement(ApiOutlined) },
   http_request: { label: 'HTTP Request', icon: '🌐', iconComponent: React.createElement(ApiOutlined) },
   websocket_message: { label: 'WebSocket', icon: '🔌', iconComponent: React.createElement(ApiOutlined, { style: { color: '#722ed1' } }) },
 

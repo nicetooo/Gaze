@@ -52,8 +52,6 @@ function generateLogId(): string {
 
 // @ts-ignore
 const EventsOn = (window as any).runtime.EventsOn;
-// @ts-ignore
-const EventsOff = (window as any).runtime.EventsOff;
 
 interface LogcatState {
   // State
@@ -147,6 +145,9 @@ interface LogcatState {
 // Local buffer to throttle updates (prevents 1000s of state updates per second)
 let logBuffer: ParsedLog[] = [];
 let flushTimerId: number | null = null;
+// 'session-events-batch' 是多个 store/组件共享的通道，必须用 EventsOn 返回的
+// cancel 函数精确退订自己的监听器；EventsOff(name) 会移除该通道全部监听器
+let sessionEventsOff: (() => void) | null = null;
 
 const MAX_LOGS = 50000; // Reduced from 200k to 50k for performance
 
@@ -303,7 +304,8 @@ export const useLogcatStore = create<LogcatState>()(
         }, 100);
 
         // Subscribe to session events batch (unified event source)
-        EventsOn('session-events-batch', (events: any[]) => {
+        sessionEventsOff?.(); // 防御重复注册
+        sessionEventsOff = EventsOn('session-events-batch', (events: any[]) => {
           // Filter for log events only
           const logEvents = events.filter((e: any) => e.category === 'log');
           if (logEvents.length === 0) return;
@@ -411,7 +413,8 @@ export const useLogcatStore = create<LogcatState>()(
 
     stopLogcat: () => {
       StopLogcat();
-      EventsOff('session-events-batch');
+      sessionEventsOff?.();
+      sessionEventsOff = null;
 
       if (flushTimerId) {
         clearInterval(flushTimerId);

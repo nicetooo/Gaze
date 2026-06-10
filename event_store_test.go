@@ -650,3 +650,124 @@ func TestDataDirectoryCreation(t *testing.T) {
 		t.Fatal("Data directory should be created")
 	}
 }
+
+// TestDeepSearchCompressedData verifies that SearchText matches inside
+// event_data that was gzip-compressed at write time (>=1KB payloads).
+func TestDeepSearchCompressedData(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	session := &DeviceSession{
+		ID:        uuid.New().String(),
+		DeviceID:  "test-device-search",
+		Type:      "manual",
+		Name:      "Search Session",
+		StartTime: time.Now().UnixMilli(),
+		Status:    "active",
+	}
+	if err := store.CreateSession(session); err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	// Large payload (>1KB) triggers gzip compression in writeBatch
+	filler := make([]byte, 2048)
+	for i := range filler {
+		filler[i] = 'a' + byte(i%26)
+	}
+	largeData, _ := json.Marshal(map[string]string{
+		"marker": "unique-needle-in-compressed-haystack",
+		"filler": string(filler),
+	})
+	// Small payload (<1KB) stays uncompressed
+	smallData, _ := json.Marshal(map[string]string{"marker": "small-payload-needle"})
+
+	events := []UnifiedEvent{
+		{
+			ID: uuid.New().String(), SessionID: session.ID, DeviceID: session.DeviceID,
+			Timestamp: time.Now().UnixMilli(), Source: SourceNetwork, Category: CategoryNetwork,
+			Type: "network_request", Level: LevelInfo, Title: "POST /api/big",
+			Data: json.RawMessage(largeData),
+		},
+		{
+			ID: uuid.New().String(), SessionID: session.ID, DeviceID: session.DeviceID,
+			Timestamp: time.Now().UnixMilli(), Source: SourceNetwork, Category: CategoryNetwork,
+			Type: "network_request", Level: LevelInfo, Title: "GET /api/small",
+			Data: json.RawMessage(smallData),
+		},
+	}
+	for _, e := range events {
+		store.WriteEvent(e)
+	}
+	store.Flush()
+	time.Sleep(200 * time.Millisecond)
+
+	// Search inside the compressed body
+	result, err := store.QueryEvents(EventQuery{SessionID: session.ID, SearchText: "unique-needle-in-compressed-haystack", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search in compressed data failed: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("Expected 1 match in compressed data, got %d", result.Total)
+	}
+
+	// Search inside the uncompressed body still works
+	result, err = store.QueryEvents(EventQuery{SessionID: session.ID, SearchText: "small-payload-needle", Limit: 10})
+	if err != nil {
+		t.Fatalf("Search in uncompressed data failed: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("Expected 1 match in uncompressed data, got %d", result.Total)
+	}
+}
+
+// TestSearchSpecialCharacters verifies FTS5 syntax characters in user input
+// do not break the search query (they are escaped to literal phrases).
+func TestSearchSpecialCharacters(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	session := &DeviceSession{
+		ID:        uuid.New().String(),
+		DeviceID:  "test-device-fts",
+		Type:      "manual",
+		Name:      "FTS Session",
+		StartTime: time.Now().UnixMilli(),
+		Status:    "active",
+	}
+	if err := store.CreateSession(session); err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	store.WriteEvent(UnifiedEvent{
+		ID: uuid.New().String(), SessionID: session.ID, DeviceID: session.DeviceID,
+		Timestamp: time.Now().UnixMilli(), Source: SourceNetwork, Category: CategoryNetwork,
+		Type: "network_request", Level: LevelInfo,
+		Title: "GET http://example.com/api/users",
+	})
+	store.Flush()
+	time.Sleep(200 * time.Millisecond)
+
+	// All of these previously raised FTS5 syntax errors
+	for _, input := range []string{
+		"http://example.com",
+		"tag: message",
+		`"unbalanced`,
+		"AND",
+		"NEAR(",
+		"*",
+		"   ",
+	} {
+		if _, err := store.QueryEvents(EventQuery{SessionID: session.ID, SearchText: input, Limit: 10}); err != nil {
+			t.Errorf("Search with input %q failed: %v", input, err)
+		}
+	}
+
+	// URL search should actually match the stored title
+	result, err := store.QueryEvents(EventQuery{SessionID: session.ID, SearchText: "http://example.com", Limit: 10})
+	if err != nil {
+		t.Fatalf("URL search failed: %v", err)
+	}
+	if result.Total != 1 {
+		t.Errorf("Expected URL search to match 1 event, got %d", result.Total)
+	}
+}

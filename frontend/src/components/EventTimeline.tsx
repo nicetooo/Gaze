@@ -1085,7 +1085,6 @@ const EventTimeline = () => {
   }, [subscribeToEvents]);
 
   // Also listen for session changes to update the dropdown list
-  // Note: We use the same reference for cleanup since EventsOffAll removes by handler
   useEffect(() => {
     const EventsOn = (window as any).runtime?.EventsOn;
     if (!EventsOn) return;
@@ -1102,14 +1101,15 @@ const EventTimeline = () => {
       }
     };
 
-    EventsOn('session-started', refreshSessionList);
-    EventsOn('session-ended', refreshSessionList);
+    // 共享通道：用 EventsOn 返回的 cancel 函数精确退订自己的监听器，
+    // EventsOff(name) 会误删 eventStore 等其他订阅方
+    const offStarted = EventsOn('session-started', refreshSessionList);
+    const offEnded = EventsOn('session-ended', refreshSessionList);
 
     return () => {
       isMounted = false;
-      // Note: Don't use EventsOff here as it removes ALL handlers for the event
-      // which would break subscribeToEvents. The handlers will be garbage collected
-      // when this effect cleans up.
+      offStarted?.();
+      offEnded?.();
     };
   }, [selectedDevice]);
 

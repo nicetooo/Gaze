@@ -390,8 +390,8 @@ const plugin: Plugin = {
                 mode="tags"
                 placeholder={t("plugins.types_placeholder")}
                 options={[
-                  { label: "http_request", value: "http_request" },
-                  { label: "http_response", value: "http_response" },
+                  { label: "network_request", value: "network_request" },
+                  { label: "websocket_message", value: "websocket_message" },
                   { label: "logcat", value: "logcat" },
                   { label: "app_crash", value: "app_crash" },
                   { label: "app_anr", value: "app_anr" },

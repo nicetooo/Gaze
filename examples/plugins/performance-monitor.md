@@ -110,7 +110,7 @@ const plugin: Plugin = {
     const derivedEvents: any[] = [];
     
     // 1. Monitor slow network requests
-    if (event.source === "network" && event.type === "http_response") {
+    if (event.source === "network" && event.type === "network_request") {
       const threshold = context.config.slowThresholdMs || 2000;
       const duration = event.data?.duration || 0;
       
@@ -174,7 +174,7 @@ const plugin: Plugin = {
     }
     
     // 4. Validate API tracking calls
-    if (event.source === "network" && event.type === "http_request") {
+    if (event.source === "network" && event.type === "network_request") {
       const url = event.data?.url || "";
       const monitoredEndpoints = context.config.monitoredEndpoints || [];
       
@@ -302,7 +302,7 @@ const plugin: Plugin = {
 ## 事件过滤器 (Filters Tab)
 
 - **Event Sources**: `network`, `perf`, `logcat`
-- **Event Types**: `http_request`, `http_response`, `perf_sample`, `logcat`
+- **Event Types**: `network_request`, `perf_sample`, `logcat`
 - **URL Pattern**: (留空，由 config 中的 monitoredEndpoints 控制)
 
 ## 使用说明

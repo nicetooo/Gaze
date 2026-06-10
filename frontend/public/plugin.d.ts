@@ -74,7 +74,7 @@ declare interface PluginFilters {
 
   /**
    * Filter by event types
-   * @example ["http_request", "http_response"]
+   * @example ["network_request", "websocket_message"]
    */
   types?: string[];
 

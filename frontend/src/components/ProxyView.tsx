@@ -453,7 +453,7 @@ const ProxyView: React.FC = () => {
                 setPort(data.port);
             }
         };
-        EventsOn("proxy-status-changed", handleProxyStatus);
+        const offProxyStatus = EventsOn("proxy-status-changed", handleProxyStatus);
 
         // Listen for network events from session (unified event source)
         const handleSessionBatch = (events: any[]) => {
@@ -537,18 +537,20 @@ const ProxyView: React.FC = () => {
             }
         };
 
-        EventsOn("session-events-batch", handleSessionBatch);
+        // 共享通道必须用 EventsOn 返回的 cancel 函数精确退订，
+        // EventsOff(name) 会误删 eventStore/logcatStore/perfStore 的监听器
+        const offBatch = EventsOn("session-events-batch", handleSessionBatch);
 
         // Listen for WebSocket frame messages
         const handleWSMessage = (msg: any) => {
             useProxyStore.getState().addWSMessage(msg as WSMessage);
         };
-        EventsOn("proxy-ws-message", handleWSMessage);
+        const offWSMessage = EventsOn("proxy-ws-message", handleWSMessage);
 
         return () => {
-            EventsOff("session-events-batch");
-            EventsOff("proxy-status-changed");
-            EventsOff("proxy-ws-message");
+            offBatch?.();
+            offProxyStatus?.();
+            offWSMessage?.();
         };
     }, []);
 

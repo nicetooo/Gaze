@@ -1210,25 +1210,29 @@ func TestExportImport_RoundTrip_EventFields(t *testing.T) {
 
 	// Write event with all possible fields
 	original := UnifiedEvent{
-		ID:             uuid.New().String(),
-		SessionID:      session.ID,
-		DeviceID:       session.DeviceID,
-		Timestamp:      time.Now().UnixMilli(),
-		RelativeTime:   1234,
-		Duration:       567,
-		Source:         SourceNetwork,
-		Category:       CategoryNetwork,
-		Type:           "http_request",
-		Level:          LevelError,
-		Title:          "POST /api/data",
-		Summary:        "Failed request",
-		ParentID:       "parent-abc",
-		StepID:         "step-def",
-		TraceID:        "trace-ghi",
-		AggregateCount: 7,
-		AggregateFirst: 1000,
-		AggregateLast:  2000,
-		Data:           json.RawMessage(`{"method":"POST","url":"/api/data","status":500,"body":"error"}`),
+		ID:                uuid.New().String(),
+		SessionID:         session.ID,
+		DeviceID:          session.DeviceID,
+		Timestamp:         time.Now().UnixMilli(),
+		RelativeTime:      1234,
+		Duration:          567,
+		Source:            SourceNetwork,
+		Category:          CategoryNetwork,
+		Type:              "http_request",
+		Level:             LevelError,
+		Title:             "POST /api/data",
+		Summary:           "Failed request",
+		ParentID:          "parent-abc",
+		StepID:            "step-def",
+		TraceID:           "trace-ghi",
+		AggregateCount:    7,
+		AggregateFirst:    1000,
+		AggregateLast:     2000,
+		Tags:              []string{"plugin-tag", "validated"},
+		Metadata:          map[string]interface{}{"generatedBy": "test-plugin"},
+		ParentEventID:     "parent-event-xyz",
+		GeneratedByPlugin: "test-plugin",
+		Data:              json.RawMessage(`{"method":"POST","url":"/api/data","status":500,"body":"error"}`),
 	}
 	if err := app.eventStore.WriteEventDirect(original); err != nil {
 		t.Fatalf("Failed to write event: %v", err)
@@ -1300,6 +1304,18 @@ func TestExportImport_RoundTrip_EventFields(t *testing.T) {
 	}
 	if e.AggregateLast != original.AggregateLast {
 		t.Errorf("AggregateLast mismatch: got %d, want %d", e.AggregateLast, original.AggregateLast)
+	}
+	if len(e.Tags) != 2 || e.Tags[0] != "plugin-tag" || e.Tags[1] != "validated" {
+		t.Errorf("Tags mismatch: got %v, want %v", e.Tags, original.Tags)
+	}
+	if e.Metadata == nil || e.Metadata["generatedBy"] != "test-plugin" {
+		t.Errorf("Metadata mismatch: got %v, want %v", e.Metadata, original.Metadata)
+	}
+	if e.ParentEventID != original.ParentEventID {
+		t.Errorf("ParentEventID mismatch: got %s, want %s", e.ParentEventID, original.ParentEventID)
+	}
+	if e.GeneratedByPlugin != original.GeneratedByPlugin {
+		t.Errorf("GeneratedByPlugin mismatch: got %s, want %s", e.GeneratedByPlugin, original.GeneratedByPlugin)
 	}
 
 	// Verify Data JSON round-trip

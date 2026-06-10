@@ -1,6 +1,6 @@
 import React, { useEffect, useCallback, useMemo, useRef } from "react";
 import { useShallow } from 'zustand/react/shallow';
-import { EventsOn, EventsOff } from "../../wailsjs/runtime/runtime";
+import { EventsOn } from "../../wailsjs/runtime/runtime";
 import {
   Button,
   Space,
@@ -1729,15 +1729,12 @@ const WorkflowView: React.FC = () => {
     ]);
 
     const executionPromise = new Promise<void>((resolve, reject) => {
+      // 用 EventsOn 返回的 cancel 函数精确退订：task-paused/task-resumed 与
+      // automationStore 共享，EventsOff(name) 会误删对方的监听器
+      const eventCancels: Array<() => void> = [];
       const cleanUp = () => {
-        EventsOff("workflow-started");
-        EventsOff("workflow-completed");
-        EventsOff("workflow-error");
-        EventsOff("workflow-step-running");
-        EventsOff("workflow-step-waiting");
-        EventsOff("task-paused");
-        EventsOff("task-resumed");
-        EventsOff("workflow-runtime-update");
+        eventCancels.forEach((off) => off?.());
+        eventCancels.length = 0;
         // Clear the ref after cleanup
         cleanupEventsRef.current = null;
       };
@@ -1870,14 +1867,16 @@ const WorkflowView: React.FC = () => {
         }
       };
 
-      EventsOn("workflow-started", onSubStarted);
-      EventsOn("workflow-completed", onComplete);
-      EventsOn("workflow-error", onError);
-      EventsOn("workflow-step-running", onStep);
-      EventsOn("workflow-step-waiting", onWait);
-      EventsOn("task-paused", onPaused);
-      EventsOn("task-resumed", onResumed);
-      EventsOn("workflow-runtime-update", onRuntimeUpdate);
+      eventCancels.push(
+        EventsOn("workflow-started", onSubStarted),
+        EventsOn("workflow-completed", onComplete),
+        EventsOn("workflow-error", onError),
+        EventsOn("workflow-step-running", onStep),
+        EventsOn("workflow-step-waiting", onWait),
+        EventsOn("task-paused", onPaused),
+        EventsOn("task-resumed", onResumed),
+        EventsOn("workflow-runtime-update", onRuntimeUpdate),
+      );
     });
 
     try {

@@ -46,6 +46,9 @@ type wsFrameParser struct {
 	// For fragmented messages
 	fragments    []byte
 	fragmentType WSMessageType
+
+	// Bytes remaining to discard for an oversized frame being skipped
+	skipRemaining uint64
 }
 
 func newWSFrameParser(connID, direction, url string, onMessage func(WSMessage)) *wsFrameParser {
@@ -58,6 +61,16 @@ func newWSFrameParser(connID, direction, url string, onMessage func(WSMessage)) 
 }
 
 func (p *wsFrameParser) feed(data []byte) {
+	// Discard bytes belonging to an oversized frame being skipped, so the
+	// parser stays aligned on the next frame boundary
+	if p.skipRemaining > 0 {
+		if uint64(len(data)) < p.skipRemaining {
+			p.skipRemaining -= uint64(len(data))
+			return
+		}
+		data = data[p.skipRemaining:]
+		p.skipRemaining = 0
+	}
 	p.buf = append(p.buf, data...)
 	for p.tryParseFrame() {
 	}
@@ -89,9 +102,27 @@ func (p *wsFrameParser) tryParseFrame() bool {
 		offset = 10
 	}
 
-	// Sanity check: reject absurdly large frames to avoid OOM
+	// RFC 6455: the most significant bit of a 64-bit length must be 0.
+	// A violating length means the stream is corrupt or malicious — the
+	// total computation below would overflow, so drop the buffer instead.
+	if payloadLen&(1<<63) != 0 {
+		p.buf = nil
+		return false
+	}
+
+	// Sanity check: skip absurdly large frames to avoid OOM, consuming
+	// exactly this frame's bytes so parsing stays aligned afterwards
 	if payloadLen > 16*1024*1024 {
-		// Skip this frame by clearing buffer
+		total := uint64(offset) + payloadLen
+		if masked {
+			total += 4
+		}
+		if uint64(len(p.buf)) >= total {
+			// Entire oversized frame already buffered: drop just this frame
+			p.buf = p.buf[total:]
+			return true
+		}
+		p.skipRemaining = total - uint64(len(p.buf))
 		p.buf = nil
 		return false
 	}

@@ -248,8 +248,9 @@ function App() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, []);
 
-  // All views are now rendered persistently with keep-alive
-  // No renderContent function needed
+  // Views are conditionally rendered below (unmounted when switched away);
+  // business state persists in Zustand stores. Keep-alive was planned but
+  // not implemented — see ROADMAP #8.
 
   return (
     <Layout style={{ minHeight: "100vh" }}>

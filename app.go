@@ -422,6 +422,13 @@ func (a *App) setupBinaries() {
 	appBinDir := filepath.Join(configDir, "Gaze", "bin")
 	_ = os.MkdirAll(appBinDir, 0755)
 
+	// Version stamp: force re-extraction after an app upgrade, since the
+	// size-comparison shortcut below misses new binaries of identical size
+	stampPath := filepath.Join(appBinDir, ".version")
+	stamp, _ := os.ReadFile(stampPath)
+	force := string(stamp) != a.version
+	extractOK := true // any failed write keeps the stamp stale so next launch retries
+
 	extract := func(name string, data []byte) string {
 		if len(data) == 0 {
 			return ""
@@ -433,9 +440,10 @@ func (a *App) setupBinaries() {
 		}
 
 		info, err := os.Stat(path)
-		if err != nil || info.Size() != int64(len(data)) {
+		if force || err != nil || info.Size() != int64(len(data)) {
 			err = os.WriteFile(path, data, 0755)
 			if err != nil {
+				extractOK = false
 				LogDebug("app").Str("name", name).Err(err).Msg("Error extracting embedded binary")
 			}
 		}
@@ -483,8 +491,9 @@ func (a *App) setupBinaries() {
 	if len(adbKeyboardAPK) > 0 {
 		apkPath := filepath.Join(appBinDir, "ADBKeyboard.apk")
 		info, err := os.Stat(apkPath)
-		if err != nil || info.Size() != int64(len(adbKeyboardAPK)) {
+		if force || err != nil || info.Size() != int64(len(adbKeyboardAPK)) {
 			if writeErr := os.WriteFile(apkPath, adbKeyboardAPK, 0644); writeErr != nil {
+				extractOK = false
 				LogDebug("app").Str("name", "ADBKeyboard.apk").Err(writeErr).Msg("Error extracting ADBKeyboard APK")
 			}
 		}
@@ -500,9 +509,19 @@ func (a *App) setupBinaries() {
 
 	// Setup protoc well-known type includes (embedded filesystem → disk)
 	protocIncludeDir := filepath.Join(appBinDir, "protoc-include")
-	a.extractEmbedDir(protocIncludeFS, "bin/protoc-include", protocIncludeDir)
+	if !a.extractEmbedDir(protocIncludeFS, "bin/protoc-include", protocIncludeDir, force) {
+		extractOK = false
+	}
 	a.protocIncludeDir = protocIncludeDir
 	a.Log("Protoc includes at: %s", a.protocIncludeDir)
+
+	// Write the stamp only after all extractions succeed, so both an
+	// interrupted run and a failed write are retried with force=true next launch
+	if extractOK {
+		_ = os.WriteFile(stampPath, []byte(a.version), 0644)
+	} else {
+		a.Log("Some binaries failed to extract; version stamp not updated, will retry on next launch")
+	}
 
 	a.Log("Binaries setup at: %s", appBinDir)
 	a.Log("Final ADB path: %s", a.adbPath)
@@ -511,30 +530,38 @@ func (a *App) setupBinaries() {
 // extractEmbedDir extracts an embedded filesystem directory to disk.
 // srcPrefix is the embedded path prefix (e.g. "bin/protoc-include"),
 // dstDir is the target directory on disk.
-func (a *App) extractEmbedDir(fsys embed.FS, srcPrefix string, dstDir string) {
+// It reports whether every file was written successfully.
+func (a *App) extractEmbedDir(fsys embed.FS, srcPrefix string, dstDir string, force bool) bool {
+	ok := true
 	_ = os.MkdirAll(dstDir, 0755)
 	entries, err := fs.ReadDir(fsys, srcPrefix)
 	if err != nil {
 		LogDebug("app").Str("prefix", srcPrefix).Err(err).Msg("Failed to read embedded dir")
-		return
+		return false
 	}
 	for _, entry := range entries {
 		srcPath := srcPrefix + "/" + entry.Name()
 		dstPath := filepath.Join(dstDir, entry.Name())
 		if entry.IsDir() {
-			a.extractEmbedDir(fsys, srcPath, dstPath)
+			if !a.extractEmbedDir(fsys, srcPath, dstPath, force) {
+				ok = false
+			}
 		} else {
 			data, err := fsys.ReadFile(srcPath)
 			if err != nil {
+				ok = false
 				continue
 			}
 			// Only write if content changed (same smart-extract logic as binaries)
 			info, statErr := os.Stat(dstPath)
-			if statErr != nil || info.Size() != int64(len(data)) {
-				_ = os.WriteFile(dstPath, data, 0644)
+			if force || statErr != nil || info.Size() != int64(len(data)) {
+				if writeErr := os.WriteFile(dstPath, data, 0644); writeErr != nil {
+					ok = false
+				}
 			}
 		}
 	}
+	return ok
 }
 
 // Command helper functions
@@ -810,8 +837,7 @@ func (a *App) StartSessionWithConfig(deviceID, name string, config SessionConfig
 
 // generateRecordPath generates a unique recording path for a session
 func (a *App) generateRecordPath(deviceID, sessionID string) string {
-	homeDir, _ := os.UserHomeDir()
-	recordDir := filepath.Join(homeDir, ".adbGUI", "recordings")
+	recordDir := a.GetRecordingsDir()
 	os.MkdirAll(recordDir, 0755)
 	timestamp := time.Now().Format("2006-01-02_15-04-05")
 	return filepath.Join(recordDir, fmt.Sprintf("%s_%s.mp4", timestamp, sessionID[:8]))

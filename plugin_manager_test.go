@@ -1679,6 +1679,49 @@ func TestPluginManager_ExecutePluginWithLogging_CapturesError(t *testing.T) {
 
 // ========== 辅助函数补充测试 ==========
 
+func TestHelperFunctions_MatchURL_Global(t *testing.T) {
+	pm := &PluginManager{plugins: make(map[string]*Plugin)}
+	plugin := &Plugin{
+		Metadata: PluginMetadata{ID: "test-matchurl-global", Config: make(map[string]interface{})},
+		State:    make(map[string]interface{}),
+	}
+
+	vm := goja.New()
+	if err := pm.injectHelpers(vm, plugin); err != nil {
+		t.Fatalf("Failed to inject helpers: %v", err)
+	}
+
+	// 锁死参数顺序为 (url, pattern)，与 context.matchURL 和 plugin.d.ts 声明一致
+	tests := []struct {
+		name     string
+		script   string
+		expected string
+	}{
+		{
+			name:     "wildcard match",
+			script:   `String(matchURL("https://example.com/api/users", "*/api/*"))`,
+			expected: "true",
+		},
+		{
+			name:     "no match",
+			script:   `String(matchURL("https://example.com/home", "*/api/*"))`,
+			expected: "false",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := vm.RunString(tt.script)
+			if err != nil {
+				t.Fatalf("JS error: %v", err)
+			}
+			if got := result.String(); got != tt.expected {
+				t.Errorf("got %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
 func TestHelperFunctions_MatchRegex(t *testing.T) {
 	pm := &PluginManager{plugins: make(map[string]*Plugin)}
 	plugin := &Plugin{
