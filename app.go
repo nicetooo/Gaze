@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log"
@@ -273,13 +274,18 @@ func (a *App) shutdownCore() {
 			LogInfo("shutdown").Str("device", id).Msg("Killed mirroring process")
 		}
 	}
-	for id, cmd := range a.scrcpyRecordCmd {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			LogInfo("shutdown").Str("device", id).Msg("Killed recording process")
-		}
+	// 录制进程需优雅终止（SIGINT 等待写完 moov atom），否则 mp4 损坏；
+	// gracefulStopRecording 不能在持有 scrcpyMu 时调用，先快照设备列表
+	recordingDevices := make([]string, 0, len(a.scrcpyRecordCmd))
+	for id := range a.scrcpyRecordCmd {
+		recordingDevices = append(recordingDevices, id)
 	}
 	a.scrcpyMu.Unlock()
+
+	for _, id := range recordingDevices {
+		a.gracefulStopRecording(id)
+		LogInfo("shutdown").Str("device", id).Msg("Stopped recording process")
+	}
 
 	a.StopLogcat()
 	a.StopDeviceMonitor()
@@ -1012,24 +1018,22 @@ func (a *App) SavePlugin(req PluginSaveRequest) error {
 		return fmt.Errorf("plugin system not initialized")
 	}
 
-	// 构造插件对象
-	plugin := &Plugin{
-		Metadata: PluginMetadata{
-			ID:          req.ID,
-			Name:        req.Name,
-			Version:     req.Version,
-			Author:      req.Author,
-			Description: req.Description,
-			Enabled:     true, // 默认启用
-			Filters:     req.Filters,
-			Config:      req.Config,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
-		},
-		SourceCode:   req.SourceCode,
-		Language:     req.Language,
-		CompiledCode: req.CompiledCode,
+	// 构造插件对象：更新时保留 enabled 状态与 CreatedAt（见 PluginSaveRequest.BuildPlugin）。
+	// 仅"插件不存在"才按新建处理；数据库瞬时错误必须中止，否则会把已禁用插件
+	// 静默重新启用并重置 CreatedAt
+	var existing *Plugin
+	if a.pluginStore != nil {
+		old, err := a.pluginStore.GetPlugin(req.ID)
+		switch {
+		case err == nil:
+			existing = old
+		case errors.Is(err, ErrPluginNotFound):
+			// 新建
+		default:
+			return fmt.Errorf("load existing plugin failed: %w", err)
+		}
 	}
+	plugin := req.BuildPlugin(existing)
 
 	// 保存并加载
 	if err := a.pluginManager.SavePlugin(plugin); err != nil {

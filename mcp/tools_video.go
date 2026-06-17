@@ -34,6 +34,8 @@ func (s *MCPServer) registerVideoTools() {
 	// video_frame - Extract a single frame from a video
 	s.server.AddTool(
 		mcp.NewTool("video_frame",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Extract a single frame from a video at a specific time. Returns base64-encoded JPEG image."),
 			mcp.WithString("video_path",
 				mcp.Required(),
@@ -53,6 +55,8 @@ func (s *MCPServer) registerVideoTools() {
 	// video_metadata - Get video metadata
 	s.server.AddTool(
 		mcp.NewTool("video_metadata",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get metadata for a video file (duration, resolution, codec, etc.)"),
 			mcp.WithString("video_path",
 				mcp.Required(),
@@ -65,6 +69,8 @@ func (s *MCPServer) registerVideoTools() {
 	// session_video_frame - Extract a frame from a session's recording
 	s.server.AddTool(
 		mcp.NewTool("session_video_frame",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Extract a frame from a session's recording at a specific event time. Automatically adjusts for video offset."),
 			mcp.WithString("session_id",
 				mcp.Required(),
@@ -84,6 +90,8 @@ func (s *MCPServer) registerVideoTools() {
 	// session_video_info - Get session video info
 	s.server.AddTool(
 		mcp.NewTool("session_video_info",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get video information for a session (path, duration, metadata)"),
 			mcp.WithString("session_id",
 				mcp.Required(),

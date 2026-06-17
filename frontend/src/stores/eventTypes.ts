@@ -315,6 +315,9 @@ export const eventTypeConfig: Record<string, { label: string; icon: string; icon
   http_request: { label: 'HTTP Request', icon: '🌐', iconComponent: React.createElement(ApiOutlined) },
   websocket_message: { label: 'WebSocket', icon: '🔌', iconComponent: React.createElement(ApiOutlined, { style: { color: '#722ed1' } }) },
 
+  // System
+  batch_operation: { label: 'Batch Operation', icon: '📦', iconComponent: React.createElement(AppstoreOutlined) },
+
   // Device State
   battery_change: { label: 'Battery', icon: '🔋', iconComponent: React.createElement(ThunderboltOutlined, { style: { color: '#faad14' } }) },
   network_change: { label: 'Network', icon: '📶', iconComponent: React.createElement(WifiOutlined) },

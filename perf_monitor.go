@@ -108,6 +108,9 @@ type PerfMonitor struct {
 	// FPS tracking
 	lastFrameCount int64
 	lastFrameTime  time.Time
+
+	// CPU 核心数是常量, 首次采集成功后缓存, 后续 tick 不再重查
+	cpuCores int
 }
 
 // ========================================
@@ -216,6 +219,7 @@ func (a *App) GetPerfSnapshot(deviceID string, packageName string) (*PerfSampleD
 
 	collectFn("cpu", func(c context.Context, s *PerfSampleData) {
 		a.collectCPU(c, deviceID, packageName, s)
+		s.CPUCores = a.queryCPUCores(c, deviceID)
 	})
 	collectFn("memory", func(c context.Context, s *PerfSampleData) {
 		a.collectMemory(c, deviceID, packageName, s)
@@ -279,7 +283,8 @@ func (m *PerfMonitor) Stop() {
 // collect 执行一次数据采集
 // 所有采集器并行执行，各自写入 sample 的不同字段。
 // wg.Wait() 提供 happens-before 同步保证。
-// 额外并行采集 ps -A 输出，与 cpuinfo 文本合并生成进程列表（任务管理器视图）。
+// 轻量命令 (meminfo / net dev / battery / ps -A) 合并为一条 adb shell 执行，
+// 把每 tick 的 adb 子进程数从最多 9 个降到 4-5 个。
 func (m *PerfMonitor) collect() {
 	ctx, cancel := context.WithTimeout(m.ctx, time.Duration(m.config.IntervalMs)*time.Millisecond)
 	defer cancel()
@@ -312,12 +317,18 @@ func (m *PerfMonitor) collect() {
 		launch("cpu", func() {
 			cpuinfoText = m.app.collectCPU(ctx, m.deviceID, m.config.PackageName, sample)
 		})
+		// 核心数是常量, 只在首次采集时查询一次并缓存
+		if m.cpuCores == 0 {
+			launch("cpu_cores", func() {
+				m.cpuCores = m.app.queryCPUCores(ctx, m.deviceID)
+			})
+		}
 	}
 
-	// 系统内存
-	if m.config.EnableMemory {
-		launch("memory", func() {
-			m.app.collectMemory(ctx, m.deviceID, m.config.PackageName, sample)
+	// 目标应用内存 (dumpsys meminfo <pkg> 较重, 单独执行)
+	if m.config.EnableMemory && m.config.PackageName != "" {
+		launch("app_memory", func() {
+			m.app.collectAppMemory(ctx, m.deviceID, m.config.PackageName, sample)
 		})
 	}
 
@@ -328,36 +339,83 @@ func (m *PerfMonitor) collect() {
 		})
 	}
 
-	// 网络
-	if m.config.EnableNetwork {
-		launch("network", func() {
-			m.collectNetwork(ctx, sample)
-		})
-	}
-
-	// 电池
-	if m.config.EnableBattery {
-		launch("battery", func() {
-			m.app.collectBattery(ctx, m.deviceID, sample)
-		})
-	}
-
-	// 进程 RSS 内存 (ps -A, 快速 ~100ms, 用于任务管理器视图)
-	launch("processes", func() {
-		cmd := m.app.newAdbCommand(ctx, "-s", m.deviceID, "shell", "ps -A")
-		out, err := cmd.Output()
-		if err == nil {
-			psText = string(out)
-		}
+	// 合并的轻量命令: 系统内存 + 网络 + 电池 + 进程列表 (ps -A)
+	launch("combined", func() {
+		psText = m.collectCombined(ctx, sample)
 	})
 
 	wg.Wait()
+
+	if m.config.EnableCPU {
+		sample.CPUCores = m.cpuCores
+	}
 
 	// 合并 CPU + RSS 数据构建进程列表
 	sample.Processes = buildProcessList(cpuinfoText, psText)
 
 	// 发送 perf_sample 事件
 	m.emitPerfEvent(sample)
+}
+
+// perfSegmentSeparator 合并 shell 命令各段输出之间的分隔符
+const perfSegmentSeparator = "---GAZE---"
+
+// collectCombined 将多个轻量采集命令合并为一条 adb shell 执行,
+// 按分隔符拆分输出后分发给现有解析器 (解析器签名不变)。
+// 返回 ps -A 输出 (供 buildProcessList 使用)。
+func (m *PerfMonitor) collectCombined(ctx context.Context, sample *PerfSampleData) string {
+	type segment struct {
+		name  string
+		shell string
+	}
+	var segments []segment
+	if m.config.EnableMemory {
+		segments = append(segments, segment{"meminfo", "cat /proc/meminfo"})
+	}
+	if m.config.EnableNetwork {
+		segments = append(segments, segment{"netdev", "cat /proc/net/dev"})
+	}
+	if m.config.EnableBattery {
+		segments = append(segments, segment{"battery", "dumpsys battery"})
+	}
+	// 进程 RSS 内存 (ps -A, 快速 ~100ms, 用于任务管理器视图)
+	segments = append(segments, segment{"ps", "ps -A"})
+
+	cmds := make([]string, len(segments))
+	for i, s := range segments {
+		cmds[i] = s.shell
+	}
+	// 用 ; 串联, 单段失败不影响后续段和分隔符输出
+	shellCmd := strings.Join(cmds, "; echo "+perfSegmentSeparator+"; ")
+
+	cmd := m.app.newAdbCommand(ctx, "-s", m.deviceID, "shell", shellCmd)
+	output, err := cmd.Output()
+	if err != nil && len(output) == 0 {
+		return ""
+	}
+
+	parts := strings.Split(string(output), perfSegmentSeparator)
+	psText := ""
+	for i, s := range segments {
+		if i >= len(parts) {
+			break
+		}
+		text := parts[i]
+		switch s.name {
+		case "meminfo":
+			parseMemInfo(text, sample)
+		case "netdev":
+			totalRx, totalTx := parseNetworkDev(text)
+			sample.NetRxTotalMB = float64(totalRx) / (1024 * 1024)
+			sample.NetTxTotalMB = float64(totalTx) / (1024 * 1024)
+			m.updateNetworkRates(sample)
+		case "battery":
+			parseBatteryOutput(text, sample)
+		case "ps":
+			psText = text
+		}
+	}
+	return psText
 }
 
 // emitPerfEvent 发送性能采样事件
@@ -412,21 +470,22 @@ func (a *App) collectCPU(ctx context.Context, deviceID, packageName string, samp
 		sample.CPUApp = parseAppCPUFromDumpsys(text, packageName)
 	}
 
-	// 获取 CPU 核心数 (单独命令，很轻量)
-	cmd2 := a.newAdbCommand(ctx, "-s", deviceID, "shell",
-		"cat /proc/cpuinfo | grep processor | wc -l")
-	output2, err := cmd2.Output()
-	if err == nil {
-		cores, _ := strconv.Atoi(strings.TrimSpace(string(output2)))
-		if cores > 0 {
-			sample.CPUCores = cores
-		}
-	}
-
 	return text
 }
 
-// collectMemory 采集内存信息
+// queryCPUCores 查询 CPU 核心数。该值是设备常量, 调用方应缓存结果避免每 tick 重查
+func (a *App) queryCPUCores(ctx context.Context, deviceID string) int {
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell",
+		"cat /proc/cpuinfo | grep processor | wc -l")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0
+	}
+	cores, _ := strconv.Atoi(strings.TrimSpace(string(output)))
+	return cores
+}
+
+// collectMemory 采集内存信息 (GetPerfSnapshot 单次快照用; PerfMonitor 周期采集走 collectCombined)
 func (a *App) collectMemory(ctx context.Context, deviceID, packageName string, sample *PerfSampleData) {
 	// 获取总内存信息
 	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell", "cat /proc/meminfo")
@@ -436,16 +495,21 @@ func (a *App) collectMemory(ctx context.Context, deviceID, packageName string, s
 	}
 
 	// 获取目标应用内存 (如果指定了包名)
-	// 注意: 不使用 shell grep 管道，因为 Android toybox grep 不支持 \| 交替匹配，
-	// 会导致 grep 返回 exit 1 → cmd.Output() 返回 error → 跳过解析 → memAppMB 永远是 0
-	// 改为: 直接获取完整 dumpsys meminfo 输出，在 Go 中解析
 	if packageName != "" {
-		cmd2 := a.newAdbCommand(ctx, "-s", deviceID, "shell",
-			fmt.Sprintf("dumpsys meminfo %s", packageName))
-		output2, err := cmd2.Output()
-		if err == nil {
-			sample.MemAppMB = parseAppMemory(string(output2))
-		}
+		a.collectAppMemory(ctx, deviceID, packageName, sample)
+	}
+}
+
+// collectAppMemory 采集目标应用内存 (dumpsys meminfo <pkg>)
+// 注意: 不使用 shell grep 管道，因为 Android toybox grep 不支持 \| 交替匹配，
+// 会导致 grep 返回 exit 1 → cmd.Output() 返回 error → 跳过解析 → memAppMB 永远是 0
+// 改为: 直接获取完整 dumpsys meminfo 输出，在 Go 中解析
+func (a *App) collectAppMemory(ctx context.Context, deviceID, packageName string, sample *PerfSampleData) {
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell",
+		fmt.Sprintf("dumpsys meminfo %s", packageName))
+	output, err := cmd.Output()
+	if err == nil {
+		sample.MemAppMB = parseAppMemory(string(output))
 	}
 }
 
@@ -537,13 +601,11 @@ func parseForegroundPackage(output string) string {
 	return ""
 }
 
-// collectNetwork 采集网络流量 (带速率计算)
+// updateNetworkRates 基于上次采样计算网络速率 (需先填充 sample 的 NetRx/TxTotalMB)
 // 注意: lastNetRxBytes / lastNetTxBytes 存储的是原始字节数,
 // sample.NetRxTotalMB / NetTxTotalMB 是 MB 为单位.
 // 速率计算需要统一使用字节数才能得到准确的 KB/s.
-func (m *PerfMonitor) collectNetwork(ctx context.Context, sample *PerfSampleData) {
-	m.app.collectNetworkStats(ctx, m.deviceID, sample)
-
+func (m *PerfMonitor) updateNetworkRates(sample *PerfSampleData) {
 	// 从 MB 还原为字节数以计算精确速率
 	currentRxBytes := int64(sample.NetRxTotalMB * 1024 * 1024)
 	currentTxBytes := int64(sample.NetTxTotalMB * 1024 * 1024)
@@ -585,15 +647,19 @@ func (a *App) collectNetworkStats(ctx context.Context, deviceID string, sample *
 	sample.NetTxTotalMB = float64(totalTx) / (1024 * 1024)
 }
 
-// collectBattery 采集电池信息，同时用电池温度作为设备温度近似值
+// collectBattery 采集电池信息 (GetPerfSnapshot 单次快照用; PerfMonitor 周期采集走 collectCombined)
 func (a *App) collectBattery(ctx context.Context, deviceID string, sample *PerfSampleData) {
 	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell", "dumpsys battery")
 	output, err := cmd.Output()
 	if err != nil {
 		return
 	}
+	parseBatteryOutput(string(output), sample)
+}
 
-	lines := strings.Split(string(output), "\n")
+// parseBatteryOutput 解析 dumpsys battery 输出，同时用电池温度作为设备温度近似值
+func parseBatteryOutput(output string, sample *PerfSampleData) {
+	lines := strings.Split(output, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "level:") {
@@ -943,8 +1009,15 @@ func buildProcessList(cpuinfoText, psText string) []ProcessPerfData {
 
 	// 按 CPU 降序排序 (CPU 相同则按内存降序)
 	sortProcessList(result)
+	// 截断为 top N, 降低 perf_sample 事件每 2 秒写入 SQLite 的 JSON 体积
+	if len(result) > maxProcessListEntries {
+		result = result[:maxProcessListEntries]
+	}
 	return result
 }
+
+// maxProcessListEntries perf_sample 进程列表的最大条目数 (已按 CPU/内存降序排列)
+const maxProcessListEntries = 50
 
 // isAppProcess 判断进程名是否为应用进程 (包含 "." 的 Java 包名)
 func isAppProcess(name string) bool {

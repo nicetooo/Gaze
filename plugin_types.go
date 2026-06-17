@@ -86,6 +86,43 @@ type PluginSaveRequest struct {
 	CompiledCode string                 `json:"compiledCode"` // 编译后的 JS (前端编译时提供)
 	Filters      PluginFilters          `json:"filters"`
 	Config       map[string]interface{} `json:"config"`
+	// Enabled 指针区分"未传"与 false：nil 时保留现有启用状态（新建默认启用）
+	Enabled *bool `json:"enabled,omitempty"`
+}
+
+// BuildPlugin 根据保存请求构造插件对象。
+// existing 传同 ID 的现有插件（新建时传 nil）：
+// - req.Enabled 未指定时沿用现有 enabled（新建默认启用），避免编辑已禁用插件后被静默重新启用
+// - 更新时保留原 CreatedAt，避免每次保存重置创建时间
+func (req PluginSaveRequest) BuildPlugin(existing *Plugin) *Plugin {
+	now := time.Now()
+	enabled := true
+	createdAt := now
+	if existing != nil {
+		enabled = existing.Metadata.Enabled
+		createdAt = existing.Metadata.CreatedAt
+	}
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+
+	return &Plugin{
+		Metadata: PluginMetadata{
+			ID:          req.ID,
+			Name:        req.Name,
+			Version:     req.Version,
+			Author:      req.Author,
+			Description: req.Description,
+			Enabled:     enabled,
+			Filters:     req.Filters,
+			Config:      req.Config,
+			CreatedAt:   createdAt,
+			UpdatedAt:   now,
+		},
+		SourceCode:   req.SourceCode,
+		Language:     req.Language,
+		CompiledCode: req.CompiledCode,
+	}
 }
 
 // ========== 插件测试结果 ==========
@@ -121,11 +158,12 @@ func (p *Plugin) MatchesEvent(event UnifiedEvent) bool {
 		}
 	}
 
-	// 检查 type
+	// 检查 type（"logcat" 同时匹配分桶聚合产生的 "logcat_aggregated"，
+	// 与断言引擎 typeMatchesCriteria 行为一致）
 	if len(filters.Types) > 0 {
 		matched := false
 		for _, typ := range filters.Types {
-			if event.Type == typ {
+			if typeMatchesCriteria(typ, event.Type) {
 				matched = true
 				break
 			}

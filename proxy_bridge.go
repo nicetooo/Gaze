@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"Gaze/pkg/fileutil"
 	"Gaze/proxy"
 
 	"github.com/google/uuid"
@@ -743,7 +744,32 @@ func toProxyConditions(conditions []MockCondition) []proxy.MockCondition {
 var (
 	mockRules   = make(map[string]*MockRule)
 	mockRulesMu sync.RWMutex
+	// Set when the rules file on disk failed to parse; full-overwrite saves are
+	// refused until restart so a half-loaded (empty) map can't destroy user data.
+	mockRulesLoadFailed bool
 )
+
+// logSaveErr logs a rules persistence failure from call sites whose Wails
+// binding signature has no error return.
+func logSaveErr(kind string, err error) {
+	if err != nil {
+		LogError("proxy_rules").Err(err).Str("kind", kind).Msg("Failed to persist rules")
+	}
+}
+
+// quarantineCorruptConfig preserves an unparseable config/rules file as
+// <path>.corrupt-<ts> and logs the outcome. Returns true if the file was moved.
+func quarantineCorruptConfig(kind, path string, parseErr error) bool {
+	target, renameErr := fileutil.QuarantineCorrupt(path)
+	if renameErr != nil {
+		LogError("config_persist").Err(parseErr).Str("kind", kind).Str("path", path).
+			Msgf("Config file corrupt and quarantine failed: %v", renameErr)
+		return false
+	}
+	LogError("config_persist").Err(parseErr).Str("kind", kind).Str("preserved", target).
+		Msg("Config file corrupt; preserved on disk, saves disabled until restart")
+	return true
+}
 
 // getMockRulesPath returns the path to the mock rules JSON file
 func getMockRulesPath() string {
@@ -753,6 +779,9 @@ func getMockRulesPath() string {
 
 // saveMockRules saves mock rules to disk
 func saveMockRules() error {
+	if mockRulesLoadFailed {
+		return fmt.Errorf("mock rules file failed to load at startup; refusing to overwrite (restart to retry)")
+	}
 	rules := make([]*MockRule, 0, len(mockRules))
 	for _, rule := range mockRules {
 		rules = append(rules, rule)
@@ -772,7 +801,7 @@ func saveMockRules() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return fileutil.WriteFileAtomic(path, data, 0644)
 }
 
 // LoadMockRules loads mock rules from disk (called on app startup)
@@ -791,8 +820,11 @@ func (a *App) LoadMockRules() error {
 
 	var rules []*MockRule
 	if err := json.Unmarshal(data, &rules); err != nil {
+		mockRulesLoadFailed = true
+		quarantineCorruptConfig("mock", path, err)
 		return err
 	}
+	mockRulesLoadFailed = false
 
 	mockRules = make(map[string]*MockRule)
 	for _, rule := range rules {
@@ -824,7 +856,7 @@ func (a *App) AddMockRule(rule MockRule) string {
 	proxy.GetProxy().AddMockRule(rule.ID, rule.URLPattern, rule.Method, rule.StatusCode, rule.Headers, rule.Body, rule.BodyFile, rule.Delay, toProxyConditions(rule.Conditions))
 
 	// Persist to disk
-	saveMockRules()
+	logSaveErr("mock", saveMockRules())
 
 	return rule.ID
 }
@@ -847,9 +879,7 @@ func (a *App) UpdateMockRule(rule MockRule) error {
 	}
 
 	// Persist to disk
-	saveMockRules()
-
-	return nil
+	return saveMockRules()
 }
 
 // RemoveMockRule removes a mock response rule
@@ -861,7 +891,7 @@ func (a *App) RemoveMockRule(ruleID string) {
 	proxy.GetProxy().RemoveMockRule(ruleID)
 
 	// Persist to disk
-	saveMockRules()
+	logSaveErr("mock", saveMockRules())
 }
 
 // ========================================
@@ -884,8 +914,9 @@ type RewriteRule struct {
 }
 
 var (
-	rewriteRules   = make(map[string]*RewriteRule)
-	rewriteRulesMu sync.RWMutex
+	rewriteRules           = make(map[string]*RewriteRule)
+	rewriteRulesMu         sync.RWMutex
+	rewriteRulesLoadFailed bool
 )
 
 func getRewriteRulesPath() string {
@@ -894,6 +925,9 @@ func getRewriteRulesPath() string {
 }
 
 func saveRewriteRules() error {
+	if rewriteRulesLoadFailed {
+		return fmt.Errorf("rewrite rules file failed to load at startup; refusing to overwrite (restart to retry)")
+	}
 	rules := make([]*RewriteRule, 0, len(rewriteRules))
 	for _, rule := range rewriteRules {
 		rules = append(rules, rule)
@@ -912,7 +946,7 @@ func saveRewriteRules() error {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return fileutil.WriteFileAtomic(path, data, 0644)
 }
 
 // LoadRewriteRules loads rewrite rules from disk (called on app startup)
@@ -928,8 +962,11 @@ func (a *App) LoadRewriteRules() error {
 
 	var rules []*RewriteRule
 	if err := json.Unmarshal(data, &rules); err != nil {
+		rewriteRulesLoadFailed = true
+		quarantineCorruptConfig("rewrite", path, err)
 		return err
 	}
+	rewriteRulesLoadFailed = false
 	rewriteRules = make(map[string]*RewriteRule)
 	for _, rule := range rules {
 		rewriteRules[rule.ID] = rule
@@ -957,7 +994,7 @@ func (a *App) AddRewriteRule(urlPattern, method, phase, target, headerName, matc
 	rewriteRules[rule.ID] = &rule
 
 	proxy.GetProxy().AddRewriteRule(rule.ID, rule.URLPattern, rule.Method, rule.Phase, rule.Target, rule.HeaderName, rule.Match, rule.Replace)
-	saveRewriteRules()
+	logSaveErr("rewrite", saveRewriteRules())
 	return rule.ID
 }
 
@@ -985,8 +1022,7 @@ func (a *App) UpdateRewriteRule(id, urlPattern, method, phase, target, headerNam
 		proxy.GetProxy().AddRewriteRule(id, urlPattern, method, phase, target, headerName, match, replace)
 	}
 
-	saveRewriteRules()
-	return nil
+	return saveRewriteRules()
 }
 
 func (a *App) RemoveRewriteRule(ruleID string) {
@@ -995,7 +1031,7 @@ func (a *App) RemoveRewriteRule(ruleID string) {
 
 	delete(rewriteRules, ruleID)
 	proxy.GetProxy().RemoveRewriteRule(ruleID)
-	saveRewriteRules()
+	logSaveErr("rewrite", saveRewriteRules())
 }
 
 func (a *App) GetRewriteRules() []*RewriteRule {
@@ -1028,8 +1064,7 @@ func (a *App) ToggleRewriteRule(ruleID string, enabled bool) error {
 		proxy.GetProxy().RemoveRewriteRule(rule.ID)
 	}
 
-	saveRewriteRules()
-	return nil
+	return saveRewriteRules()
 }
 
 // ExportMockRules returns all mock rules as a JSON string for export
@@ -1080,7 +1115,9 @@ func (a *App) ImportMockRules(jsonStr string) (int, error) {
 	}
 
 	if added > 0 {
-		saveMockRules()
+		if err := saveMockRules(); err != nil {
+			return added, err
+		}
 	}
 
 	return added, nil
@@ -1102,8 +1139,9 @@ type MapRemoteRule struct {
 }
 
 var (
-	mapRemoteRules   = make(map[string]*MapRemoteRule)
-	mapRemoteRulesMu sync.RWMutex
+	mapRemoteRules           = make(map[string]*MapRemoteRule)
+	mapRemoteRulesMu         sync.RWMutex
+	mapRemoteRulesLoadFailed bool
 )
 
 func getMapRemoteRulesPath() string {
@@ -1112,6 +1150,9 @@ func getMapRemoteRulesPath() string {
 }
 
 func saveMapRemoteRules() error {
+	if mapRemoteRulesLoadFailed {
+		return fmt.Errorf("map remote rules file failed to load at startup; refusing to overwrite (restart to retry)")
+	}
 	rules := make([]*MapRemoteRule, 0, len(mapRemoteRules))
 	for _, rule := range mapRemoteRules {
 		rules = append(rules, rule)
@@ -1123,7 +1164,11 @@ func saveMapRemoteRules() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(getMapRemoteRulesPath(), data, 0644)
+	path := getMapRemoteRulesPath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	return fileutil.WriteFileAtomic(path, data, 0644)
 }
 
 // LoadMapRemoteRules loads map remote rules from disk (called on app startup)
@@ -1141,8 +1186,11 @@ func (a *App) LoadMapRemoteRules() error {
 	}
 	var rules []*MapRemoteRule
 	if err := json.Unmarshal(data, &rules); err != nil {
+		mapRemoteRulesLoadFailed = true
+		quarantineCorruptConfig("map_remote", path, err)
 		return err
 	}
+	mapRemoteRulesLoadFailed = false
 	mapRemoteRules = make(map[string]*MapRemoteRule)
 	for _, rule := range rules {
 		mapRemoteRules[rule.ID] = rule
@@ -1170,7 +1218,7 @@ func (a *App) AddMapRemoteRule(sourcePattern, targetURL, method, description str
 	mapRemoteRules[rule.ID] = &rule
 
 	proxy.GetProxy().AddMapRemoteRule(rule.ID, rule.SourcePattern, rule.TargetURL, rule.Method)
-	saveMapRemoteRules()
+	logSaveErr("map_remote", saveMapRemoteRules())
 
 	return rule.ID
 }
@@ -1196,8 +1244,7 @@ func (a *App) UpdateMapRemoteRule(id, sourcePattern, targetURL, method string, e
 		proxy.GetProxy().AddMapRemoteRule(id, sourcePattern, targetURL, method)
 	}
 
-	saveMapRemoteRules()
-	return nil
+	return saveMapRemoteRules()
 }
 
 func (a *App) RemoveMapRemoteRule(ruleID string) {
@@ -1206,7 +1253,7 @@ func (a *App) RemoveMapRemoteRule(ruleID string) {
 
 	delete(mapRemoteRules, ruleID)
 	proxy.GetProxy().RemoveMapRemoteRule(ruleID)
-	saveMapRemoteRules()
+	logSaveErr("map_remote", saveMapRemoteRules())
 }
 
 func (a *App) GetMapRemoteRules() []*MapRemoteRule {
@@ -1239,8 +1286,7 @@ func (a *App) ToggleMapRemoteRule(ruleID string, enabled bool) error {
 		proxy.GetProxy().RemoveMapRemoteRule(rule.ID)
 	}
 
-	saveMapRemoteRules()
-	return nil
+	return saveMapRemoteRules()
 }
 
 // ========================================
@@ -1259,8 +1305,9 @@ type BreakpointRule struct {
 }
 
 var (
-	breakpointRules   = make(map[string]*BreakpointRule)
-	breakpointRulesMu sync.RWMutex
+	breakpointRules           = make(map[string]*BreakpointRule)
+	breakpointRulesMu         sync.RWMutex
+	breakpointRulesLoadFailed bool
 )
 
 // getBreakpointRulesPath returns the path to the breakpoint rules JSON file
@@ -1271,6 +1318,9 @@ func getBreakpointRulesPath() string {
 
 // saveBreakpointRules saves breakpoint rules to disk
 func saveBreakpointRules() error {
+	if breakpointRulesLoadFailed {
+		return fmt.Errorf("breakpoint rules file failed to load at startup; refusing to overwrite (restart to retry)")
+	}
 	rules := make([]*BreakpointRule, 0, len(breakpointRules))
 	for _, rule := range breakpointRules {
 		rules = append(rules, rule)
@@ -1290,7 +1340,7 @@ func saveBreakpointRules() error {
 		return err
 	}
 
-	return os.WriteFile(path, data, 0644)
+	return fileutil.WriteFileAtomic(path, data, 0644)
 }
 
 // LoadBreakpointRules loads breakpoint rules from disk (called on app startup)
@@ -1309,8 +1359,11 @@ func (a *App) LoadBreakpointRules() error {
 
 	var rules []*BreakpointRule
 	if err := json.Unmarshal(data, &rules); err != nil {
+		breakpointRulesLoadFailed = true
+		quarantineCorruptConfig("breakpoint", path, err)
 		return err
 	}
+	breakpointRulesLoadFailed = false
 
 	breakpointRules = make(map[string]*BreakpointRule)
 	for _, rule := range rules {
@@ -1342,7 +1395,7 @@ func (a *App) AddBreakpointRule(rule BreakpointRule) string {
 	proxy.GetProxy().AddBreakpointRule(rule.ID, rule.URLPattern, rule.Method, rule.Phase)
 
 	// Persist to disk
-	saveBreakpointRules()
+	logSaveErr("breakpoint", saveBreakpointRules())
 
 	return rule.ID
 }
@@ -1364,8 +1417,7 @@ func (a *App) UpdateBreakpointRule(rule BreakpointRule) error {
 		proxy.GetProxy().AddBreakpointRule(rule.ID, rule.URLPattern, rule.Method, rule.Phase)
 	}
 
-	saveBreakpointRules()
-	return nil
+	return saveBreakpointRules()
 }
 
 // RemoveBreakpointRule removes a breakpoint rule
@@ -1376,7 +1428,7 @@ func (a *App) RemoveBreakpointRule(ruleID string) {
 	delete(breakpointRules, ruleID)
 	proxy.GetProxy().RemoveBreakpointRule(ruleID)
 
-	saveBreakpointRules()
+	logSaveErr("breakpoint", saveBreakpointRules())
 }
 
 // GetBreakpointRules returns all breakpoint rules, sorted by creation time
@@ -1412,8 +1464,7 @@ func (a *App) ToggleBreakpointRule(ruleID string, enabled bool) error {
 		proxy.GetProxy().RemoveBreakpointRule(rule.ID)
 	}
 
-	saveBreakpointRules()
-	return nil
+	return saveBreakpointRules()
 }
 
 // ResolveBreakpoint resolves a pending breakpoint with the user's action
@@ -1486,6 +1537,15 @@ func (a *App) SetupBreakpointCallbacks() {
 			})
 		}
 	})
+	proxy.GetProxy().SetBreakpointCapacityCallback(func(ruleID, url, phase string) {
+		if a.ctx != nil && !a.mcpMode {
+			wailsRuntime.EventsEmit(a.ctx, "proxy-breakpoint-capacity", map[string]string{
+				"ruleId": ruleID,
+				"url":    url,
+				"phase":  phase,
+			})
+		}
+	})
 }
 
 // GetMockRules returns all mock response rules, sorted by creation time (oldest first)
@@ -1522,7 +1582,5 @@ func (a *App) ToggleMockRule(ruleID string, enabled bool) error {
 	}
 
 	// Persist to disk
-	saveMockRules()
-
-	return nil
+	return saveMockRules()
 }

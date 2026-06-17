@@ -498,3 +498,26 @@ func TestMCPBridge_GetActiveSession_ReturnsCorrectID(t *testing.T) {
 
 	t.Log("Active session tracking works correctly")
 }
+
+func TestNormalizeSelectorType(t *testing.T) {
+	cases := map[string]string{
+		"id":           "id",
+		"resourceId":   "id",
+		"resource-id":  "id",
+		"contentDesc":  "desc",
+		"desc":         "desc",
+		"description":  "desc",
+		"content-desc": "desc",
+		"className":    "class",
+		"class":        "class",
+		"text":         "text",
+		"contains":     "contains",
+		"xpath":        "xpath",
+		"advanced":     "advanced",
+	}
+	for input, expected := range cases {
+		if got := normalizeSelectorType(input); got != expected {
+			t.Errorf("normalizeSelectorType(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}

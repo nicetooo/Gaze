@@ -36,9 +36,6 @@ type EventPipeline struct {
 	frontendBufferMu sync.Mutex
 	frontendTicker   *time.Ticker
 
-	// 时间索引缓存 (LRU)
-	timeIndexCache *TimeIndexLRUCache
-
 	// 背压控制
 	backpressure *BackpressureController
 
@@ -117,136 +114,6 @@ func (r *RingBuffer) Size() int {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.count
-}
-
-// ========================================
-// TimeIndexLRUCache - 时间索引 LRU 缓存
-// ========================================
-
-const DefaultTimeIndexCacheCapacity = 20 // 最多缓存 20 个 Session 的时间索引
-
-// TimeIndexLRUCache 时间索引的 LRU 缓存
-type TimeIndexLRUCache struct {
-	capacity int
-	cache    map[string]map[int]*TimeIndexEntry
-	order    []string // 访问顺序，最近访问的在末尾
-	mu       sync.RWMutex
-}
-
-// NewTimeIndexLRUCache 创建新的 LRU 缓存
-func NewTimeIndexLRUCache(capacity int) *TimeIndexLRUCache {
-	if capacity <= 0 {
-		capacity = DefaultTimeIndexCacheCapacity
-	}
-	return &TimeIndexLRUCache{
-		capacity: capacity,
-		cache:    make(map[string]map[int]*TimeIndexEntry),
-		order:    make([]string, 0, capacity),
-	}
-}
-
-// Get 获取 session 的时间索引，同时更新访问顺序
-func (c *TimeIndexLRUCache) Get(sessionID string) (map[int]*TimeIndexEntry, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	index, exists := c.cache[sessionID]
-	if exists {
-		c.moveToEnd(sessionID)
-	}
-	return index, exists
-}
-
-// GetOrCreate 获取或创建 session 的时间索引
-func (c *TimeIndexLRUCache) GetOrCreate(sessionID string) map[int]*TimeIndexEntry {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if index, exists := c.cache[sessionID]; exists {
-		c.moveToEnd(sessionID)
-		return index
-	}
-
-	// 创建新的
-	c.evictIfNeeded()
-	index := make(map[int]*TimeIndexEntry)
-	c.cache[sessionID] = index
-	c.order = append(c.order, sessionID)
-	return index
-}
-
-// Set 设置 session 的时间索引
-func (c *TimeIndexLRUCache) Set(sessionID string, index map[int]*TimeIndexEntry) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if _, exists := c.cache[sessionID]; exists {
-		c.cache[sessionID] = index
-		c.moveToEnd(sessionID)
-		return
-	}
-
-	c.evictIfNeeded()
-	c.cache[sessionID] = index
-	c.order = append(c.order, sessionID)
-}
-
-// Delete 删除 session 的时间索引
-func (c *TimeIndexLRUCache) Delete(sessionID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	delete(c.cache, sessionID)
-	c.removeFromOrder(sessionID)
-}
-
-// GetAll 获取所有缓存的时间索引的深拷贝（用于持久化，避免与 updateTimeIndex 竞态）
-func (c *TimeIndexLRUCache) GetAll() map[string]map[int]*TimeIndexEntry {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	result := make(map[string]map[int]*TimeIndexEntry, len(c.cache))
-	for sessionID, entries := range c.cache {
-		copied := make(map[int]*TimeIndexEntry, len(entries))
-		for sec, entry := range entries {
-			e := *entry // 值拷贝
-			copied[sec] = &e
-		}
-		result[sessionID] = copied
-	}
-	return result
-}
-
-// Size 返回当前缓存的 session 数量
-func (c *TimeIndexLRUCache) Size() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.cache)
-}
-
-// moveToEnd 将 sessionID 移到访问顺序末尾（内部方法，需要持有锁）
-func (c *TimeIndexLRUCache) moveToEnd(sessionID string) {
-	c.removeFromOrder(sessionID)
-	c.order = append(c.order, sessionID)
-}
-
-// removeFromOrder 从访问顺序中移除（内部方法，需要持有锁）
-func (c *TimeIndexLRUCache) removeFromOrder(sessionID string) {
-	for i, id := range c.order {
-		if id == sessionID {
-			c.order = append(c.order[:i], c.order[i+1:]...)
-			break
-		}
-	}
-}
-
-// evictIfNeeded 如果超出容量则驱逐最老的条目（内部方法，需要持有锁）
-func (c *TimeIndexLRUCache) evictIfNeeded() {
-	for len(c.cache) >= c.capacity && len(c.order) > 0 {
-		oldest := c.order[0]
-		c.order = c.order[1:]
-		delete(c.cache, oldest)
-	}
 }
 
 // ========================================
@@ -409,7 +276,6 @@ func NewEventPipeline(ctx, wailsCtx context.Context, store *EventStore, mcpMode 
 		sessions:       make(map[string]*SessionState),
 		deviceSession:  make(map[string]string),
 		frontendBuffer: make([]UnifiedEvent, 0, 100),
-		timeIndexCache: NewTimeIndexLRUCache(DefaultTimeIndexCacheCapacity),
 		backpressure:   NewBackpressureController(2000),
 		stopChan:       make(chan struct{}),
 	}
@@ -431,10 +297,6 @@ func (p *EventPipeline) Start() {
 	p.wg.Add(1)
 	go p.frontendEmitter()
 
-	// 时间索引持久化协程
-	p.wg.Add(1)
-	go p.timeIndexPersister()
-
 	// 加载已有的活跃 Session
 	p.loadActiveSessions()
 }
@@ -451,7 +313,6 @@ func (p *EventPipeline) Stop() {
 
 	// 刷新剩余事件
 	p.flushFrontendBuffer()
-	p.persistTimeIndex()
 }
 
 // loadActiveSessions 加载已有的活跃 Session
@@ -476,7 +337,6 @@ func (p *EventPipeline) loadActiveSessions() {
 			}
 			p.sessions[session.ID] = state
 			p.deviceSession[session.DeviceID] = session.ID
-			p.timeIndexCache.GetOrCreate(session.ID)
 		}
 	}
 }
@@ -644,37 +504,11 @@ func (p *EventPipeline) processEvent(event UnifiedEvent) {
 		})
 	}
 
-	// 8. 更新时间索引
-	p.updateTimeIndex(event)
-
-	// 9. 写入存储
+	// 8. 写入存储
 	p.store.WriteEvent(event)
 
-	// 10. 添加到前端缓冲
+	// 9. 添加到前端缓冲
 	p.addToFrontendBuffer(event)
-}
-
-// updateTimeIndex 更新时间索引
-func (p *EventPipeline) updateTimeIndex(event UnifiedEvent) {
-	second := int(event.RelativeTime / 1000)
-
-	// LRU 缓存内部已有锁保护
-	sessionIndex := p.timeIndexCache.GetOrCreate(event.SessionID)
-
-	entry := sessionIndex[second]
-	if entry == nil {
-		entry = &TimeIndexEntry{
-			Second:       second,
-			EventCount:   0,
-			FirstEventID: event.ID,
-		}
-		sessionIndex[second] = entry
-	}
-
-	entry.EventCount++
-	if event.Level == LevelError || event.Level == LevelFatal {
-		entry.HasError = true
-	}
 }
 
 // addToFrontendBuffer 添加到前端缓冲
@@ -713,47 +547,6 @@ func (p *EventPipeline) flushFrontendBuffer() {
 	// 发送到前端 (统一使用 session-events-batch，兼容所有组件)
 	if !p.mcpMode {
 		wailsRuntime.EventsEmit(p.wailsCtx, "session-events-batch", batch)
-	}
-}
-
-// timeIndexPersister 定期持久化时间索引
-func (p *EventPipeline) timeIndexPersister() {
-	defer p.wg.Done()
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			p.persistTimeIndex()
-		case <-p.stopChan:
-			p.persistTimeIndex()
-			return
-		}
-	}
-}
-
-// persistTimeIndex 持久化时间索引
-func (p *EventPipeline) persistTimeIndex() {
-	// LRU 缓存的 GetAll 方法返回快照
-	allCache := p.timeIndexCache.GetAll()
-
-	// 复制需要持久化的数据
-	toSave := make(map[string][]TimeIndexEntry)
-	for sessionID, entries := range allCache {
-		for _, entry := range entries {
-			toSave[sessionID] = append(toSave[sessionID], *entry)
-		}
-	}
-
-	// 批量写入数据库
-	for sessionID, entries := range toSave {
-		for _, entry := range entries {
-			if err := p.store.UpsertTimeIndex(sessionID, entry); err != nil {
-				LogError("event").Err(err).Str("sessionId", sessionID).Msg("Failed to persist time index")
-			}
-		}
 	}
 }
 
@@ -810,7 +603,6 @@ func (p *EventPipeline) StartSession(deviceID, sessionType, name string, config 
 
 	p.sessions[sessionID] = state
 	p.deviceSession[deviceID] = sessionID
-	p.timeIndexCache.GetOrCreate(sessionID)
 
 	p.store.CreateSession(session)
 	SessionLog().Str("sessionId", sessionID).Msg("Session saved to store")
@@ -990,11 +782,10 @@ func (p *EventPipeline) GetPipelineStats() map[string]interface{} {
 	p.frontendBufferMu.Unlock()
 
 	return map[string]interface{}{
-		"channelLen":      len(p.eventChan),
-		"channelCap":      cap(p.eventChan),
-		"activeSessions":  sessionCount,
-		"deviceMappings":  deviceCount,
-		"frontendBuffer":  bufferLen,
-		"timeIndexCached": p.timeIndexCache.Size(),
+		"channelLen":     len(p.eventChan),
+		"channelCap":     cap(p.eventChan),
+		"activeSessions": sessionCount,
+		"deviceMappings": deviceCount,
+		"frontendBuffer": bufferLen,
 	}
 }

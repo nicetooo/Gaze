@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -14,6 +16,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"Gaze/pkg/fileutil"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -588,7 +592,7 @@ func (a *App) RestartAdbServer() (string, error) {
 	a.StopAllDeviceStateMonitors()
 	a.StopAllNetworkMonitors()
 
-	// Kill scrcpy mirroring processes
+	// Kill scrcpy mirroring processes (无文件落盘, 直接 Kill 即可)
 	a.scrcpyMu.Lock()
 	for id, cmd := range a.scrcpyCmds {
 		if cmd.Process != nil {
@@ -596,14 +600,17 @@ func (a *App) RestartAdbServer() (string, error) {
 		}
 		delete(a.scrcpyCmds, id)
 	}
-	// Kill scrcpy recording processes
-	for id, cmd := range a.scrcpyRecordCmd {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
-		}
-		delete(a.scrcpyRecordCmd, id)
+	recordingIds := make([]string, 0, len(a.scrcpyRecordCmd))
+	for id := range a.scrcpyRecordCmd {
+		recordingIds = append(recordingIds, id)
 	}
 	a.scrcpyMu.Unlock()
+
+	// 录制进程优雅终止, 直接 Kill 会导致 mp4 缺少 moov atom 而损坏
+	// (注册表条目由各自的 Wait goroutine 清理)
+	for _, id := range recordingIds {
+		a.gracefulStopRecording(id)
+	}
 
 	if runtime.GOOS == "windows" {
 		_ = exec.Command("taskkill", "/F", "/IM", "adb.exe", "/T").Run()
@@ -867,7 +874,7 @@ func (a *App) saveHistory(history []HistoryDevice) error {
 		a.Log("Failed to marshal history: %v", err)
 		return err
 	}
-	err = os.WriteFile(historyPath, data, 0644)
+	err = fileutil.WriteFileAtomic(historyPath, data, 0644)
 	if err != nil {
 		a.Log("Failed to write history to %s: %v", historyPath, err)
 		return err
@@ -1033,6 +1040,9 @@ func (a *App) runDeviceMonitor(ctx context.Context) {
 
 		// Read the track-devices output
 		// Format: 4 hex chars (length) followed by device list
+		// 必须用 io.ReadFull: 管道 Read 不保证读满，短读会把 payload 残余
+		// 当成下一个长度前缀解析，协议从此错位，设备插拔事件静默失效
+		reader := bufio.NewReader(stdout)
 		buf := make([]byte, 4)
 		for {
 			select {
@@ -1043,19 +1053,20 @@ func (a *App) runDeviceMonitor(ctx context.Context) {
 			}
 
 			// Read length prefix (4 hex chars)
-			_, err := stdout.Read(buf)
-			if err != nil {
+			if _, err := io.ReadFull(reader, buf); err != nil {
 				break
 			}
 
 			var length int
-			fmt.Sscanf(string(buf), "%04x", &length)
+			if _, err := fmt.Sscanf(string(buf), "%04x", &length); err != nil {
+				a.Log("Device monitor: invalid length prefix %q, restarting stream", string(buf))
+				break
+			}
 
 			if length > 0 {
 				// Read device data
 				data := make([]byte, length)
-				_, err := stdout.Read(data)
-				if err != nil {
+				if _, err := io.ReadFull(reader, data); err != nil {
 					break
 				}
 			}
@@ -1064,6 +1075,11 @@ func (a *App) runDeviceMonitor(ctx context.Context) {
 			emitDevicesChanged()
 		}
 
+		// track-devices 是常驻流式命令：解析失败 break 出来时进程仍存活，
+		// 必须先 kill 否则 Wait 永久阻塞，外层重连循环失效
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
 		cmd.Wait()
 		a.Log("Device monitor disconnected, restarting...")
 		time.Sleep(1 * time.Second)

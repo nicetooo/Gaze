@@ -419,3 +419,148 @@ func TestHandleDeviceIP_EmptyResult(t *testing.T) {
 		t.Error("Result should not be nil")
 	}
 }
+
+// ==================== adb_execute timeout ====================
+
+func TestHandleAdbExecute_DefaultTimeout(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.RunAdbCommandResult = "ok"
+	server := NewMCPServer(mock)
+
+	_, err := server.handleAdbExecute(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id": "device1",
+		"command":   "shell ls",
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	lastCall := mock.GetLastCallByMethod("RunAdbCommandWithTimeout")
+	if lastCall == nil {
+		t.Fatal("RunAdbCommandWithTimeout should have been called")
+	}
+	if lastCall.Args[2] != 30 {
+		t.Errorf("Expected default timeout 30, got %v", lastCall.Args[2])
+	}
+}
+
+func TestHandleAdbExecute_CustomTimeoutPassed(t *testing.T) {
+	mock := NewMockGazeApp()
+	server := NewMCPServer(mock)
+
+	_, err := server.handleAdbExecute(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id": "device1",
+		"command":   "shell logcat -d",
+		"timeout":   float64(120),
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	lastCall := mock.GetLastCallByMethod("RunAdbCommandWithTimeout")
+	if lastCall == nil {
+		t.Fatal("RunAdbCommandWithTimeout should have been called")
+	}
+	if lastCall.Args[2] != 120 {
+		t.Errorf("Expected timeout 120, got %v", lastCall.Args[2])
+	}
+}
+
+func TestHandleAdbExecute_TimeoutClampedToMax(t *testing.T) {
+	mock := NewMockGazeApp()
+	server := NewMCPServer(mock)
+
+	_, err := server.handleAdbExecute(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id": "device1",
+		"command":   "pull /sdcard/big.mp4 /tmp/",
+		"timeout":   float64(9999),
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	lastCall := mock.GetLastCallByMethod("RunAdbCommandWithTimeout")
+	if lastCall == nil {
+		t.Fatal("RunAdbCommandWithTimeout should have been called")
+	}
+	if lastCall.Args[2] != 300 {
+		t.Errorf("Expected timeout clamped to 300, got %v", lastCall.Args[2])
+	}
+}
+
+// ==================== output truncation ====================
+
+func TestTruncateOutput_ShortUnchanged(t *testing.T) {
+	out := truncateOutput("hello", defaultMaxOutputBytes)
+	if out != "hello" {
+		t.Errorf("Short output should be unchanged, got %q", out)
+	}
+}
+
+func TestTruncateOutput_LongTruncated(t *testing.T) {
+	long := strings.Repeat("a", 1000) + strings.Repeat("z", 1000)
+	out := truncateOutput(long, 1000)
+	if !strings.Contains(out, "truncated") {
+		t.Error("Truncated output should contain a truncation marker")
+	}
+	if !strings.HasPrefix(out, "aaaa") {
+		t.Error("Truncated output should keep the head")
+	}
+	if !strings.HasSuffix(out, "zzzz") {
+		t.Error("Truncated output should keep the tail")
+	}
+	// head (80%) + tail (20%) + marker should stay close to the limit
+	if len(out) > 1000+200 {
+		t.Errorf("Truncated output too large: %d bytes", len(out))
+	}
+}
+
+func TestTruncateOutput_ZeroUsesDefault(t *testing.T) {
+	long := strings.Repeat("x", defaultMaxOutputBytes+1000)
+	out := truncateOutput(long, 0)
+	if !strings.Contains(out, "truncated") {
+		t.Error("Output above the default limit should be truncated")
+	}
+}
+
+func TestHandleAdbExecute_OutputTruncated(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.RunAdbCommandResult = strings.Repeat("L", 200*1024)
+	server := NewMCPServer(mock)
+
+	result, err := server.handleAdbExecute(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id": "device1",
+		"command":   "shell logcat -d",
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := getTextContent(result)
+	if !strings.Contains(text, "truncated") {
+		t.Error("Oversized output should be truncated with a marker")
+	}
+	if len(text) > 60*1024 {
+		t.Errorf("Result should be near the 50KB default limit, got %d bytes", len(text))
+	}
+}
+
+func TestHandleAdbExecute_MaxOutputBytesRespected(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.RunAdbCommandResult = strings.Repeat("L", 200*1024)
+	server := NewMCPServer(mock)
+
+	result, err := server.handleAdbExecute(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":        "device1",
+		"command":          "shell logcat -d",
+		"max_output_bytes": float64(300 * 1024),
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := getTextContent(result)
+	if strings.Contains(text, "truncated") {
+		t.Error("Output below max_output_bytes should not be truncated")
+	}
+}

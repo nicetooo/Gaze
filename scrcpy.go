@@ -228,11 +228,8 @@ func (a *App) StartRecording(deviceId string, config ScrcpyConfig) error {
 		return fmt.Errorf("no record path specified")
 	}
 
-	a.scrcpyMu.Lock()
-	if cmd, exists := a.scrcpyRecordCmd[deviceId]; exists && cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
-	a.scrcpyMu.Unlock()
+	// 优雅停止已有录制进程, 直接 Kill 会导致旧 mp4 缺少 moov atom 而损坏
+	a.gracefulStopRecording(deviceId)
 
 	args := []string{"-s", deviceId, "--no-window", "--no-audio-playback", "--record", config.RecordPath}
 
@@ -298,14 +295,51 @@ func (a *App) StartRecording(deviceId string, config ScrcpyConfig) error {
 	go func() {
 		_ = cmd.Wait()
 		a.scrcpyMu.Lock()
-		delete(a.scrcpyRecordCmd, deviceId)
+		// 仅当注册表中仍是本进程时才清理, 避免误删替换后的新录制进程
+		stillRegistered := a.scrcpyRecordCmd[deviceId] == cmd
+		if stillRegistered {
+			delete(a.scrcpyRecordCmd, deviceId)
+		}
 		a.scrcpyMu.Unlock()
-		if !a.mcpMode {
+		if stillRegistered && !a.mcpMode {
 			wailsRuntime.EventsEmit(a.ctx, "scrcpy-record-stopped", deviceId)
 		}
 	}()
 
 	return nil
+}
+
+// gracefulStopRecording 优雅终止设备的 scrcpy 录制进程:
+// 先发送 Interrupt 让 scrcpy 写完 mp4 的 moov atom, 最多等 3 秒, 超时再 Kill。
+// 进程退出由 StartRecording 的 Wait goroutine 感知并从注册表删除条目,
+// 这里以条目消失作为退出信号轮询。调用时不得持有 scrcpyMu。
+func (a *App) gracefulStopRecording(deviceId string) {
+	a.scrcpyMu.Lock()
+	cmd, exists := a.scrcpyRecordCmd[deviceId]
+	a.scrcpyMu.Unlock()
+	if !exists || cmd.Process == nil {
+		return
+	}
+
+	if runtime.GOOS == "windows" {
+		// Windows 不支持向子进程发送 Interrupt, 只能 Kill
+		_ = cmd.Process.Kill()
+		return
+	}
+
+	_ = cmd.Process.Signal(os.Interrupt)
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		a.scrcpyMu.Lock()
+		current, still := a.scrcpyRecordCmd[deviceId]
+		a.scrcpyMu.Unlock()
+		if !still || current != cmd {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	_ = cmd.Process.Kill()
 }
 
 // StopRecording stops the recording process for the given device

@@ -13,6 +13,8 @@ func (s *MCPServer) registerProtoTools() {
 	// proto_file_list - List all loaded .proto files
 	s.server.AddTool(
 		mcp.NewTool("proto_file_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all loaded .proto schema files.
 
 Returns an array of proto file entries with id, name, content, and loadedAt timestamp.
@@ -24,6 +26,7 @@ Use this to see which protobuf schemas are currently available for decoding netw
 	// proto_file_add - Add a .proto file
 	s.server.AddTool(
 		mcp.NewTool("proto_file_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a .proto schema file for protobuf decoding.
 
 The file will be compiled and its message types become available for decoding
@@ -52,6 +55,7 @@ Example content:
 	// proto_file_update - Update an existing .proto file
 	s.server.AddTool(
 		mcp.NewTool("proto_file_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Update an existing .proto file's name and/or content. The file will be recompiled."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -72,6 +76,7 @@ Example content:
 	// proto_file_remove - Remove a .proto file
 	s.server.AddTool(
 		mcp.NewTool("proto_file_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a .proto schema file. Its message types will no longer be available for decoding."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -84,6 +89,8 @@ Example content:
 	// proto_mapping_list - List all URL→message mappings
 	s.server.AddTool(
 		mcp.NewTool("proto_mapping_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all URL-to-protobuf-message-type mappings.
 
 Mappings tell the proxy which protobuf message type to use when decoding
@@ -96,6 +103,7 @@ is decoded using raw field numbers only.`),
 	// proto_mapping_add - Add a URL→message mapping
 	s.server.AddTool(
 		mcp.NewTool("proto_mapping_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a URL-to-protobuf-message-type mapping.
 
 When the proxy intercepts a request matching the URL pattern, it will use
@@ -132,6 +140,7 @@ Direction controls which part of the request to decode:
 	// proto_mapping_update - Update an existing mapping
 	s.server.AddTool(
 		mcp.NewTool("proto_mapping_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Update an existing URL→message type mapping."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -158,6 +167,7 @@ Direction controls which part of the request to decode:
 	// proto_mapping_remove - Remove a mapping
 	s.server.AddTool(
 		mcp.NewTool("proto_mapping_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a URL→message type mapping."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -170,6 +180,8 @@ Direction controls which part of the request to decode:
 	// proto_message_types - List available message types
 	s.server.AddTool(
 		mcp.NewTool("proto_message_types",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all available protobuf message types from compiled .proto files.
 
 Returns an alphabetically sorted list of fully-qualified message type names
@@ -181,6 +193,7 @@ Returns an alphabetically sorted list of fully-qualified message type names
 	// proto_load_url - Load .proto file from URL with dependency resolution
 	s.server.AddTool(
 		mcp.NewTool("proto_load_url",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Download and load a .proto file from a URL.
 
 Automatically resolves and downloads all import dependencies recursively.

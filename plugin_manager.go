@@ -222,7 +222,7 @@ func (pm *PluginManager) ProcessEvent(event UnifiedEvent, sessionID string) []Un
 			defer func() {
 				if r := recover(); r != nil {
 					log.Printf("[PluginManager] Plugin %s panicked: %v", p.Metadata.ID, r)
-					errorEvent := pm.createPluginErrorEvent(p.Metadata.ID, event.ID, fmt.Errorf("plugin panic: %v", r))
+					errorEvent := pm.createPluginErrorEvent(p.Metadata.ID, event, sessionID, fmt.Errorf("plugin panic: %v", r))
 					resultsChan <- pluginResult{
 						pluginID:      p.Metadata.ID,
 						pluginName:    p.Metadata.Name,
@@ -236,7 +236,7 @@ func (pm *PluginManager) ProcessEvent(event UnifiedEvent, sessionID string) []Un
 
 			if err != nil {
 				log.Printf("[PluginManager] Plugin %s failed: %v", p.Metadata.ID, err)
-				errorEvent := pm.createPluginErrorEvent(p.Metadata.ID, event.ID, err)
+				errorEvent := pm.createPluginErrorEvent(p.Metadata.ID, event, sessionID, err)
 				resultsChan <- pluginResult{
 					pluginID:      p.Metadata.ID,
 					pluginName:    p.Metadata.Name,
@@ -720,20 +720,28 @@ func (pm *PluginManager) createEventContextWithLogging(vm *goja.Runtime, plugin 
 }
 
 // createPluginErrorEvent 创建插件错误事件
-func (pm *PluginManager) createPluginErrorEvent(pluginID, eventID string, err error) UnifiedEvent {
+// 必须填充 DeviceID/SessionID/ParentEventID：否则事件回到管道后关联不到 Session，
+// 不会写库且被前端按 sessionId 过滤丢弃，插件报错对用户完全不可见
+func (pm *PluginManager) createPluginErrorEvent(pluginID string, event UnifiedEvent, sessionID string, err error) UnifiedEvent {
 	return UnifiedEvent{
-		ID:        uuid.New().String(),
-		Timestamp: time.Now().UnixMilli(),
-		Source:    SourceSystem,
-		Category:  CategoryLog,
-		Type:      "plugin_error",
-		Level:     LevelError,
-		Title:     fmt.Sprintf("插件执行错误: %s", pluginID),
-		Summary:   err.Error(),
+		ID:                uuid.New().String(),
+		DeviceID:          event.DeviceID,
+		SessionID:         sessionID,
+		Timestamp:         time.Now().UnixMilli(),
+		Source:            SourceSystem,
+		Category:          CategoryLog,
+		Type:              "plugin_error",
+		Level:             LevelError,
+		Title:             fmt.Sprintf("插件执行错误: %s", pluginID),
+		Summary:           err.Error(),
+		ParentEventID:     event.ID,
+		GeneratedByPlugin: pluginID,
+		// 继承深度 +1：错误事件入库后还会再过一遍插件，防止"插件对自身错误事件再报错"无限循环
+		DerivedDepth: event.DerivedDepth + 1,
 		Data: mustMarshal(map[string]interface{}{
 			"pluginID":     pluginID,
 			"error":        err.Error(),
-			"triggerEvent": eventID,
+			"triggerEvent": event.ID,
 		}),
 	}
 }

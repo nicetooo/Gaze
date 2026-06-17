@@ -16,6 +16,8 @@ func (s *MCPServer) registerWorkflowTools() {
 	// workflow_list - List workflows
 	s.server.AddTool(
 		mcp.NewTool("workflow_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("List all saved workflows"),
 		),
 		s.handleWorkflowList,
@@ -24,6 +26,8 @@ func (s *MCPServer) registerWorkflowTools() {
 	// workflow_get - Get workflow details
 	s.server.AddTool(
 		mcp.NewTool("workflow_get",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get detailed information about a specific workflow including all steps"),
 			mcp.WithString("workflow_id",
 				mcp.Required(),
@@ -36,6 +40,7 @@ func (s *MCPServer) registerWorkflowTools() {
 	// workflow_create - Create a new workflow (V2)
 	s.server.AddTool(
 		mcp.NewTool("workflow_create",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Create a new workflow with the given name and steps (V2 format).
 
 A 'start' node will be auto-added if not present in steps_json. You may include it or omit it.
@@ -148,6 +153,7 @@ Variables can be used in steps with {{varName}} syntax.`),
 	// workflow_delete - Delete a workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_delete",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Delete a saved workflow (requires confirmation)"),
 			mcp.WithString("workflow_id",
 				mcp.Required(),
@@ -160,6 +166,7 @@ Variables can be used in steps with {{varName}} syntax.`),
 	// workflow_update - Update an existing workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Update an existing workflow. Can update name, description, and/or steps.
 Only provided fields will be updated. Use workflow_get first to see current state.`),
 			mcp.WithString("workflow_id",
@@ -185,6 +192,7 @@ Only provided fields will be updated. Use workflow_get first to see current stat
 	// workflow_run - Run a workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_run",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Run a workflow on a device. By default runs asynchronously. Set wait=true to wait for completion."),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -208,6 +216,7 @@ These variables will be merged with workflow's default variables (runtime values
 	// workflow_stop - Stop a running workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Stop a running workflow on a device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -220,6 +229,7 @@ These variables will be merged with workflow's default variables (runtime values
 	// workflow_pause - Pause a running workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_pause",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Pause a running workflow on a device. The workflow can be resumed later with workflow_resume."),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -232,6 +242,7 @@ These variables will be merged with workflow's default variables (runtime values
 	// workflow_resume - Resume a paused workflow
 	s.server.AddTool(
 		mcp.NewTool("workflow_resume",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Resume a paused workflow on a device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -244,6 +255,7 @@ These variables will be merged with workflow's default variables (runtime values
 	// workflow_step_next - Execute next step then pause (step-by-step debugging)
 	s.server.AddTool(
 		mcp.NewTool("workflow_step_next",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Execute the next step of a paused workflow, then automatically pause again.
 This enables step-by-step debugging of workflows.
 
@@ -270,6 +282,8 @@ RETURNS:
 	// workflow_status - Get workflow running status
 	s.server.AddTool(
 		mcp.NewTool("workflow_status",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Check if a workflow is currently running on a device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -282,6 +296,7 @@ RETURNS:
 	// workflow_execute_step - Execute a single workflow step (V2)
 	s.server.AddTool(
 		mcp.NewTool("workflow_execute_step",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Execute a single workflow step on a device (V2 format).
 
 Step types:

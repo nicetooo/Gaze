@@ -18,10 +18,13 @@ type BoundsRect struct {
 	X1, Y1, X2, Y2 int
 }
 
+// reBounds matches Android bounds strings "[x1,y1][x2,y2]".
+// Package-level so per-node hot paths don't recompile it.
+var reBounds = regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
+
 // ParseBounds parses Android bounds string "[x1,y1][x2,y2]" into BoundsRect
 func ParseBounds(bounds string) (*BoundsRect, error) {
-	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-	matches := re.FindStringSubmatch(bounds)
+	matches := reBounds.FindStringSubmatch(bounds)
 	if len(matches) != 5 {
 		return nil, fmt.Errorf("invalid bounds format: %s", bounds)
 	}

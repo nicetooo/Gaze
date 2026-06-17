@@ -16,6 +16,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -119,6 +120,9 @@ type ProxyServer struct {
 	regexCacheMu sync.RWMutex
 
 	// debugLogFile is a lazily-opened persistent handle for debugLog output.
+	// debugEnabled gates all debugLog calls (default off) so the hot path
+	// skips the per-request Sprintf + disk writes entirely.
+	debugEnabled atomic.Bool
 	debugLogMu   sync.Mutex
 	debugLogFile *os.File
 }
@@ -565,13 +569,36 @@ func (p *ProxyServer) simulateLatency() {
 	}
 }
 
+// SetDebugLogging toggles proxy debug logging to .log/proxy_debug.log.
+// Disabled by default; disabling also closes the current log handle.
+func (p *ProxyServer) SetDebugLogging(enabled bool) {
+	p.debugEnabled.Store(enabled)
+	if !enabled {
+		p.debugLogMu.Lock()
+		if p.debugLogFile != nil {
+			p.debugLogFile.Close()
+			p.debugLogFile = nil
+		}
+		p.debugLogMu.Unlock()
+	}
+}
+
 func (p *ProxyServer) debugLog(format string, args ...interface{}) {
+	if !p.debugEnabled.Load() {
+		return
+	}
 	// Keep a persistent handle (lazily opened) instead of open/close per line:
 	// appending to an open file is microseconds, far cheaper than the previous
 	// per-call goroutine + MkdirAll + open/close, and lines stay in order.
 	msg := fmt.Sprintf("[%s] ", time.Now().Format("15:04:05.000")) + fmt.Sprintf(format, args...) + "\n"
 	p.debugLogMu.Lock()
 	defer p.debugLogMu.Unlock()
+	// Re-check under the lock: a concurrent SetDebugLogging(false) may have
+	// closed the handle between the fast-path check and lock acquisition;
+	// without this an in-flight call would lazily reopen it while disabled
+	if !p.debugEnabled.Load() {
+		return
+	}
 	if p.debugLogFile == nil {
 		if err := os.MkdirAll(".log", 0755); err != nil {
 			return
@@ -848,71 +875,79 @@ func (p *ProxyServer) Start(port int, onRequest func(RequestLog)) error {
 		}
 
 		// Check for breakpoint rules (request phase)
-		if p.hasBreakpointRules() && p.pendingBreakpointCount() < maxPendingBreakpoints {
-			// Ensure we have the body for display
-			var bpReqBody []byte
-			if mockBodyBytes != nil {
-				bpReqBody = mockBodyBytes
-			} else if r.Body != nil && r.Body != http.NoBody {
-				bpReqBody, _ = io.ReadAll(r.Body)
-				r.Body = io.NopCloser(bytes.NewReader(bpReqBody))
-			}
-
+		if p.hasBreakpointRules() {
 			if bpRule := p.matchBreakpointRule(r, "request"); bpRule != nil {
-				bpID := fmt.Sprintf("bp-%d-%d", ctx.Session, time.Now().UnixNano())
-				bp := &pendingBreakpoint{
-					Info: PendingBreakpointInfo{
-						ID:        bpID,
-						RuleID:    bpRule.ID,
-						Phase:     "request",
-						Method:    r.Method,
-						URL:       r.URL.String(),
-						Headers:   copyHeader(r.Header),
-						Body:      string(bpReqBody),
-						CreatedAt: time.Now().UnixMilli(),
-					},
-					Ch: make(chan BreakpointResolution, 1),
-				}
-
-				p.addPendingBreakpoint(bp)
-				p.notifyBreakpointHit(bp.Info)
-				p.debugLog("  -> BREAKPOINT HIT (request phase, rule: %s)", bpRule.ID)
-
-				// Block until user resolves or timeout
-				select {
-				case resolution := <-bp.Ch:
-					p.removePendingBreakpoint(bpID)
-					if resolution.Action == "drop" {
-						p.debugLog("  -> BREAKPOINT DROPPED")
-						// Mark as dropped so response handler skips breakpoint matching
-						ctx.UserData = id + "|bp-dropped"
-						return r, goproxy.NewResponse(r, goproxy.ContentTypeText, http.StatusBadGateway, "Dropped by breakpoint")
+				if p.pendingBreakpointCount() >= maxPendingBreakpoints {
+					// Pool full: pass through, but record it so the UI can surface
+					// the skip instead of silently ignoring the rule
+					p.notifyBreakpointCapacity(bpRule.ID, r.URL.String(), "request")
+					p.debugLog("  -> BREAKPOINT SKIPPED (pool full, rule: %s)", bpRule.ID)
+				} else {
+					// Ensure we have the body for display
+					var bpReqBody []byte
+					if mockBodyBytes != nil {
+						bpReqBody = mockBodyBytes
+					} else if r.Body != nil && r.Body != http.NoBody {
+						bpReqBody, _ = io.ReadAll(r.Body)
+						r.Body = io.NopCloser(bytes.NewReader(bpReqBody))
 					}
-					// Apply modifications
-					if resolution.ModifiedURL != "" {
-						if parsed, err := url.Parse(resolution.ModifiedURL); err == nil {
-							r.URL = parsed
-							r.Host = parsed.Host
+
+					bpID := fmt.Sprintf("bp-%d-%d", ctx.Session, time.Now().UnixNano())
+					bp := &pendingBreakpoint{
+						Info: PendingBreakpointInfo{
+							ID:        bpID,
+							RuleID:    bpRule.ID,
+							Phase:     "request",
+							Method:    r.Method,
+							URL:       r.URL.String(),
+							Headers:   copyHeader(r.Header),
+							Body:      string(bpReqBody),
+							CreatedAt: time.Now().UnixMilli(),
+						},
+						Ch: make(chan BreakpointResolution, 1),
+					}
+
+					p.addPendingBreakpoint(bp)
+					p.notifyBreakpointHit(bp.Info)
+					p.debugLog("  -> BREAKPOINT HIT (request phase, rule: %s)", bpRule.ID)
+
+					// Block until user resolves or timeout
+					select {
+					case resolution := <-bp.Ch:
+						p.removePendingBreakpoint(bpID)
+						if resolution.Action == "drop" {
+							p.debugLog("  -> BREAKPOINT DROPPED")
+							// Mark as dropped so response handler skips breakpoint matching
+							ctx.UserData = id + "|bp-dropped"
+							return r, goproxy.NewResponse(r, goproxy.ContentTypeText, http.StatusBadGateway, "Dropped by breakpoint")
 						}
-					}
-					if resolution.ModifiedMethod != "" {
-						r.Method = resolution.ModifiedMethod
-					}
-					if resolution.ModifiedHeaders != nil {
-						for k, v := range resolution.ModifiedHeaders {
-							r.Header.Set(k, v)
+						// Apply modifications
+						if resolution.ModifiedURL != "" {
+							if parsed, err := url.Parse(resolution.ModifiedURL); err == nil {
+								r.URL = parsed
+								r.Host = parsed.Host
+							}
 						}
-					}
-					if resolution.ModifiedBody != "" {
-						r.Body = io.NopCloser(strings.NewReader(resolution.ModifiedBody))
-						r.ContentLength = int64(len(resolution.ModifiedBody))
-					}
-					p.debugLog("  -> BREAKPOINT FORWARDED")
+						if resolution.ModifiedMethod != "" {
+							r.Method = resolution.ModifiedMethod
+						}
+						if resolution.ModifiedHeaders != nil {
+							for k, v := range resolution.ModifiedHeaders {
+								r.Header.Set(k, v)
+							}
+						}
+						if resolution.ModifiedBody != "" {
+							r.Body = io.NopCloser(strings.NewReader(resolution.ModifiedBody))
+							r.ContentLength = int64(len(resolution.ModifiedBody))
+						}
+						p.debugLog("  -> BREAKPOINT FORWARDED")
 
-				case <-time.After(breakpointTimeout):
-					p.removePendingBreakpoint(bpID)
-					p.notifyBreakpointResolved(bpID, "timeout")
-					p.debugLog("  -> BREAKPOINT TIMEOUT (auto-forward)")
+					case <-time.After(breakpointTimeout):
+						p.removePendingBreakpoint(bpID)
+						p.bp.timeoutForwards.Add(1)
+						p.notifyBreakpointResolved(bpID, "timeout")
+						p.debugLog("  -> BREAKPOINT TIMEOUT (auto-forward)")
+					}
 				}
 			}
 		}
@@ -972,9 +1007,15 @@ func (p *ProxyServer) Start(port int, onRequest func(RequestLog)) error {
 		// Skip if request was dropped by a breakpoint (bpDropped) to avoid phantom response breakpoints
 		breakpointed := false
 		if !mocked && !bpDropped && !isWS && req != nil && req.Method != "CONNECT" &&
-			p.hasBreakpointRules() && p.pendingBreakpointCount() < maxPendingBreakpoints {
+			p.hasBreakpointRules() {
 
-			if bpRule := p.matchBreakpointRule(req, "response"); bpRule != nil {
+			if bpRule := p.matchBreakpointRule(req, "response"); bpRule != nil &&
+				p.pendingBreakpointCount() >= maxPendingBreakpoints {
+				// Pool full: pass through, but record it so the UI can surface
+				// the skip instead of silently ignoring the rule
+				p.notifyBreakpointCapacity(bpRule.ID, req.URL.String(), "response")
+				p.debugLog("  -> BREAKPOINT SKIPPED (pool full, rule: %s)", bpRule.ID)
+			} else if bpRule != nil {
 				breakpointed = true
 
 				// Read full response body for display
@@ -1051,6 +1092,7 @@ func (p *ProxyServer) Start(port int, onRequest func(RequestLog)) error {
 
 				case <-time.After(breakpointTimeout):
 					p.removePendingBreakpoint(bpID)
+					p.bp.timeoutForwards.Add(1)
 					p.notifyBreakpointResolved(bpID, "timeout")
 					p.debugLog("  -> BREAKPOINT TIMEOUT (auto-forward)")
 				}

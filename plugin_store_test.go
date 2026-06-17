@@ -2,14 +2,16 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
+	"path/filepath"
 	"testing"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 // setupTestDB 创建内存数据库并初始化 PluginStore schema
-// 注意: pruneVersions 在 SavePlugin 的事务内使用 ps.db 直接执行,
-// 在 :memory: 数据库中会因事务锁冲突而失败并被静默忽略 (生产环境使用 WAL 模式无此问题)
+// pruneVersions 在 SavePlugin 事务内通过 tx 执行，内存库与生产 WAL 库行为一致
 func setupTestDB(t *testing.T) (*sql.DB, *PluginStore) {
 	t.Helper()
 	db, err := sql.Open("sqlite3", ":memory:?_foreign_keys=ON&_busy_timeout=100")
@@ -424,7 +426,7 @@ func TestPluginStore_RollbackPlugin_NonExistentVersion(t *testing.T) {
 // ========== PruneVersions 测试 ==========
 
 func TestPluginStore_PruneVersions(t *testing.T) {
-	_, store := setupTestDB(t)
+	db, store := setupTestDB(t)
 
 	plugin := newTestPlugin("prune-test", "Prune Test")
 
@@ -446,8 +448,15 @@ func TestPluginStore_PruneVersions(t *testing.T) {
 		t.Errorf("Expected 5 versions before prune, got %d", len(versions))
 	}
 
-	// 手动调用 pruneVersions，保留 2 个
-	store.pruneVersions("prune-test", 2)
+	// 手动在事务内调用 pruneVersions，保留 2 个
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Begin tx failed: %v", err)
+	}
+	store.pruneVersions(tx, "prune-test", 2)
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit failed: %v", err)
+	}
 
 	// 验证只剩 2 个
 	versions, err = store.GetPluginVersions("prune-test", 100)
@@ -456,6 +465,52 @@ func TestPluginStore_PruneVersions(t *testing.T) {
 	}
 	if len(versions) != 2 {
 		t.Errorf("Expected 2 versions after prune, got %d", len(versions))
+	}
+}
+
+// TestPluginStore_SavePlugin_WALPruneRegression 回归测试 (PL-1):
+// pruneVersions 曾在 SavePlugin 未提交事务期间用连接池另一条连接执行 DELETE，
+// 在生产 WAL + _busy_timeout=5000 DSN 下每次更新固定阻塞 ~5s 且清理永不生效。
+// 此测试用与生产一致的 DSN 断言：更新不再阻塞 busy_timeout，且版本数被裁剪到上限 (20)。
+func TestPluginStore_SavePlugin_WALPruneRegression(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "plugins.db")
+	db, err := sql.Open("sqlite3", dbPath+"?_journal_mode=WAL&_foreign_keys=ON&_busy_timeout=5000")
+	if err != nil {
+		t.Fatalf("Failed to open WAL db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	store := NewPluginStore(db)
+	if err := store.InitSchema(); err != nil {
+		t.Fatalf("InitSchema failed: %v", err)
+	}
+
+	plugin := newTestPlugin("wal-prune", "WAL Prune")
+	if err := store.SavePlugin(plugin); err != nil {
+		t.Fatalf("SavePlugin (insert) failed: %v", err)
+	}
+
+	// 25 次更新产生 25 条版本历史，超出 20 的保留上限
+	start := time.Now()
+	for i := 0; i < 25; i++ {
+		plugin.Metadata.Version = fmt.Sprintf("1.0.%d", i+1)
+		if err := store.SavePlugin(plugin); err != nil {
+			t.Fatalf("SavePlugin (update %d) failed: %v", i, err)
+		}
+	}
+	elapsed := time.Since(start)
+
+	// 修复前单次更新即阻塞 ~5.2s（25 次 ≈ 130s）；修复后整组更新应远低于此
+	if elapsed > 10*time.Second {
+		t.Errorf("25 updates took %v, prune DELETE is likely blocking on busy_timeout again", elapsed)
+	}
+
+	versions, err := store.GetPluginVersions("wal-prune", 100)
+	if err != nil {
+		t.Fatalf("GetPluginVersions failed: %v", err)
+	}
+	if len(versions) != 20 {
+		t.Errorf("Expected versions pruned to 20, got %d", len(versions))
 	}
 }
 

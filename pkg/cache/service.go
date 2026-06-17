@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"Gaze/pkg/fileutil"
 )
 
 // AppPackage represents cached app package information
@@ -132,7 +134,7 @@ func (s *Service) SaveCache() error {
 		return err
 	}
 
-	if err := os.WriteFile(s.cachePath, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(s.cachePath, data, 0644); err != nil {
 		s.log("Error saving cache to %s: %v", s.cachePath, err)
 		return err
 	}
@@ -218,7 +220,7 @@ func (s *Service) SaveSettings() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.settingsPath, data, 0644)
+	return fileutil.WriteFileAtomic(s.settingsPath, data, 0644)
 }
 
 func (s *Service) loadSettings() {

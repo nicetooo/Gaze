@@ -619,7 +619,6 @@ function DeviceList() {
 - `sessions`: 会话信息
 - `events`: 事件主表 (不含大数据)
 - `event_data`: 事件详细数据 (分离存储)
-- `time_index`: 时间索引 (按秒聚合)
 - `bookmarks`: 用户书签
 - `assertions`: 断言定义
 - `assertion_results`: 断言结果

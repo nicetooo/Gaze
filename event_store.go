@@ -60,7 +60,6 @@ type EventStore struct {
 	stmtInsertEventData    *sql.Stmt
 	stmtInsertSession      *sql.Stmt
 	stmtUpdateSession      *sql.Stmt
-	stmtUpsertTimeIndex    *sql.Stmt
 	stmtInsertAssertion    *sql.Stmt
 	stmtUpdateAssertion    *sql.Stmt
 	stmtInsertAssertResult *sql.Stmt
@@ -142,17 +141,6 @@ CREATE TABLE IF NOT EXISTS event_data (
     data TEXT NOT NULL,
     data_size INTEGER,
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
-);
-
--- ==================== Time Index 表 ====================
-CREATE TABLE IF NOT EXISTS time_index (
-    session_id TEXT NOT NULL,
-    second INTEGER NOT NULL,
-    event_count INTEGER NOT NULL,
-    first_event_id TEXT NOT NULL,
-    has_error INTEGER DEFAULT 0,
-    PRIMARY KEY (session_id, second),
-    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
 );
 
 -- ==================== Bookmarks 表 ====================
@@ -285,6 +273,13 @@ END;
 // 数据压缩辅助函数
 // ========================================
 
+// gzipWriterPool 池化 gzip.Writer，高频事件写入时避免每次重建 deflate 状态 (约 64KB+)
+var gzipWriterPool = sync.Pool{
+	New: func() interface{} {
+		return gzip.NewWriter(io.Discard)
+	},
+}
+
 // compressData 压缩数据 (使用 gzip)
 // 小于 1KB 的数据不压缩，避免头部开销
 func compressData(data []byte) ([]byte, error) {
@@ -293,12 +288,16 @@ func compressData(data []byte) ([]byte, error) {
 	}
 
 	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if _, err := gz.Write(data); err != nil {
-		return nil, err
+	gz := gzipWriterPool.Get().(*gzip.Writer)
+	gz.Reset(&buf)
+	_, writeErr := gz.Write(data)
+	closeErr := gz.Close()
+	gzipWriterPool.Put(gz)
+	if writeErr != nil {
+		return nil, writeErr
 	}
-	if err := gz.Close(); err != nil {
-		return nil, err
+	if closeErr != nil {
+		return nil, closeErr
 	}
 
 	// 如果压缩后更大，保留原始数据
@@ -420,6 +419,10 @@ func (s *EventStore) initSchema() error {
 		return fmt.Errorf("failed to migrate plugin fields: %w", err)
 	}
 
+	// 迁移：移除旧版 time_index 表（只写不读且计数错误，时间索引现由
+	// GetTimeIndex 对 events 实时 GROUP BY 生成）
+	s.db.Exec("DROP TABLE IF EXISTS time_index")
+
 	return nil
 }
 
@@ -487,17 +490,6 @@ func (s *EventStore) prepareStatements() error {
 	`)
 	if err != nil {
 		return fmt.Errorf("prepare update session: %w", err)
-	}
-
-	s.stmtUpsertTimeIndex, err = s.db.Prepare(`
-		INSERT INTO time_index (session_id, second, event_count, first_event_id, has_error)
-		VALUES (?, ?, ?, ?, ?)
-		ON CONFLICT(session_id, second) DO UPDATE SET
-			event_count = event_count + excluded.event_count,
-			has_error = has_error OR excluded.has_error
-	`)
-	if err != nil {
-		return fmt.Errorf("prepare upsert time index: %w", err)
 	}
 
 	s.stmtInsertAssertion, err = s.db.Prepare(`
@@ -574,9 +566,6 @@ func (s *EventStore) Close() error {
 	}
 	if s.stmtUpdateSession != nil {
 		s.stmtUpdateSession.Close()
-	}
-	if s.stmtUpsertTimeIndex != nil {
-		s.stmtUpsertTimeIndex.Close()
 	}
 	if s.stmtInsertAssertion != nil {
 		s.stmtInsertAssertion.Close()
@@ -997,25 +986,28 @@ func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 
 	// 获取真实总数
 	// 如果有搜索，需要 JOIN event_data 表来搜索 data 字段
+	// limit==0 全量加载时跳过独立 COUNT 扫描，total 在主查询后取结果行数
 	var total int
-	if hasSearch {
-		// COUNT 查询需要 LEFT JOIN event_data
-		countQuery := "SELECT COUNT(DISTINCT e.id) FROM events e LEFT JOIN event_data ed ON e.id = ed.event_id"
-		if whereClause != "" {
-			countQuery += whereClause + " AND " + searchCondition
+	if q.Limit > 0 {
+		if hasSearch {
+			// COUNT 查询需要 LEFT JOIN event_data
+			countQuery := "SELECT COUNT(DISTINCT e.id) FROM events e LEFT JOIN event_data ed ON e.id = ed.event_id"
+			if whereClause != "" {
+				countQuery += whereClause + " AND " + searchCondition
+			} else {
+				countQuery += " WHERE " + searchCondition
+			}
+			// 合并参数：先是基础条件参数，再是搜索参数
+			countArgs := append(append([]interface{}{}, args...), searchArgs...)
+			if err := s.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+				return nil, fmt.Errorf("count query: %w", err)
+			}
 		} else {
-			countQuery += " WHERE " + searchCondition
-		}
-		// 合并参数：先是基础条件参数，再是搜索参数
-		countArgs := append(append([]interface{}{}, args...), searchArgs...)
-		if err := s.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
-			return nil, fmt.Errorf("count query: %w", err)
-		}
-	} else {
-		// 无搜索时，只查 events 表
-		countQuery := "SELECT COUNT(*) FROM events " + whereClause
-		if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
-			return nil, fmt.Errorf("count query: %w", err)
+			// 无搜索时，只查 events 表
+			countQuery := "SELECT COUNT(*) FROM events " + whereClause
+			if err := s.db.QueryRow(countQuery, args...).Scan(&total); err != nil {
+				return nil, fmt.Errorf("count query: %w", err)
+			}
 		}
 	}
 
@@ -1103,6 +1095,11 @@ func (s *EventStore) QueryEvents(q EventQuery) (*EventQueryResult, error) {
 			return nil, err
 		}
 		events = append(events, *event)
+	}
+
+	// limit==0 全量加载：结果行数即总数，HasMore 必为 false
+	if q.Limit <= 0 {
+		total = len(events)
 	}
 
 	hasMore := false
@@ -1276,18 +1273,6 @@ func (s *EventStore) scanEventSingle(row *sql.Row) (*UnifiedEvent, error) {
 // ========================================
 // Time Index 操作
 // ========================================
-
-// UpsertTimeIndex 更新时间索引
-func (s *EventStore) UpsertTimeIndex(sessionID string, entry TimeIndexEntry) error {
-	hasError := 0
-	if entry.HasError {
-		hasError = 1
-	}
-	_, err := s.stmtUpsertTimeIndex.Exec(
-		sessionID, entry.Second, entry.EventCount, entry.FirstEventID, hasError,
-	)
-	return err
-}
 
 // GetTimeIndex 直接从事件数据生成时间索引（更可靠）
 func (s *EventStore) GetTimeIndex(sessionID string) ([]TimeIndexEntry, error) {

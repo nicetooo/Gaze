@@ -27,6 +27,7 @@ func (s *MCPServer) registerSessionTools() {
 	// session_create - Create a new session with optional configuration
 	s.server.AddTool(
 		mcp.NewTool("session_create",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Create a new tracking session for a device with optional configuration.
 
 Configuration options:
@@ -95,6 +96,7 @@ Examples:
 	// session_end - End a session
 	s.server.AddTool(
 		mcp.NewTool("session_end",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("End an active session"),
 			mcp.WithString("session_id",
 				mcp.Required(),
@@ -110,6 +112,8 @@ Examples:
 	// session_active - Get active session
 	s.server.AddTool(
 		mcp.NewTool("session_active",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get the active session for a device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -122,6 +126,8 @@ Examples:
 	// session_list - List sessions
 	s.server.AddTool(
 		mcp.NewTool("session_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("List sessions for a device"),
 			mcp.WithString("device_id",
 				mcp.Description("Device ID (optional, lists all if not provided)"),
@@ -136,6 +142,8 @@ Examples:
 	// session_events - Query session events
 	s.server.AddTool(
 		mcp.NewTool("session_events",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Query events from a session. Use 'search' for text search, 'types' for event type filter."),
 			mcp.WithString("session_id",
 				mcp.Required(),
@@ -163,6 +171,7 @@ Examples:
 	// session_export - Export a session to a .gaze archive
 	s.server.AddTool(
 		mcp.NewTool("session_export",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Export a session (events, bookmarks, recording) to a .gaze archive file.
 
 The .gaze file is a ZIP archive containing:
@@ -195,6 +204,7 @@ NOTE: output_path must be an absolute path on the host machine.`),
 	// session_import - Import a session from a .gaze archive
 	s.server.AddTool(
 		mcp.NewTool("session_import",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Import a session from a .gaze archive file.
 
 Imports all data from a .gaze archive:
@@ -221,6 +231,8 @@ NOTE: input_path must be an absolute path to an existing .gaze file.`),
 	// session_stats - Get session statistics
 	s.server.AddTool(
 		mcp.NewTool("session_stats",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get statistics for a session"),
 			mcp.WithString("session_id",
 				mcp.Required(),

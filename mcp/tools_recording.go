@@ -12,6 +12,7 @@ func (s *MCPServer) registerRecordingTools() {
 	// touch_record_start
 	s.server.AddTool(
 		mcp.NewTool("touch_record_start",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Start touch recording on a device.
 
 Records touch events from the device screen using getevent.
@@ -42,6 +43,7 @@ EXAMPLE:
 	// touch_record_stop
 	s.server.AddTool(
 		mcp.NewTool("touch_record_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Stop touch recording and return the recorded script.
 
 Returns a TouchScript containing all recorded touch events (tap, swipe, long_press).
@@ -59,6 +61,8 @@ The returned script can be saved with touch_script_save or played with touch_scr
 	// touch_record_status
 	s.server.AddTool(
 		mcp.NewTool("touch_record_status",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Check if touch recording is active on a device.`),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -71,6 +75,8 @@ The returned script can be saved with touch_script_save or played with touch_scr
 	// touch_script_list
 	s.server.AddTool(
 		mcp.NewTool("touch_script_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all saved touch scripts.
 
 Returns an array of TouchScript objects with name, device info, resolution,
@@ -82,6 +88,7 @@ event count, and creation time. Scripts are stored as JSON files.`),
 	// touch_script_play
 	s.server.AddTool(
 		mcp.NewTool("touch_script_play",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Play back a saved touch script on a device.
 
 Replays recorded touch events (tap, swipe, long_press) using adb input commands.
@@ -112,6 +119,7 @@ EXAMPLE:
 	// touch_script_save
 	s.server.AddTool(
 		mcp.NewTool("touch_script_save",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Save a touch script with a given name.
 
 Saves the script as a JSON file. The script must include events array.
@@ -130,6 +138,7 @@ PARAMETERS:
 	// touch_script_delete
 	s.server.AddTool(
 		mcp.NewTool("touch_script_delete",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Delete a saved touch script by name.`),
 			mcp.WithString("script_name",
 				mcp.Required(),
@@ -142,6 +151,7 @@ PARAMETERS:
 	// touch_playback_stop
 	s.server.AddTool(
 		mcp.NewTool("touch_playback_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Stop an ongoing touch script playback on a device.`),
 			mcp.WithString("device_id",
 				mcp.Required(),

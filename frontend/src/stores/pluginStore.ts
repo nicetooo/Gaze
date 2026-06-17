@@ -167,6 +167,8 @@ export const usePluginStore = create<PluginState>((set, get) => ({
         compiledCode: plugin.compiledCode || plugin.sourceCode || "",
         filters: plugin.metadata?.filters || { sources: [], types: [], levels: [], urlPattern: "", titleMatch: "" },
         config: plugin.metadata?.config || {},
+        // 透传 enabled，避免后端把禁用插件在保存后重置为启用
+        enabled: plugin.metadata?.enabled,
       });
 
       await SavePlugin(req);

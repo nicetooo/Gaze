@@ -5,6 +5,7 @@ import VirtualList from './VirtualList';
 import DeviceSelector from './DeviceSelector';
 import JsonViewer from './JsonViewer';
 import JsonEditor from './JsonEditor';
+import { useShallow } from 'zustand/react/shallow';
 import { useDeviceStore, useProxyStore, RequestLog as StoreRequestLog, WSMessage, WSMessageInfo } from '../stores';
 import { buildModifications, type EditableHeader } from '../stores/proxyStore';
 // @ts-ignore
@@ -85,45 +86,89 @@ const ProxyView: React.FC = () => {
     const { t } = useTranslation();
     const { token } = theme.useToken();
     const { modal, message } = App.useApp();
-    const { selectedDevice } = useDeviceStore();
+    const selectedDevice = useDeviceStore((state) => state.selectedDevice);
 
-    // Use proxyStore instead of useState
+    // Grouped useShallow selectors instead of whole-store subscriptions:
+    // sets that don't touch the selected fields no longer re-render this view.
+    // Proxy control / config group
     const {
         isRunning,
         port,
         localIP,
-        logs,
         wsEnabled,
         mitmEnabled,
-        filterType,
-        searchText,
         latency,
         bypassPatterns,
         isBypassModalOpen,
         newPattern,
-        selectedLog,
         netStats,
         dlLimit,
         ulLimit,
         setProxyRunning,
         setPort,
         setLocalIP,
-        addLog,
-        updateLog,
-        clearLogs,
         toggleWS,
         toggleMITM,
-        setFilterType,
-        setSearchText,
         setLatency,
         setBypassModalOpen,
         setNewPattern,
-        selectLog,
         setNetStats,
         setSpeedLimits,
         addBypassPattern,
         removeBypassPattern,
-    } = useProxyStore();
+    } = useProxyStore(useShallow((state) => ({
+        isRunning: state.isRunning,
+        port: state.port,
+        localIP: state.localIP,
+        wsEnabled: state.wsEnabled,
+        mitmEnabled: state.mitmEnabled,
+        latency: state.latency,
+        bypassPatterns: state.bypassPatterns,
+        isBypassModalOpen: state.isBypassModalOpen,
+        newPattern: state.newPattern,
+        netStats: state.netStats,
+        dlLimit: state.dlLimit,
+        ulLimit: state.ulLimit,
+        setProxyRunning: state.setProxyRunning,
+        setPort: state.setPort,
+        setLocalIP: state.setLocalIP,
+        toggleWS: state.toggleWS,
+        toggleMITM: state.toggleMITM,
+        setLatency: state.setLatency,
+        setBypassModalOpen: state.setBypassModalOpen,
+        setNewPattern: state.setNewPattern,
+        setNetStats: state.setNetStats,
+        setSpeedLimits: state.setSpeedLimits,
+        addBypassPattern: state.addBypassPattern,
+        removeBypassPattern: state.removeBypassPattern,
+    })));
+
+    // Capture list group (logs, filtering, selection)
+    const {
+        logs,
+        filterType,
+        searchText,
+        debouncedSearchText,
+        selectedLog,
+        addLog,
+        updateLog,
+        clearLogs,
+        setFilterType,
+        setSearchText,
+        selectLog,
+    } = useProxyStore(useShallow((state) => ({
+        logs: state.logs,
+        filterType: state.filterType,
+        searchText: state.searchText,
+        debouncedSearchText: state.debouncedSearchText,
+        selectedLog: state.selectedLog,
+        addLog: state.addLog,
+        updateLog: state.updateLog,
+        clearLogs: state.clearLogs,
+        setFilterType: state.setFilterType,
+        setSearchText: state.setSearchText,
+        selectLog: state.selectLog,
+    })));
 
     const [resendForm] = Form.useForm();
     const [mockForm] = Form.useForm();
@@ -142,7 +187,7 @@ const ProxyView: React.FC = () => {
     const mapRemoteFormMethod: string | undefined = Form.useWatch('method', mapRemoteForm);
     const rewriteFormMethod: string | undefined = Form.useWatch('method', rewriteForm);
 
-    // Additional proxy store state
+    // Resend + Mock rules group
     const {
         resendModalOpen,
         resendLoading,
@@ -170,6 +215,37 @@ const ProxyView: React.FC = () => {
         mockConditionHints,
         setMockConditionHints,
         setCertTrustStatus,
+    } = useProxyStore(useShallow((state) => ({
+        resendModalOpen: state.resendModalOpen,
+        resendLoading: state.resendLoading,
+        resendResponse: state.resendResponse,
+        resendMode: state.resendMode,
+        mockListModalOpen: state.mockListModalOpen,
+        mockEditModalOpen: state.mockEditModalOpen,
+        mockRules: state.mockRules,
+        editingMockRule: state.editingMockRule,
+        certTrustStatus: state.certTrustStatus,
+        setResendModalOpen: state.setResendModalOpen,
+        setResendLoading: state.setResendLoading,
+        setResendResponse: state.setResendResponse,
+        openResendModal: state.openResendModal,
+        closeResendModal: state.closeResendModal,
+        setMockRules: state.setMockRules,
+        setEditingMockRule: state.setEditingMockRule,
+        openMockListModal: state.openMockListModal,
+        closeMockListModal: state.closeMockListModal,
+        openMockEditModal: state.openMockEditModal,
+        closeMockEditModal: state.closeMockEditModal,
+        setMockEditModalOpen: state.setMockEditModalOpen,
+        pendingMockData: state.pendingMockData,
+        setPendingMockData: state.setPendingMockData,
+        mockConditionHints: state.mockConditionHints,
+        setMockConditionHints: state.setMockConditionHints,
+        setCertTrustStatus: state.setCertTrustStatus,
+    })));
+
+    // Proto management group
+    const {
         protoFiles,
         protoMappings,
         protoMessageTypes,
@@ -194,6 +270,35 @@ const ProxyView: React.FC = () => {
         openProtoImportURLModal,
         closeProtoImportURLModal,
         setProtoImportURL,
+    } = useProxyStore(useShallow((state) => ({
+        protoFiles: state.protoFiles,
+        protoMappings: state.protoMappings,
+        protoMessageTypes: state.protoMessageTypes,
+        protoListModalOpen: state.protoListModalOpen,
+        protoEditFileModalOpen: state.protoEditFileModalOpen,
+        protoEditMappingModalOpen: state.protoEditMappingModalOpen,
+        editingProtoFile: state.editingProtoFile,
+        editingProtoMapping: state.editingProtoMapping,
+        setProtoFiles: state.setProtoFiles,
+        setProtoMappings: state.setProtoMappings,
+        setProtoMessageTypes: state.setProtoMessageTypes,
+        openProtoListModal: state.openProtoListModal,
+        closeProtoListModal: state.closeProtoListModal,
+        openProtoEditFileModal: state.openProtoEditFileModal,
+        closeProtoEditFileModal: state.closeProtoEditFileModal,
+        openProtoEditMappingModal: state.openProtoEditMappingModal,
+        closeProtoEditMappingModal: state.closeProtoEditMappingModal,
+        protoImportLoading: state.protoImportLoading,
+        setProtoImportLoading: state.setProtoImportLoading,
+        protoImportURLModalOpen: state.protoImportURLModalOpen,
+        protoImportURL: state.protoImportURL,
+        openProtoImportURLModal: state.openProtoImportURLModal,
+        closeProtoImportURLModal: state.closeProtoImportURLModal,
+        setProtoImportURL: state.setProtoImportURL,
+    })));
+
+    // Breakpoint group
+    const {
         breakpointRules,
         pendingBreakpoints,
         breakpointListModalOpen,
@@ -215,6 +320,32 @@ const ProxyView: React.FC = () => {
         updateBreakpointEdit,
         pendingBreakpointData,
         setPendingBreakpointData,
+    } = useProxyStore(useShallow((state) => ({
+        breakpointRules: state.breakpointRules,
+        pendingBreakpoints: state.pendingBreakpoints,
+        breakpointListModalOpen: state.breakpointListModalOpen,
+        breakpointEditModalOpen: state.breakpointEditModalOpen,
+        editingBreakpointRule: state.editingBreakpointRule,
+        breakpointResolveModalOpen: state.breakpointResolveModalOpen,
+        selectedBreakpoint: state.selectedBreakpoint,
+        breakpointEdit: state.breakpointEdit,
+        setBreakpointRules: state.setBreakpointRules,
+        openBreakpointListModal: state.openBreakpointListModal,
+        closeBreakpointListModal: state.closeBreakpointListModal,
+        openBreakpointEditModal: state.openBreakpointEditModal,
+        closeBreakpointEditModal: state.closeBreakpointEditModal,
+        addPendingBreakpoint: state.addPendingBreakpoint,
+        removePendingBreakpoint: state.removePendingBreakpoint,
+        clearPendingBreakpoints: state.clearPendingBreakpoints,
+        openBreakpointResolveModal: state.openBreakpointResolveModal,
+        closeBreakpointResolveModal: state.closeBreakpointResolveModal,
+        updateBreakpointEdit: state.updateBreakpointEdit,
+        pendingBreakpointData: state.pendingBreakpointData,
+        setPendingBreakpointData: state.setPendingBreakpointData,
+    })));
+
+    // Map Remote / Rewrite / Diff / WebSocket group
+    const {
         mapRemoteRules,
         mapRemoteListModalOpen,
         mapRemoteEditModalOpen,
@@ -242,7 +373,35 @@ const ProxyView: React.FC = () => {
         wsMessages,
         addWSMessage,
         clearWSMessages,
-    } = useProxyStore();
+    } = useProxyStore(useShallow((state) => ({
+        mapRemoteRules: state.mapRemoteRules,
+        mapRemoteListModalOpen: state.mapRemoteListModalOpen,
+        mapRemoteEditModalOpen: state.mapRemoteEditModalOpen,
+        editingMapRemoteRule: state.editingMapRemoteRule,
+        setMapRemoteRules: state.setMapRemoteRules,
+        openMapRemoteListModal: state.openMapRemoteListModal,
+        closeMapRemoteListModal: state.closeMapRemoteListModal,
+        openMapRemoteEditModal: state.openMapRemoteEditModal,
+        closeMapRemoteEditModal: state.closeMapRemoteEditModal,
+        rewriteRules: state.rewriteRules,
+        rewriteListModalOpen: state.rewriteListModalOpen,
+        rewriteEditModalOpen: state.rewriteEditModalOpen,
+        editingRewriteRule: state.editingRewriteRule,
+        setRewriteRules: state.setRewriteRules,
+        openRewriteListModal: state.openRewriteListModal,
+        closeRewriteListModal: state.closeRewriteListModal,
+        openRewriteEditModal: state.openRewriteEditModal,
+        closeRewriteEditModal: state.closeRewriteEditModal,
+        diffBaseLog: state.diffBaseLog,
+        diffModalOpen: state.diffModalOpen,
+        diffTargetLog: state.diffTargetLog,
+        setDiffBaseLog: state.setDiffBaseLog,
+        openDiffModal: state.openDiffModal,
+        closeDiffModal: state.closeDiffModal,
+        wsMessages: state.wsMessages,
+        addWSMessage: state.addWSMessage,
+        clearWSMessages: state.clearWSMessages,
+    })));
 
     // Watch hidden _conditionHints field stored in the form (survives HMR / store resets)
     const formStoredHints: string | undefined = Form.useWatch('_conditionHints', mockForm);
@@ -1586,19 +1745,31 @@ const ProxyView: React.FC = () => {
         return () => { EventsOff('breakpoint-resolved'); };
     }, [removePendingBreakpoint]);
 
+    // Listen for breakpoint pool capacity warnings (matched request let through)
+    useEffect(() => {
+        const onCapacity = () => {
+            // Fixed key so repeated warnings replace instead of stacking
+            message.warning({ content: t('proxy.breakpoint_pool_full'), key: 'bp-capacity' });
+        };
+        const offCapacity = EventsOn('proxy-breakpoint-capacity', onCapacity);
+        return () => { offCapacity?.(); };
+    }, [t]);
+
     // Load breakpoint rules on mount
     useEffect(() => {
         loadBreakpointRules();
     }, []);
 
-    const filteredLogs = logs.filter(log => {
+    // Memoized: deep search across 5000 logs is expensive, so it must not rerun on
+    // unrelated re-renders (netStats ticks, modal toggles). Uses the debounced search text.
+    const filteredLogs = useMemo(() => logs.filter(log => {
         // Filter by type (ALL, HTTP, WS)
         if (filterType === "HTTP" && log.isWs) return false;
         if (filterType === "WS" && !log.isWs) return false;
 
         // Filter by search text (deep search: URL, method, status, headers, body, response)
-        if (searchText) {
-            const lowerSearch = searchText.toLowerCase();
+        if (debouncedSearchText) {
+            const lowerSearch = debouncedSearchText.toLowerCase();
 
             // Basic fields
             if (log.url.toLowerCase().includes(lowerSearch)) return true;
@@ -1632,7 +1803,7 @@ const ProxyView: React.FC = () => {
             return false;
         }
         return true;
-    });
+    }), [logs, filterType, debouncedSearchText]);
 
     return (
         <div style={{ padding: '16px', height: '100%', display: 'flex', flexDirection: 'column', gap: '12px', overflow: 'hidden' }}>

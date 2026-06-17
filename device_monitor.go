@@ -18,6 +18,9 @@ import (
 // 监控电池、网络、屏幕状态和应用生命周期
 // ========================================
 
+// deviceLogTimePattern 校验设备 date 输出是否为 logcat -T 可用的 "MM-DD HH:MM:SS.mmm" 格式
+var deviceLogTimePattern = regexp.MustCompile(`^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$`)
+
 // mustMarshal 序列化数据，失败时返回空 JSON 对象
 func mustMarshal(v interface{}) json.RawMessage {
 	data, err := json.Marshal(v)
@@ -280,17 +283,24 @@ func (m *DeviceMonitor) watchAppEvents() {
 	ctx, cancel := context.WithCancel(m.ctx)
 	m.logcatCancel = cancel
 
-	// 清除旧日志
-	clearCmd := m.app.newAdbCommand(ctx, "-s", m.deviceID, "logcat", "-c")
-	_ = clearCmd.Run()
-
 	// 监听关键事件
 	// ActivityTaskManager: Activity 启动/显示 (Android 10+)
 	// ActivityManager: 应用启动/停止 (旧版本)
 	// AndroidRuntime: 崩溃
 	// ANRManager: ANR
+	// 注意: 不使用 logcat -c 清空设备共享日志缓冲区（会与主日志流/外部工具竞态）。
+	// 优先以设备当前时间作为 -T 起点（精确"只看新日志"）；取不到时间时退回 -T 1
+	// （-T 1 会重放最近一条匹配的历史日志，可能在启动时产生一条陈旧事件）。
+	sinceArg := "1"
+	timeCmd := m.app.newAdbCommand(ctx, "-s", m.deviceID, "shell", "date '+%m-%d %H:%M:%S.000'")
+	if out, err := timeCmd.Output(); err == nil {
+		ts := strings.TrimSpace(string(out))
+		if deviceLogTimePattern.MatchString(ts) {
+			sinceArg = ts
+		}
+	}
 	cmd := m.app.newAdbCommand(ctx, "-s", m.deviceID, "logcat",
-		"-v", "time",
+		"-v", "time", "-T", sinceArg,
 		"ActivityTaskManager:I", "ActivityManager:I", "AndroidRuntime:E", "ANRManager:E", "*:S")
 	m.logcatCmd = cmd
 

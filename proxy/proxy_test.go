@@ -6,7 +6,11 @@ import (
 	"compress/gzip"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/andybalholm/brotli"
 	"github.com/klauspost/compress/zstd"
@@ -721,6 +725,106 @@ func TestHasRewriteRules(t *testing.T) {
 	}
 	if p.hasRewriteRules("response") {
 		t.Error("Should not have enabled response rules (r2 is disabled)")
+	}
+}
+
+// ==================== Debug logging switch ====================
+
+func TestDebugLog_DisabledByDefault(t *testing.T) {
+	p := &ProxyServer{}
+	p.debugLog("should be dropped %d", 1)
+
+	p.debugLogMu.Lock()
+	defer p.debugLogMu.Unlock()
+	if p.debugLogFile != nil {
+		t.Error("debugLog should not open a file while debug logging is disabled")
+	}
+}
+
+func TestSetDebugLogging_EnableDisable(t *testing.T) {
+	tmp := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldWd)
+
+	p := &ProxyServer{}
+	p.SetDebugLogging(true)
+	p.debugLog("hello %s", "world")
+
+	logPath := filepath.Join(tmp, ".log", "proxy_debug.log")
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("expected debug log file after enabling: %v", err)
+	}
+	if !strings.Contains(string(data), "hello world") {
+		t.Errorf("log content = %q, want to contain %q", data, "hello world")
+	}
+
+	// Disabling closes the handle and short-circuits further writes
+	p.SetDebugLogging(false)
+	p.debugLogMu.Lock()
+	if p.debugLogFile != nil {
+		t.Error("disabling debug logging should close the log handle")
+	}
+	p.debugLogMu.Unlock()
+
+	p.debugLog("dropped line")
+	data, err = os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "dropped line") {
+		t.Error("debugLog should not write after disabling")
+	}
+}
+
+// ==================== Breakpoint capacity observability ====================
+
+func TestBreakpointCapacityNotify(t *testing.T) {
+	p := &ProxyServer{}
+
+	type capacityHit struct {
+		ruleID, url, phase string
+	}
+	hits := make(chan capacityHit, 1)
+	p.SetBreakpointCapacityCallback(func(ruleID, url, phase string) {
+		hits <- capacityHit{ruleID, url, phase}
+	})
+
+	p.notifyBreakpointCapacity("rule-1", "https://example.com/api", "request")
+
+	select {
+	case hit := <-hits:
+		if hit.ruleID != "rule-1" || hit.url != "https://example.com/api" || hit.phase != "request" {
+			t.Errorf("unexpected callback args: %+v", hit)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("capacity callback not invoked")
+	}
+
+	skips, timeouts := p.BreakpointStats()
+	if skips != 1 {
+		t.Errorf("capacitySkips = %d, want 1", skips)
+	}
+	if timeouts != 0 {
+		t.Errorf("timeoutForwards = %d, want 0", timeouts)
+	}
+}
+
+func TestBreakpointCapacityNotify_NoCallback(t *testing.T) {
+	p := &ProxyServer{}
+	// Must not panic and must still count without a registered callback
+	p.notifyBreakpointCapacity("rule-1", "https://example.com/api", "response")
+	p.notifyBreakpointCapacity("rule-1", "https://example.com/api", "response")
+
+	skips, _ := p.BreakpointStats()
+	if skips != 2 {
+		t.Errorf("capacitySkips = %d, want 2", skips)
 	}
 }
 

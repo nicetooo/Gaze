@@ -2,6 +2,7 @@ import { memo } from 'react';
 import Editor from '@monaco-editor/react';
 import { Spin } from 'antd';
 import { useTheme } from '../ThemeContext';
+import '../monacoSetup';
 
 interface CodeBlockProps {
   /** Code string to display */

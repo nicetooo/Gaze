@@ -991,7 +991,8 @@
     "diff_resp_headers": "响应头",
     "diff_resp_body": "响应体",
     "ws_messages": "WS 消息",
-    "ws_no_messages": "暂无 WebSocket 消息。连接活跃时消息将在此显示。"
+    "ws_no_messages": "暂无 WebSocket 消息。连接活跃时消息将在此显示。",
+    "breakpoint_pool_full": "断点池已满（20 个），命中的请求已直接放行，请先处理挂起的断点。"
   },
   "batch": {
     "title": "批量操作",
@@ -1262,7 +1263,7 @@
     "saved": "工作流已保存",
     "started": "工作流已开始",
     "completed": "工作流已完成",
-    "error": "工作流出错",
+    "error": "错误",
     "stopped": "工作流已停止",
     "deleted": "工作流已删除",
     "renamed": "工作流已重命名",
@@ -1422,7 +1423,6 @@
     "drag_to_reorder": "拖拽排序",
     "steps_list_header": "{{count}} 个步骤（执行顺序）",
     "drag_cannot_before_start": "无法移动到开始节点之前",
-    "no_steps": "暂无步骤",
     "swipe_direction": "滑动方向",
     "direction_up": "向上",
     "direction_down": "向下",
@@ -1445,7 +1445,6 @@
     "branch_true": "成立",
     "branch_false": "不成立",
     "success": "成功",
-    "error": "错误",
     "error_device_not_found": "未找到设备",
     "error_empty_steps": "运行中止：工作流没有步骤",
     "generated_step_name": {
@@ -1553,6 +1552,7 @@
       "ui_tap": "在屏幕上的指定位置或元素上点击",
       "ui_swipe": "在屏幕上执行滑动手势",
       "ui_input": "向焦点输入框输入文本（通过 ADBKeyboard 支持 Unicode）",
+      "ui_wait_for": "等待 UI 元素出现或消失",
       "ui_resolution": "获取设备屏幕分辨率",
       "keyboard_setup": "安装并激活 ADBKeyboard 以支持 Unicode 文本输入",
       "session_create": "创建带可选配置的新跟踪会话",
@@ -1662,7 +1662,9 @@
       "plugin_test_detailed": "测试插件并返回详细结果（日志、执行时间、错误）",
       "plugin_test_custom": "使用自定义事件数据测试插件（无需数据库事件）",
       "plugin_test_batch": "一次性测试插件对多个事件的处理（最多 50 个）",
-      "plugin_sample_events": "从会话中获取示例事件用于插件测试"
+      "plugin_sample_events": "从会话中获取示例事件用于插件测试",
+      "file_upload": "上传本地文件到设备",
+      "file_list": "列出设备目录中的文件"
     },
     "resource": {
       "devices": "已连接 Android 设备列表 (JSON)",

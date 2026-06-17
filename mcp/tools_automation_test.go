@@ -501,3 +501,171 @@ func TestHandleUIResolution_Error(t *testing.T) {
 
 // Suppress unused import warning
 var _ = json.Marshal
+
+// ==================== ui_wait_for ====================
+
+func TestHandleUIWaitFor_AppearSatisfied(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.WaitForUIElementResult = map[string]interface{}{
+		"satisfied": true,
+		"elapsedMs": int64(1240),
+		"element": map[string]interface{}{
+			"bounds":  "[0,0][100,100]",
+			"text":    "Login",
+			"centerX": 50,
+			"centerY": 50,
+		},
+	}
+	server := NewMCPServer(mock)
+
+	result, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "text",
+		"selector_value": "Login",
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := getTextContent(result)
+	if !strings.Contains(text, "appeared") {
+		t.Error("Result should indicate the element appeared")
+	}
+	if !strings.Contains(text, "[0,0][100,100]") {
+		t.Error("Result should contain element bounds for ui_tap")
+	}
+
+	// Defaults: condition=appear, timeout=10000, interval=1000
+	lastCall := mock.GetLastCallByMethod("WaitForUIElement")
+	if lastCall == nil {
+		t.Fatal("WaitForUIElement should have been called")
+	}
+	if lastCall.Args[3] != "appear" {
+		t.Errorf("Expected default condition 'appear', got %v", lastCall.Args[3])
+	}
+	if lastCall.Args[4] != 10000 {
+		t.Errorf("Expected default timeout 10000, got %v", lastCall.Args[4])
+	}
+	if lastCall.Args[5] != 1000 {
+		t.Errorf("Expected default interval 1000, got %v", lastCall.Args[5])
+	}
+}
+
+func TestHandleUIWaitFor_GoneSatisfied(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.WaitForUIElementResult = map[string]interface{}{
+		"satisfied": true,
+		"elapsedMs": int64(2100),
+	}
+	server := NewMCPServer(mock)
+
+	result, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "id",
+		"selector_value": "progress_bar",
+		"condition":      "gone",
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	text := getTextContent(result)
+	if !strings.Contains(text, "gone") {
+		t.Error("Result should indicate the element is gone")
+	}
+}
+
+func TestHandleUIWaitFor_TimeoutNotError(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.WaitForUIElementResult = map[string]interface{}{
+		"satisfied": false,
+		"elapsedMs": int64(10000),
+		"message":   "element not found within timeout 10000ms",
+	}
+	server := NewMCPServer(mock)
+
+	result, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "text",
+		"selector_value": "Nonexistent",
+	}))
+	if err != nil {
+		t.Fatalf("Timeout should not be a handler error: %v", err)
+	}
+	if result.IsError {
+		t.Error("Timeout should not be reported as a tool error")
+	}
+
+	text := getTextContent(result)
+	if !strings.Contains(text, "not met") {
+		t.Error("Result should indicate the condition was not met")
+	}
+}
+
+func TestHandleUIWaitFor_TimeoutClamped(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.WaitForUIElementResult = map[string]interface{}{"satisfied": true, "elapsedMs": int64(1)}
+	server := NewMCPServer(mock)
+
+	_, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "text",
+		"selector_value": "X",
+		"timeout_ms":     float64(999999),
+	}))
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+
+	lastCall := mock.GetLastCallByMethod("WaitForUIElement")
+	if lastCall.Args[4] != 120000 {
+		t.Errorf("Expected timeout clamped to 120000, got %v", lastCall.Args[4])
+	}
+}
+
+func TestHandleUIWaitFor_InvalidCondition(t *testing.T) {
+	mock := NewMockGazeApp()
+	server := NewMCPServer(mock)
+
+	_, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "text",
+		"selector_value": "X",
+		"condition":      "vanish",
+	}))
+	if err == nil {
+		t.Error("Expected error for invalid condition")
+	}
+}
+
+func TestHandleUIWaitFor_MissingArgs(t *testing.T) {
+	mock := NewMockGazeApp()
+	server := NewMCPServer(mock)
+
+	cases := []map[string]interface{}{
+		nil,
+		{"selector_type": "text", "selector_value": "X"},
+		{"device_id": "device1", "selector_value": "X"},
+		{"device_id": "device1", "selector_type": "text"},
+	}
+	for i, args := range cases {
+		if _, err := server.handleUIWaitFor(context.Background(), makeToolRequest(args)); err == nil {
+			t.Errorf("case %d: expected error for missing required argument", i)
+		}
+	}
+}
+
+func TestHandleUIWaitFor_BridgeError(t *testing.T) {
+	mock := NewMockGazeApp()
+	mock.SetupWithError("WaitForUIElement", ErrDeviceOffline)
+	server := NewMCPServer(mock)
+
+	_, err := server.handleUIWaitFor(context.Background(), makeToolRequest(map[string]interface{}{
+		"device_id":      "device1",
+		"selector_type":  "text",
+		"selector_value": "X",
+	}))
+	if err == nil {
+		t.Error("Expected error when bridge fails")
+	}
+}

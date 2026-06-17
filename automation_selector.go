@@ -2,8 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -309,15 +307,8 @@ func (a *App) countMatchingNodes(node *UINode, selectorType, value string) int {
 // findTextAtPointInChildren searches for text in descendants that contain the given point
 func (a *App) findTextAtPointInChildren(node *UINode, x, y int) string {
 	// Parse bounds to check if point is inside
-	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-	matches := re.FindStringSubmatch(node.Bounds)
-	if len(matches) >= 5 {
-		x1, _ := strconv.Atoi(matches[1])
-		y1, _ := strconv.Atoi(matches[2])
-		x2, _ := strconv.Atoi(matches[3])
-		y2, _ := strconv.Atoi(matches[4])
-
-		if x < x1 || x > x2 || y < y1 || y > y2 {
+	if rect, err := ParseBounds(node.Bounds); err == nil {
+		if !rect.Contains(x, y) {
 			return "" // Point is not in this branch
 		}
 	}

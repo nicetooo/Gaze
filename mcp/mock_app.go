@@ -71,6 +71,8 @@ type MockGazeApp struct {
 	EnsureADBKeyboardInstalled   bool
 	EnsureADBKeyboardError       error
 	IsADBKeyboardInstalledResult bool
+	WaitForUIElementResult       map[string]interface{}
+	WaitForUIElementError        error
 
 	// Session Management
 	CreateSessionResult          string
@@ -159,6 +161,10 @@ type MockGazeApp struct {
 	LoadTouchScriptsError    error
 	SaveTouchScriptError     error
 	DeleteTouchScriptError   error
+
+	// ADB / CLI Tools
+	RunAdbCommandResult string
+	RunAdbCommandError  error
 
 	// Plugin Management
 	ListPluginsResult []interface{}
@@ -360,6 +366,11 @@ func (m *MockGazeApp) SearchUIElements(deviceId string, query string) ([]map[str
 func (m *MockGazeApp) PerformNodeAction(deviceId string, bounds string, actionType string) error {
 	m.recordCall("PerformNodeAction", deviceId, bounds, actionType)
 	return m.PerformNodeActionError
+}
+
+func (m *MockGazeApp) WaitForUIElement(deviceId, selectorType, selectorValue, condition string, timeoutMs, intervalMs int) (map[string]interface{}, error) {
+	m.recordCall("WaitForUIElement", deviceId, selectorType, selectorValue, condition, timeoutMs, intervalMs)
+	return m.WaitForUIElementResult, m.WaitForUIElementError
 }
 
 func (m *MockGazeApp) GetDeviceResolution(deviceId string) (string, error) {
@@ -731,7 +742,12 @@ func (m *MockGazeApp) GetSessionVideoInfo(sessionID string) (map[string]interfac
 
 func (m *MockGazeApp) RunAdbCommand(deviceId string, command string) (string, error) {
 	m.recordCall("RunAdbCommand", deviceId, command)
-	return "", nil
+	return m.RunAdbCommandResult, m.RunAdbCommandError
+}
+
+func (m *MockGazeApp) RunAdbCommandWithTimeout(deviceId string, command string, timeoutSec int) (string, error) {
+	m.recordCall("RunAdbCommandWithTimeout", deviceId, command, timeoutSec)
+	return m.RunAdbCommandResult, m.RunAdbCommandError
 }
 
 // === CLI Tools ===
@@ -1193,8 +1209,12 @@ func (m *MockGazeApp) SetupWithError(method string, err error) *MockGazeApp {
 		m.SearchUIElementsError = err
 	case "PerformNodeAction":
 		m.PerformNodeActionError = err
+	case "WaitForUIElement":
+		m.WaitForUIElementError = err
 	case "GetDeviceResolution":
 		m.GetDeviceResolutionError = err
+	case "RunAdbCommand", "RunAdbCommandWithTimeout":
+		m.RunAdbCommandError = err
 	case "EndSession":
 		m.EndSessionError = err
 	case "ListStoredSessions":

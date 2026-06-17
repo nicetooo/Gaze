@@ -13,6 +13,8 @@ func (s *MCPServer) registerPluginTools() {
 	// plugin_list - List all plugins
 	s.server.AddTool(
 		mcp.NewTool("plugin_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all saved plugins.
 
 Returns an array of plugin metadata including ID, name, version, author, description, 
@@ -30,6 +32,8 @@ RETURNS: Array of plugin metadata objects`),
 	// plugin_get - Get plugin details
 	s.server.AddTool(
 		mcp.NewTool("plugin_get",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get detailed information about a specific plugin including source code.
 
 Returns complete plugin data:
@@ -53,6 +57,7 @@ RETURNS: Full plugin object with source code`),
 	// plugin_create - Create a new plugin
 	s.server.AddTool(
 		mcp.NewTool("plugin_create",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Create a new plugin from source code.
 
 PLUGIN API SPECIFICATION:
@@ -265,6 +270,9 @@ RETURNS: Success message with plugin ID`),
 			mcp.WithString("config_json",
 				mcp.Description("JSON string of plugin configuration (e.g., '{\"timeout\": 5000}')"),
 			),
+			mcp.WithBoolean("enabled",
+				mcp.Description("Whether the plugin starts enabled (default: true)"),
+			),
 		),
 		s.handlePluginCreate,
 	)
@@ -272,6 +280,7 @@ RETURNS: Success message with plugin ID`),
 	// plugin_update - Update an existing plugin
 	s.server.AddTool(
 		mcp.NewTool("plugin_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Update an existing plugin. All fields are replaced with new values.
 
 WORKFLOW:
@@ -332,6 +341,10 @@ PARAMETERS EXPLAINED:
     Example: {"requiredParams": ["user_id"], "timeout": 5000}
     Access in plugin: context.config.requiredParams
 
+  enabled (optional):
+    Enable or disable the plugin. If omitted, the current enabled
+    state is preserved (a disabled plugin stays disabled after update).
+
 EXAMPLE:
   # Get current plugin
   plugin_get plugin_id="tracking-validator"
@@ -381,6 +394,9 @@ RETURNS: Success message with plugin ID`),
 			mcp.WithString("config_json",
 				mcp.Description("Plugin config JSON (passed to context.config): {\"key\": \"value\"}"),
 			),
+			mcp.WithBoolean("enabled",
+				mcp.Description("Enable/disable the plugin. Omit to keep the current enabled state"),
+			),
 		),
 		s.handlePluginUpdate,
 	)
@@ -388,6 +404,7 @@ RETURNS: Success message with plugin ID`),
 	// plugin_delete - Delete a plugin
 	s.server.AddTool(
 		mcp.NewTool("plugin_delete",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Delete a plugin permanently.
 
 The plugin will be unloaded from memory and removed from the database.
@@ -408,6 +425,7 @@ RETURNS: Success message`),
 	// plugin_toggle - Enable/disable a plugin
 	s.server.AddTool(
 		mcp.NewTool("plugin_toggle",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Enable or disable a plugin without deleting it.
 
 Disabled plugins will not process any events but remain in the database.
@@ -432,6 +450,8 @@ RETURNS: Success message`),
 	// plugin_test_detailed - Test plugin and return detailed results
 	s.server.AddTool(
 		mcp.NewTool("plugin_test_detailed",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Test plugin code against a specific event and return detailed results.
 
 Similar to plugin_test but returns comprehensive information including:
@@ -474,6 +494,8 @@ RETURNS:
 	// plugin_test_custom - Test plugin with custom event data
 	s.server.AddTool(
 		mcp.NewTool("plugin_test_custom",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Test plugin code against custom event data without needing a real event in the database.
 
 This is useful for:
@@ -541,6 +563,8 @@ RETURNS: Same detailed result as plugin_test_detailed`),
 	// plugin_test_batch - Test plugin against multiple events
 	s.server.AddTool(
 		mcp.NewTool("plugin_test_batch",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Test plugin code against multiple events at once.
 
 This is useful for:
@@ -595,6 +619,8 @@ TIP: Look for patterns in failures - are certain event types causing errors?`),
 	// plugin_sample_events - Get sample events for testing
 	s.server.AddTool(
 		mcp.NewTool("plugin_sample_events",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get sample events from a session for plugin testing.
 
 This tool helps you find suitable events to test your plugin against.
@@ -640,6 +666,8 @@ RETURNS:
 	// plugin_test - Test a plugin against a specific event
 	s.server.AddTool(
 		mcp.NewTool("plugin_test",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Test plugin code against a specific event without saving to database.
 
 This is the primary debugging tool for plugin development. It executes your plugin
@@ -802,6 +830,12 @@ func (s *MCPServer) handlePluginSave(ctx context.Context, request mcp.CallToolRe
 	filtersJSON, _ := args["filters_json"].(string)
 	configJSON, _ := args["config_json"].(string)
 
+	// enabled 为可选参数：未传时保留现有启用状态（新建默认启用）
+	var enabled *bool
+	if v, ok := args["enabled"].(bool); ok {
+		enabled = &v
+	}
+
 	// Validate required fields
 	if id == "" || name == "" || sourceCode == "" || compiledCode == "" {
 		return &mcp.CallToolResult{
@@ -861,6 +895,7 @@ func (s *MCPServer) handlePluginSave(ctx context.Context, request mcp.CallToolRe
 		CompiledCode string                 `json:"compiledCode"`
 		Filters      interface{}            `json:"filters"`
 		Config       map[string]interface{} `json:"config"`
+		Enabled      *bool                  `json:"enabled,omitempty"`
 	}{
 		ID:           id,
 		Name:         name,
@@ -877,7 +912,8 @@ func (s *MCPServer) handlePluginSave(ctx context.Context, request mcp.CallToolRe
 			"urlPattern": filters.URLPattern,
 			"titleMatch": filters.TitleMatch,
 		},
-		Config: config,
+		Config:  config,
+		Enabled: enabled,
 	}
 
 	// Convert to JSON and back to get proper type

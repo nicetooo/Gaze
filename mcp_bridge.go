@@ -1,7 +1,10 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"time"
 
 	"Gaze/mcp"
 )
@@ -190,6 +193,89 @@ func (b *MCPBridge) SearchUIElements(deviceId string, query string) ([]map[strin
 
 func (b *MCPBridge) PerformNodeAction(deviceId string, bounds string, actionType string) error {
 	return b.app.PerformNodeAction(deviceId, bounds, actionType)
+}
+
+// normalizeSelectorType maps MCP-facing selector type names to the names
+// understood by FindElementBySelector (selector.go)
+func normalizeSelectorType(selectorType string) string {
+	switch selectorType {
+	case "id", "resourceId", "resource-id":
+		return "id"
+	case "contentDesc", "desc", "description", "content-desc":
+		return "desc"
+	case "className", "class":
+		return "class"
+	default:
+		// "text", "contains", "xpath", "advanced" pass through unchanged
+		return selectorType
+	}
+}
+
+// WaitForUIElement waits for a UI element to appear or disappear (MCP ui_wait_for tool).
+// Returns a map with: satisfied (bool), elapsedMs (int64), element (map, only when
+// condition=appear succeeds) and message (string, only on timeout).
+// A timeout is reported via satisfied=false, not as an error.
+func (b *MCPBridge) WaitForUIElement(deviceId, selectorType, selectorValue, condition string, timeoutMs, intervalMs int) (map[string]interface{}, error) {
+	if timeoutMs <= 0 {
+		timeoutMs = 10000
+	}
+	if intervalMs <= 0 {
+		intervalMs = 1000
+	}
+	selector := &ElementSelector{Type: normalizeSelectorType(selectorType), Value: selectorValue}
+	start := time.Now()
+
+	if condition == "gone" {
+		// Same polling logic as WaitElementGone (element_service.go), but honoring intervalMs
+		deadline := start.Add(time.Duration(timeoutMs) * time.Millisecond)
+		for {
+			hierarchy, err := b.app.GetUIHierarchy(deviceId)
+			if err == nil && b.app.FindElementBySelector(hierarchy.Root, selector) == nil {
+				return map[string]interface{}{
+					"satisfied": true,
+					"elapsedMs": time.Since(start).Milliseconds(),
+				}, nil
+			}
+			if time.Now().After(deadline) {
+				return map[string]interface{}{
+					"satisfied": false,
+					"elapsedMs": time.Since(start).Milliseconds(),
+					"message":   fmt.Sprintf("element still present after %dms", timeoutMs),
+				}, nil
+			}
+			time.Sleep(time.Duration(intervalMs) * time.Millisecond)
+		}
+	}
+
+	// condition == "appear" (default)
+	node, err := b.app.waitForElement(context.Background(), deviceId, selector, timeoutMs, intervalMs)
+	elapsed := time.Since(start).Milliseconds()
+	if err != nil {
+		return map[string]interface{}{
+			"satisfied": false,
+			"elapsedMs": elapsed,
+			"message":   err.Error(),
+		}, nil
+	}
+
+	element := map[string]interface{}{
+		"bounds":      node.Bounds,
+		"text":        node.Text,
+		"resourceId":  node.ResourceID,
+		"class":       node.Class,
+		"contentDesc": node.ContentDesc,
+		"clickable":   node.Clickable,
+	}
+	if bounds, berr := ParseBounds(node.Bounds); berr == nil {
+		x, y := bounds.Center()
+		element["centerX"] = x
+		element["centerY"] = y
+	}
+	return map[string]interface{}{
+		"satisfied": true,
+		"elapsedMs": elapsed,
+		"element":   element,
+	}, nil
 }
 
 func (b *MCPBridge) GetDeviceResolution(deviceId string) (string, error) {
@@ -812,6 +898,16 @@ func (b *MCPBridge) GetSessionVideoInfo(sessionID string) (map[string]interface{
 // RunAdbCommand executes an arbitrary ADB command on a device
 func (b *MCPBridge) RunAdbCommand(deviceId string, command string) (string, error) {
 	return b.app.RunAdbCommand(deviceId, command)
+}
+
+// RunAdbCommandWithTimeout executes an arbitrary ADB command with a caller-specified timeout
+func (b *MCPBridge) RunAdbCommandWithTimeout(deviceId string, command string, timeoutSec int) (string, error) {
+	if timeoutSec <= 0 {
+		timeoutSec = 30
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
+	defer cancel()
+	return b.app.RunAdbCommandWithContext(ctx, deviceId, command)
 }
 
 // RunAaptCommand executes an aapt command

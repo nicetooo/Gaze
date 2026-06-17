@@ -222,6 +222,7 @@ type GazeApp interface {
 	GetUIHierarchy(deviceId string) (*UIHierarchyResult, error)
 	SearchUIElements(deviceId string, query string) ([]map[string]interface{}, error)
 	PerformNodeAction(deviceId string, bounds string, actionType string) error
+	WaitForUIElement(deviceId, selectorType, selectorValue, condition string, timeoutMs, intervalMs int) (map[string]interface{}, error)
 	GetDeviceResolution(deviceId string) (string, error)
 	InputText(deviceId string, text string) error
 	EnsureADBKeyboard(deviceId string) (bool, bool, error)
@@ -309,6 +310,7 @@ type GazeApp interface {
 
 	// ADB
 	RunAdbCommand(deviceId string, command string) (string, error)
+	RunAdbCommandWithTimeout(deviceId string, command string, timeoutSec int) (string, error)
 
 	// CLI Tools
 	RunAaptCommand(command string, timeoutSec int) (string, error)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"unicode/utf8"
 
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -13,6 +14,8 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_list - List connected devices
 	s.server.AddTool(
 		mcp.NewTool("device_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("List all connected Android devices"),
 		),
 		s.handleDeviceList,
@@ -21,6 +24,8 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_info - Get device information
 	s.server.AddTool(
 		mcp.NewTool("device_info",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get detailed information about a specific device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -33,6 +38,7 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_connect - Connect to a wireless device
 	s.server.AddTool(
 		mcp.NewTool("device_connect",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Connect to a device via ADB over network (IP:port)"),
 			mcp.WithString("address",
 				mcp.Required(),
@@ -45,6 +51,7 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_disconnect - Disconnect a wireless device
 	s.server.AddTool(
 		mcp.NewTool("device_disconnect",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Disconnect a device from ADB"),
 			mcp.WithString("address",
 				mcp.Required(),
@@ -57,6 +64,7 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_pair - Pair with a device
 	s.server.AddTool(
 		mcp.NewTool("device_pair",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Pair with a device using wireless debugging"),
 			mcp.WithString("address",
 				mcp.Required(),
@@ -73,6 +81,7 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_wireless - Switch device to wireless mode
 	s.server.AddTool(
 		mcp.NewTool("device_wireless",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Switch a USB-connected device to wireless ADB mode"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -85,6 +94,8 @@ func (s *MCPServer) registerDeviceTools() {
 	// device_ip - Get device IP address
 	s.server.AddTool(
 		mcp.NewTool("device_ip",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get the IP address of a connected device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -97,6 +108,7 @@ func (s *MCPServer) registerDeviceTools() {
 	// adb_execute - Execute arbitrary ADB command
 	s.server.AddTool(
 		mcp.NewTool("adb_execute",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Execute an arbitrary ADB command on a device.
 
 SHELL COMMANDS (prefix with 'shell'):
@@ -150,6 +162,9 @@ Do NOT include 'adb' or '-s' in the command string.`),
 			mcp.WithNumber("timeout",
 				mcp.Description("Command timeout in seconds (default: 30, max: 300)"),
 			),
+			mcp.WithNumber("max_output_bytes",
+				mcp.Description("Maximum output size in bytes before head/tail truncation (default: 51200 = 50KB, max: 5MB)"),
+			),
 		),
 		s.handleAdbExecute,
 	)
@@ -157,6 +172,7 @@ Do NOT include 'adb' or '-s' in the command string.`),
 	// aapt_execute - Execute arbitrary aapt command
 	s.server.AddTool(
 		mcp.NewTool("aapt_execute",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Execute an aapt (Android Asset Packaging Tool) command for APK analysis.
 
 COMMON COMMANDS:
@@ -187,6 +203,9 @@ For device APKs, first pull them using adb_execute: 'pull /data/app/.../base.apk
 			mcp.WithNumber("timeout",
 				mcp.Description("Command timeout in seconds (default: 30, max: 300)"),
 			),
+			mcp.WithNumber("max_output_bytes",
+				mcp.Description("Maximum output size in bytes before head/tail truncation (default: 51200 = 50KB, max: 5MB)"),
+			),
 		),
 		s.handleAaptExecute,
 	)
@@ -194,6 +213,7 @@ For device APKs, first pull them using adb_execute: 'pull /data/app/.../base.apk
 	// ffmpeg_execute - Execute arbitrary ffmpeg command
 	s.server.AddTool(
 		mcp.NewTool("ffmpeg_execute",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Execute an ffmpeg command for video/audio processing.
 
 COMMON OPERATIONS:
@@ -239,6 +259,9 @@ NOTE: Input/output paths must be accessible from the host machine.`),
 			mcp.WithNumber("timeout",
 				mcp.Description("Command timeout in seconds (default: 60, max: 600). Increase for long videos."),
 			),
+			mcp.WithNumber("max_output_bytes",
+				mcp.Description("Maximum output size in bytes before head/tail truncation (default: 51200 = 50KB, max: 5MB)"),
+			),
 		),
 		s.handleFfmpegExecute,
 	)
@@ -246,6 +269,8 @@ NOTE: Input/output paths must be accessible from the host machine.`),
 	// ffprobe_execute - Execute arbitrary ffprobe command
 	s.server.AddTool(
 		mcp.NewTool("ffprobe_execute",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Execute an ffprobe command for media file analysis.
 
 COMMON OPERATIONS:
@@ -291,6 +316,9 @@ COMMON FLAGS:
 			mcp.WithNumber("timeout",
 				mcp.Description("Command timeout in seconds (default: 30, max: 300)"),
 			),
+			mcp.WithNumber("max_output_bytes",
+				mcp.Description("Maximum output size in bytes before head/tail truncation (default: 51200 = 50KB, max: 5MB)"),
+			),
 		),
 		s.handleFfprobeExecute,
 	)
@@ -298,6 +326,7 @@ COMMON FLAGS:
 	// file_upload - Upload file from host to device
 	s.server.AddTool(
 		mcp.NewTool("file_upload",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Upload a file from the host machine to an Android device.
 
 This tool uses 'adb push' internally to transfer files from your computer to the device.
@@ -348,6 +377,8 @@ NOTE:
 	// file_list - List files in a directory on device
 	s.server.AddTool(
 		mcp.NewTool("file_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List files and directories in a path on an Android device.
 
 Returns information about each file including:
@@ -567,8 +598,11 @@ func (s *MCPServer) handleAdbExecute(ctx context.Context, request mcp.CallToolRe
 		return nil, fmt.Errorf("command is required")
 	}
 
+	timeout := clampTimeout(args, 30, 300)
+
 	// Execute the ADB command
-	output, err := s.app.RunAdbCommand(deviceID, command)
+	output, err := s.app.RunAdbCommandWithTimeout(deviceID, command, timeout)
+	output = truncateOutput(output, outputLimitFromArgs(args))
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -600,12 +634,10 @@ func (s *MCPServer) handleAaptExecute(ctx context.Context, request mcp.CallToolR
 		return nil, fmt.Errorf("command is required")
 	}
 
-	timeout := 30
-	if t, ok := args["timeout"].(float64); ok && t > 0 {
-		timeout = int(t)
-	}
+	timeout := clampTimeout(args, 30, 300)
 
 	output, err := s.app.RunAaptCommand(command, timeout)
+	output = truncateOutput(output, outputLimitFromArgs(args))
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -636,12 +668,10 @@ func (s *MCPServer) handleFfmpegExecute(ctx context.Context, request mcp.CallToo
 		return nil, fmt.Errorf("command is required")
 	}
 
-	timeout := 60
-	if t, ok := args["timeout"].(float64); ok && t > 0 {
-		timeout = int(t)
-	}
+	timeout := clampTimeout(args, 60, 600)
 
 	output, err := s.app.RunFfmpegCommand(command, timeout)
+	output = truncateOutput(output, outputLimitFromArgs(args))
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -672,12 +702,10 @@ func (s *MCPServer) handleFfprobeExecute(ctx context.Context, request mcp.CallTo
 		return nil, fmt.Errorf("command is required")
 	}
 
-	timeout := 30
-	if t, ok := args["timeout"].(float64); ok && t > 0 {
-		timeout = int(t)
-	}
+	timeout := clampTimeout(args, 30, 300)
 
 	output, err := s.app.RunFfprobeCommand(command, timeout)
+	output = truncateOutput(output, outputLimitFromArgs(args))
 	if err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
@@ -796,6 +824,64 @@ func (s *MCPServer) handleFileList(ctx context.Context, request mcp.CallToolRequ
 			mcp.NewTextContent(result),
 		},
 	}, nil
+}
+
+const (
+	// defaultMaxOutputBytes limits CLI tool output flowing into the model context
+	defaultMaxOutputBytes = 50 * 1024
+	// maxOutputBytesCap is the hard upper bound for the max_output_bytes argument
+	maxOutputBytesCap = 5 * 1024 * 1024
+)
+
+// clampTimeout reads the optional "timeout" argument and clamps it to [1, maxSec],
+// falling back to defaultSec when absent or invalid
+func clampTimeout(args map[string]interface{}, defaultSec, maxSec int) int {
+	timeout := defaultSec
+	if t, ok := args["timeout"].(float64); ok && t > 0 {
+		timeout = int(t)
+	}
+	if timeout > maxSec {
+		timeout = maxSec
+	}
+	return timeout
+}
+
+// outputLimitFromArgs reads the optional "max_output_bytes" argument
+func outputLimitFromArgs(args map[string]interface{}) int {
+	if v, ok := args["max_output_bytes"].(float64); ok && v > 0 {
+		return int(v)
+	}
+	return defaultMaxOutputBytes
+}
+
+// truncateOutput limits output to maxBytes by keeping the head (80%) and tail (20%)
+// with a marker in between. Commands like 'shell logcat -d' or 'aapt dump resources'
+// can return multiple MB which would otherwise flood the model context.
+func truncateOutput(output string, maxBytes int) string {
+	if maxBytes <= 0 {
+		maxBytes = defaultMaxOutputBytes
+	}
+	if maxBytes > maxOutputBytesCap {
+		maxBytes = maxOutputBytesCap
+	}
+	if len(output) <= maxBytes {
+		return output
+	}
+	head := maxBytes * 4 / 5
+	tail := maxBytes - head
+	// Back off to rune boundaries so the cut never splits a multi-byte
+	// UTF-8 character (adb output frequently contains CJK app names/logs)
+	for head > 0 && !utf8.RuneStart(output[head]) {
+		head--
+	}
+	tailStart := len(output) - tail
+	for tailStart < len(output) && !utf8.RuneStart(output[tailStart]) {
+		tailStart++
+	}
+	truncated := tailStart - head
+	return output[:head] +
+		fmt.Sprintf("\n[... %d bytes truncated, narrow the command output (e.g. grep/head filters) or raise max_output_bytes ...]\n", truncated) +
+		output[tailStart:]
 }
 
 func formatSize(size int64) string {

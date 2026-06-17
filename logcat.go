@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -255,90 +258,133 @@ func (a *App) StartLogcat(deviceId, packageName, preFilter string, preUseRegex b
 	}()
 
 	// Aggregator & Emitter Routine
+	// Lines are bucketed by (tag, level): real devices interleave many tags,
+	// so flushing on every tag/level switch (old behavior) produced mostly
+	// single-line events. Buckets keep insertion order; flushes emit buckets
+	// ordered by first-entry time, one event per bucket.
 	go func() {
-		var buffer []map[string]interface{}
-		var lastTag string
-		var lastLevel string
-		var lastActivityTime time.Time
+		type bucketKey struct {
+			tag   string
+			level string
+		}
+		type logBucket struct {
+			entries      []map[string]interface{}
+			firstTime    time.Time
+			lastActivity time.Time
+		}
 
-		// Regular ticker as requested (300ms)
+		const bucketEntryLimit = 500
+		// A continuously-active bucket must still flush periodically, or a
+		// high-frequency single tag would stall the live log view until it
+		// hits bucketEntryLimit
+		const bucketMaxAge = time.Second
+
+		buckets := make(map[bucketKey]*logBucket)
+
 		flushTicker := time.NewTicker(300 * time.Millisecond)
 		defer flushTicker.Stop()
 
-		flush := func() {
-			if len(buffer) == 0 {
+		emitBucket := func(key bucketKey, b *logBucket) {
+			sessionLevel := logcatLevelToSessionLevel(key.level)
+			eventType := "logcat"
+			title := fmt.Sprintf("[%s] %s", key.tag, b.entries[0]["message"])
+			if len(b.entries) > 1 {
+				eventType = "logcat_aggregated"
+				title = fmt.Sprintf("Logcat Output (%d entries) - %s", len(b.entries), key.tag)
+			}
+
+			// Data stays the same JSON array of entries the frontend expects
+			dataBytes, err := json.Marshal(b.entries)
+			if err != nil {
+				LogWarn("logcat").Err(err).Msg("Failed to marshal logcat entries")
+				dataBytes = []byte("[]")
+			}
+
+			a.eventPipeline.Emit(UnifiedEvent{
+				ID:             uuid.New().String(),
+				DeviceID:       deviceId,
+				Timestamp:      b.firstTime.UnixMilli(),
+				Source:         SourceLogcat,
+				Category:       CategoryLog,
+				Type:           eventType,
+				Level:          ParseEventLevel(sessionLevel),
+				Title:          title,
+				Data:           dataBytes,
+				AggregateCount: len(b.entries),
+				AggregateFirst: b.firstTime.UnixMilli(),
+				AggregateLast:  b.lastActivity.UnixMilli(),
+			})
+		}
+
+		// flushKeys emits the given buckets ordered by first-entry time and
+		// removes them from the map.
+		flushKeys := func(keys []bucketKey) {
+			sort.Slice(keys, func(i, j int) bool {
+				return buckets[keys[i]].firstTime.Before(buckets[keys[j]].firstTime)
+			})
+			for _, k := range keys {
+				emitBucket(k, buckets[k])
+				delete(buckets, k)
+			}
+		}
+
+		flushAll := func() {
+			if len(buckets) == 0 {
 				return
 			}
-
-			sessionLevel := logcatLevelToSessionLevel(lastLevel)
-			title := fmt.Sprintf("[%s] %s", lastTag, buffer[0]["message"])
-
-			if len(buffer) > 1 {
-				title = fmt.Sprintf("Logcat Output (%d entries) - %s", len(buffer), lastTag)
+			keys := make([]bucketKey, 0, len(buckets))
+			for k := range buckets {
+				keys = append(keys, k)
 			}
-
-			// Emit complete aggregated event directly to EventPipeline
-			a.eventPipeline.EmitRaw(deviceId, SourceLogcat, "logcat", ParseEventLevel(sessionLevel), title, buffer)
-
-			// Clear buffer
-			buffer = nil
+			flushKeys(keys)
 		}
 
 		for {
 			select {
 			case evt, ok := <-logEvtChan:
 				if !ok {
-					flush()
+					flushAll()
 					return
 				}
 
-				tag := evt["tag"].(string)
-				level := evt["level"].(string)
+				key := bucketKey{tag: evt["tag"].(string), level: evt["level"].(string)}
 				now := time.Now()
 
-				// Flush IMMEDIATELY if Tag or Level changes
-				// This ensures we don't mix different types
-				if len(buffer) > 0 {
-					if tag != lastTag || level != lastLevel {
-						flush()
-					}
+				b := buckets[key]
+				if b == nil {
+					b = &logBucket{firstTime: now}
+					buckets[key] = b
 				}
+				b.entries = append(b.entries, evt)
+				b.lastActivity = now
 
-				if len(buffer) == 0 {
-					lastTag = tag
-					lastLevel = level
-				}
-
-				buffer = append(buffer, evt)
-				lastActivityTime = now
-
-				// Safety valve: Flush if buffer gets massive (e.g. infinite loop of same log)
-				if len(buffer) >= 2000 {
-					flush()
+				// Safety valve: a runaway bucket (e.g. infinite loop of the
+				// same log) flushes everything, preserving cross-bucket
+				// ordering by first-entry time.
+				if len(b.entries) >= bucketEntryLimit {
+					flushAll()
 				}
 
 			case <-flushTicker.C:
-				// Ticker fires every 300ms.
-				// User requirement: "If aggregating (active), wait. If done/idle, flush."
-
-				// If buffer is empty, nothing to do.
-				if len(buffer) == 0 {
+				// Ticker fires every 300ms. Burst-merge semantics per bucket:
+				// a bucket that received a line <100ms ago is mid-burst, keep
+				// it — unless it has been held for bucketMaxAge already; flush
+				// idle/expired buckets, oldest first.
+				if len(buckets) == 0 {
 					continue
 				}
-
-				// Check if we are "active"
-				// If we received a log recently (e.g. < 100ms ago), we assume we are in the middle of a burst.
-				// In this case, we SKIP the timer flush to avoid splitting the burst.
-				timeSinceLastLog := time.Since(lastActivityTime)
-				if timeSinceLastLog < 100*time.Millisecond {
-					continue
+				due := make([]bucketKey, 0, len(buckets))
+				for k, b := range buckets {
+					if time.Since(b.lastActivity) < 100*time.Millisecond &&
+						time.Since(b.firstTime) < bucketMaxAge {
+						continue
+					}
+					due = append(due, k)
 				}
-
-				// If we haven't received logs for >100ms, assume the specific aggregation "block" has finished (paused).
-				flush()
+				flushKeys(due)
 
 			case <-ctx.Done():
-				flush()
+				flushAll()
 				return
 			}
 		}

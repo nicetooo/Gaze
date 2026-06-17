@@ -178,7 +178,7 @@ func TestBackpressureCriticalEventsAlwaysPass(t *testing.T) {
 	// Send many events to trigger backpressure
 	for i := 0; i < 100; i++ {
 		bp.ShouldProcess(UnifiedEvent{
-			Level: LevelVerbose,
+			Level:  LevelVerbose,
 			Source: SourceLogcat,
 		})
 	}
@@ -332,166 +332,6 @@ func TestEventSamplerRateOne(t *testing.T) {
 }
 
 // ========================================
-// TimeIndexLRUCache Tests
-// ========================================
-
-func TestTimeIndexLRUCacheCreation(t *testing.T) {
-	cache := NewTimeIndexLRUCache(5)
-	if cache == nil {
-		t.Fatal("Expected cache to be created")
-	}
-	if cache.Size() != 0 {
-		t.Errorf("Expected size 0, got %d", cache.Size())
-	}
-}
-
-func TestTimeIndexLRUCacheGetOrCreate(t *testing.T) {
-	cache := NewTimeIndexLRUCache(5)
-
-	// First access creates new entry
-	index1 := cache.GetOrCreate("session1")
-	if index1 == nil {
-		t.Fatal("Expected index to be created")
-	}
-	if cache.Size() != 1 {
-		t.Errorf("Expected size 1, got %d", cache.Size())
-	}
-
-	// Second access returns same entry (modify index1 and check index2 reflects it)
-	index1[999] = &TimeIndexEntry{Second: 999, EventCount: 1}
-	index2 := cache.GetOrCreate("session1")
-	if index2[999] == nil || index2[999].Second != 999 {
-		t.Error("Expected same index to be returned")
-	}
-
-	// Add entry to index
-	index1[0] = &TimeIndexEntry{Second: 0, EventCount: 5}
-
-	// Verify entry persists
-	index3 := cache.GetOrCreate("session1")
-	if index3[0] == nil || index3[0].EventCount != 5 {
-		t.Error("Expected entry to persist in cache")
-	}
-}
-
-func TestTimeIndexLRUCacheEviction(t *testing.T) {
-	cache := NewTimeIndexLRUCache(3) // Capacity of 3
-
-	// Add 3 sessions
-	cache.GetOrCreate("session1")
-	cache.GetOrCreate("session2")
-	cache.GetOrCreate("session3")
-
-	if cache.Size() != 3 {
-		t.Errorf("Expected size 3, got %d", cache.Size())
-	}
-
-	// Add 4th session, should evict oldest (session1)
-	cache.GetOrCreate("session4")
-
-	if cache.Size() != 3 {
-		t.Errorf("Expected size still 3 after eviction, got %d", cache.Size())
-	}
-
-	// session1 should be evicted
-	if _, exists := cache.Get("session1"); exists {
-		t.Error("Expected session1 to be evicted")
-	}
-
-	// session2, session3, session4 should exist
-	if _, exists := cache.Get("session2"); !exists {
-		t.Error("Expected session2 to exist")
-	}
-	if _, exists := cache.Get("session3"); !exists {
-		t.Error("Expected session3 to exist")
-	}
-	if _, exists := cache.Get("session4"); !exists {
-		t.Error("Expected session4 to exist")
-	}
-}
-
-func TestTimeIndexLRUCacheAccessOrder(t *testing.T) {
-	cache := NewTimeIndexLRUCache(3)
-
-	// Add 3 sessions in order
-	cache.GetOrCreate("session1")
-	cache.GetOrCreate("session2")
-	cache.GetOrCreate("session3")
-
-	// Access session1 to make it most recently used
-	cache.Get("session1")
-
-	// Add session4, should evict session2 (now oldest)
-	cache.GetOrCreate("session4")
-
-	// session1 should still exist (was accessed recently)
-	if _, exists := cache.Get("session1"); !exists {
-		t.Error("Expected session1 to exist (was accessed recently)")
-	}
-
-	// session2 should be evicted (was oldest when session4 added)
-	if _, exists := cache.Get("session2"); exists {
-		t.Error("Expected session2 to be evicted")
-	}
-}
-
-func TestTimeIndexLRUCacheDelete(t *testing.T) {
-	cache := NewTimeIndexLRUCache(5)
-
-	cache.GetOrCreate("session1")
-	cache.GetOrCreate("session2")
-
-	if cache.Size() != 2 {
-		t.Errorf("Expected size 2, got %d", cache.Size())
-	}
-
-	cache.Delete("session1")
-
-	if cache.Size() != 1 {
-		t.Errorf("Expected size 1 after delete, got %d", cache.Size())
-	}
-
-	if _, exists := cache.Get("session1"); exists {
-		t.Error("Expected session1 to be deleted")
-	}
-}
-
-func TestTimeIndexLRUCacheGetAll(t *testing.T) {
-	cache := NewTimeIndexLRUCache(5)
-
-	cache.GetOrCreate("session1")[0] = &TimeIndexEntry{Second: 0, EventCount: 10}
-	cache.GetOrCreate("session2")[1] = &TimeIndexEntry{Second: 1, EventCount: 20}
-
-	all := cache.GetAll()
-
-	if len(all) != 2 {
-		t.Errorf("Expected 2 sessions in GetAll, got %d", len(all))
-	}
-
-	if all["session1"][0].EventCount != 10 {
-		t.Error("Expected session1 event count 10")
-	}
-
-	if all["session2"][1].EventCount != 20 {
-		t.Error("Expected session2 event count 20")
-	}
-}
-
-func TestTimeIndexLRUCacheDefaultCapacity(t *testing.T) {
-	// Test with 0 capacity (should use default)
-	cache := NewTimeIndexLRUCache(0)
-	if cache.capacity != DefaultTimeIndexCacheCapacity {
-		t.Errorf("Expected default capacity %d, got %d", DefaultTimeIndexCacheCapacity, cache.capacity)
-	}
-
-	// Test with negative capacity (should use default)
-	cache2 := NewTimeIndexLRUCache(-5)
-	if cache2.capacity != DefaultTimeIndexCacheCapacity {
-		t.Errorf("Expected default capacity %d, got %d", DefaultTimeIndexCacheCapacity, cache2.capacity)
-	}
-}
-
-// ========================================
 // TimeIndexEntry Tests
 // ========================================
 
@@ -572,9 +412,9 @@ func TestGetCategoryForType(t *testing.T) {
 	}{
 		{"logcat", CategoryLog},
 		{"http_request", CategoryNetwork},
-		{"activity_start", CategoryState},       // App lifecycle events
-		{"workflow_start", CategoryAutomation},  // Workflow events
-		{"unknown_type", CategoryDiagnostic},    // Default for unknown types
+		{"activity_start", CategoryState},      // App lifecycle events
+		{"workflow_start", CategoryAutomation}, // Workflow events
+		{"unknown_type", CategoryDiagnostic},   // Default for unknown types
 	}
 
 	for _, tc := range testCases {

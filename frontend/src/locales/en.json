@@ -991,7 +991,8 @@
     "diff_resp_headers": "Response Headers",
     "diff_resp_body": "Response Body",
     "ws_messages": "WS Messages",
-    "ws_no_messages": "No WebSocket messages captured yet. Messages will appear when the connection is active."
+    "ws_no_messages": "No WebSocket messages captured yet. Messages will appear when the connection is active.",
+    "breakpoint_pool_full": "Breakpoint pool is full (20). The matched request was let through — resolve pending breakpoints first."
   },
   "batch": {
     "title": "Batch Operation",
@@ -1261,7 +1262,7 @@
     "description": "Description",
     "description_placeholder": "Optional description",
     "steps": "steps",
-    "no_steps": "No steps added yet",
+    "no_steps": "No steps yet",
     "add_step": "Add Step",
     "edit_step": "Edit Step",
     "select_workflow": "Select Workflow",
@@ -1422,7 +1423,6 @@
     "drag_to_reorder": "Drag to reorder",
     "steps_list_header": "{{count}} steps in execution order",
     "drag_cannot_before_start": "Cannot move before start node",
-    "no_steps": "No steps yet",
     "swipe_direction": "Swipe Direction",
     "direction_up": "Up",
     "direction_down": "Down",
@@ -1445,7 +1445,6 @@
     "branch_true": "True",
     "branch_false": "False",
     "success": "Success",
-    "error": "Error",
     "error_device_not_found": "Device not found",
     "error_empty_steps": "Run aborted: Workflow has 0 steps.",
     "generated_step_name": {
@@ -1553,6 +1552,7 @@
       "ui_tap": "Tap at a specific location or element on the screen",
       "ui_swipe": "Perform a swipe gesture on the screen",
       "ui_input": "Input text into the focused field (supports Unicode via ADBKeyboard)",
+      "ui_wait_for": "Wait for a UI element to appear or disappear",
       "ui_resolution": "Get the device screen resolution",
       "keyboard_setup": "Install and activate ADBKeyboard for Unicode text input support",
       "session_create": "Create a new tracking session with optional configuration",
@@ -1662,7 +1662,9 @@
       "plugin_test_detailed": "Test plugin and return detailed results (logs, execution time, errors)",
       "plugin_test_custom": "Test plugin with custom event data (no database event required)",
       "plugin_test_batch": "Test plugin against multiple events at once (max 50)",
-      "plugin_sample_events": "Get sample events from a session for plugin testing"
+      "plugin_sample_events": "Get sample events from a session for plugin testing",
+      "file_upload": "Upload a local file to the device",
+      "file_list": "List files in a device directory"
     },
     "resource": {
       "devices": "Connected Android devices list (JSON)",

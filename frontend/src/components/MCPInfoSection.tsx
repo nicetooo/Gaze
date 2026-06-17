@@ -32,6 +32,7 @@ const TOOL_CATEGORIES = [
       "device_list", "device_info", "device_connect", "device_disconnect",
       "device_pair", "device_wireless", "device_ip",
       "adb_execute", "aapt_execute", "ffmpeg_execute", "ffprobe_execute",
+      "file_upload", "file_list",
     ],
   },
   {
@@ -56,7 +57,7 @@ const TOOL_CATEGORIES = [
     icon: <AimOutlined />,
     color: "#722ed1",
     tools: [
-      "ui_hierarchy", "ui_search", "ui_tap", "ui_swipe", "ui_input", "ui_resolution", "keyboard_setup",
+      "ui_hierarchy", "ui_search", "ui_tap", "ui_swipe", "ui_input", "ui_wait_for", "ui_resolution", "keyboard_setup",
     ],
   },
   {

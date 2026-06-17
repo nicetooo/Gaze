@@ -1436,6 +1436,23 @@ func TestPluginManager_ExecutePlugin_JSRuntimeError(t *testing.T) {
 	if results[0].Level != LevelError {
 		t.Errorf("Expected error level, got %q", results[0].Level)
 	}
+
+	// 回归测试 (PL-2①): 错误事件必须携带 Session 关联字段，否则不入库且被前端丢弃
+	if results[0].DeviceID != "dev-1" {
+		t.Errorf("Expected DeviceID=dev-1, got %q", results[0].DeviceID)
+	}
+	if results[0].SessionID != "session-1" {
+		t.Errorf("Expected SessionID=session-1, got %q", results[0].SessionID)
+	}
+	if results[0].ParentEventID != event.ID {
+		t.Errorf("Expected ParentEventID=%s, got %q", event.ID, results[0].ParentEventID)
+	}
+	if results[0].GeneratedByPlugin != "js-error" {
+		t.Errorf("Expected GeneratedByPlugin=js-error, got %q", results[0].GeneratedByPlugin)
+	}
+	if results[0].DerivedDepth != event.DerivedDepth+1 {
+		t.Errorf("Expected DerivedDepth=%d, got %d", event.DerivedDepth+1, results[0].DerivedDepth)
+	}
 }
 
 func TestPluginManager_ExecutePlugin_DisabledPluginSkipped(t *testing.T) {
@@ -2105,6 +2122,130 @@ func TestPluginManager_SaveDisabledPlugin(t *testing.T) {
 	}
 	if dbPlugin.Metadata.Enabled {
 		t.Error("DB plugin should be disabled")
+	}
+}
+
+// ========== PluginSaveRequest.BuildPlugin 测试 (PL-8) ==========
+
+func TestPluginSaveRequest_BuildPlugin_NewDefaults(t *testing.T) {
+	req := PluginSaveRequest{
+		ID:           "build-new",
+		Name:         "Build New",
+		Version:      "1.0.0",
+		SourceCode:   `const plugin = { onEvent: (e, ctx) => null };`,
+		CompiledCode: `const plugin = { onEvent: (e, ctx) => null };`,
+		Language:     "typescript",
+	}
+
+	plugin := req.BuildPlugin(nil)
+
+	if !plugin.Metadata.Enabled {
+		t.Error("New plugin should default to enabled")
+	}
+	if plugin.Metadata.CreatedAt.IsZero() {
+		t.Error("CreatedAt should be set for new plugin")
+	}
+	if plugin.Metadata.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt should be set for new plugin")
+	}
+}
+
+func TestPluginSaveRequest_BuildPlugin_PreservesDisabledAndCreatedAt(t *testing.T) {
+	created := time.Now().Add(-24 * time.Hour)
+	existing := &Plugin{
+		Metadata: PluginMetadata{
+			ID:        "build-update",
+			Enabled:   false, // 已被用户禁用
+			CreatedAt: created,
+		},
+	}
+
+	// 请求未携带 Enabled：保存后不应被静默重新启用
+	req := PluginSaveRequest{ID: "build-update", Name: "Updated"}
+	plugin := req.BuildPlugin(existing)
+
+	if plugin.Metadata.Enabled {
+		t.Error("Enabled=false should be preserved when request omits enabled")
+	}
+	if !plugin.Metadata.CreatedAt.Equal(created) {
+		t.Errorf("CreatedAt should be preserved on update, got %v, want %v",
+			plugin.Metadata.CreatedAt, created)
+	}
+	if !plugin.Metadata.UpdatedAt.After(created) {
+		t.Error("UpdatedAt should be refreshed on update")
+	}
+}
+
+func TestPluginSaveRequest_BuildPlugin_ExplicitEnabled(t *testing.T) {
+	enable := true
+	disable := false
+
+	// 显式 enabled=true 覆盖现有的禁用状态
+	existing := &Plugin{Metadata: PluginMetadata{ID: "build-explicit", Enabled: false}}
+	plugin := PluginSaveRequest{ID: "build-explicit", Enabled: &enable}.BuildPlugin(existing)
+	if !plugin.Metadata.Enabled {
+		t.Error("Explicit enabled=true should override existing disabled state")
+	}
+
+	// 新建时显式 enabled=false 覆盖默认启用
+	plugin = PluginSaveRequest{ID: "build-explicit", Enabled: &disable}.BuildPlugin(nil)
+	if plugin.Metadata.Enabled {
+		t.Error("Explicit enabled=false should override the enabled-by-default for new plugins")
+	}
+}
+
+func TestPluginManager_SaveRequest_DisabledPluginStaysDisabled(t *testing.T) {
+	// 回归测试 (PL-8): 编辑一个已禁用的插件并保存（请求未携带 enabled），
+	// 插件应保持禁用且不被加载进内存，而不是被静默重新启用
+	_, store := setupTestDB(t)
+	pm := NewPluginManager(store, nil)
+
+	disabled := &Plugin{
+		Metadata: PluginMetadata{
+			ID:      "stay-disabled",
+			Name:    "Stay Disabled",
+			Version: "1.0.0",
+			Enabled: false,
+			Filters: PluginFilters{},
+			Config:  make(map[string]interface{}),
+		},
+		SourceCode:   `const plugin = { onEvent: (e, ctx) => null };`,
+		CompiledCode: `const plugin = { onEvent: (e, ctx) => null };`,
+		Language:     "typescript",
+		State:        make(map[string]interface{}),
+	}
+	if err := pm.SavePlugin(disabled); err != nil {
+		t.Fatalf("SavePlugin (initial disabled) failed: %v", err)
+	}
+
+	// 模拟保存路径：读旧记录 → BuildPlugin → pm.SavePlugin
+	existing, err := store.GetPlugin("stay-disabled")
+	if err != nil {
+		t.Fatalf("GetPlugin failed: %v", err)
+	}
+	req := PluginSaveRequest{
+		ID:           "stay-disabled",
+		Name:         "Stay Disabled v2",
+		Version:      "2.0.0",
+		SourceCode:   `const plugin = { onEvent: (e, ctx) => null }; // v2`,
+		CompiledCode: `const plugin = { onEvent: (e, ctx) => null }; // v2`,
+		Language:     "typescript",
+	}
+	if err := pm.SavePlugin(req.BuildPlugin(existing)); err != nil {
+		t.Fatalf("SavePlugin (update) failed: %v", err)
+	}
+
+	// DB 中仍为禁用
+	dbPlugin, err := store.GetPlugin("stay-disabled")
+	if err != nil {
+		t.Fatalf("GetPlugin from DB failed: %v", err)
+	}
+	if dbPlugin.Metadata.Enabled {
+		t.Error("Disabled plugin should stay disabled after a save without enabled")
+	}
+	// 未被加载进内存
+	if _, err := pm.GetPlugin("stay-disabled"); err == nil {
+		t.Error("Disabled plugin should not be loaded into memory")
 	}
 }
 

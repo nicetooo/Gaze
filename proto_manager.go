@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"Gaze/pkg/fileutil"
+
 	"github.com/google/uuid"
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -28,6 +30,12 @@ var (
 	protoRegistry *ProtoRegistry
 	protoDecoder  *ProtobufDecoder
 	protoOnce     sync.Once
+
+	// Set when the corresponding config file on disk failed to parse; saves are
+	// refused until restart so a half-loaded state can't overwrite user data.
+	protoFilesLoadFailed    bool
+	protoMappingsLoadFailed bool
+	protoLoadFailedMu       sync.Mutex
 )
 
 func getProtoRegistry() *ProtoRegistry {
@@ -76,6 +84,11 @@ func (a *App) LoadProtoConfig() error {
 				reg.files[f.ID] = f
 			}
 			reg.mu.Unlock()
+		} else {
+			protoLoadFailedMu.Lock()
+			protoFilesLoadFailed = true
+			protoLoadFailedMu.Unlock()
+			quarantineCorruptConfig("proto_files", getProtoFilesPath(), err)
 		}
 	}
 
@@ -88,6 +101,11 @@ func (a *App) LoadProtoConfig() error {
 				reg.mappings[m.ID] = m
 			}
 			reg.mu.Unlock()
+		} else {
+			protoLoadFailedMu.Lock()
+			protoMappingsLoadFailed = true
+			protoLoadFailedMu.Unlock()
+			quarantineCorruptConfig("proto_mappings", getProtoMappingsPath(), err)
 		}
 	}
 
@@ -120,8 +138,7 @@ func (a *App) AddProtoFile(name, content string) (string, error) {
 	}
 
 	getProtoDecoder().ClearAutoCache()
-	_ = saveProtoFiles(reg)
-	return entry.ID, nil
+	return entry.ID, saveProtoFiles(reg)
 }
 
 // UpdateProtoFile updates an existing .proto file's content.
@@ -191,8 +208,7 @@ func (a *App) AddProtoMapping(urlPattern, messageType, direction, description st
 	reg.AddMapping(m)
 
 	getProtoDecoder().ClearAutoCache()
-	_ = saveProtoMappings(reg)
-	return m.ID, nil
+	return m.ID, saveProtoMappings(reg)
 }
 
 // UpdateProtoMapping updates an existing mapping.
@@ -670,6 +686,13 @@ func (a *App) LoadProtoFromDisk() ([]string, error) {
 // --- Persistence helpers ---
 
 func saveProtoFiles(reg *ProtoRegistry) error {
+	protoLoadFailedMu.Lock()
+	failed := protoFilesLoadFailed
+	protoLoadFailedMu.Unlock()
+	if failed {
+		return fmt.Errorf("proto files config failed to load at startup; refusing to overwrite (restart to retry)")
+	}
+
 	files := reg.GetFiles()
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].LoadedAt < files[j].LoadedAt
@@ -682,10 +705,17 @@ func saveProtoFiles(reg *ProtoRegistry) error {
 
 	dir := getProtoDir()
 	_ = os.MkdirAll(dir, 0755)
-	return os.WriteFile(getProtoFilesPath(), data, 0644)
+	return fileutil.WriteFileAtomic(getProtoFilesPath(), data, 0644)
 }
 
 func saveProtoMappings(reg *ProtoRegistry) error {
+	protoLoadFailedMu.Lock()
+	failed := protoMappingsLoadFailed
+	protoLoadFailedMu.Unlock()
+	if failed {
+		return fmt.Errorf("proto mappings config failed to load at startup; refusing to overwrite (restart to retry)")
+	}
+
 	mappings := reg.GetMappings()
 
 	data, err := json.MarshalIndent(mappings, "", "  ")
@@ -695,5 +725,5 @@ func saveProtoMappings(reg *ProtoRegistry) error {
 
 	dir := getProtoDir()
 	_ = os.MkdirAll(dir, 0755)
-	return os.WriteFile(getProtoMappingsPath(), data, 0644)
+	return fileutil.WriteFileAtomic(getProtoMappingsPath(), data, 0644)
 }

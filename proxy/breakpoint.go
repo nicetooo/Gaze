@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -69,7 +70,11 @@ type breakpointState struct {
 	pending    map[string]*pendingBreakpoint
 	mu         sync.Mutex // protects pending map
 	onHit      func(PendingBreakpointInfo)
-	onResolved func(id string, reason string) // called when breakpoint is resolved/timed out
+	onResolved func(id string, reason string)  // called when breakpoint is resolved/timed out
+	onCapacity func(ruleID, url, phase string) // called when a matching request passes through because the pool is full
+
+	capacitySkips   atomic.Int64 // matching requests passed through due to maxPendingBreakpoints
+	timeoutForwards atomic.Int64 // breakpoints auto-forwarded after breakpointTimeout
 }
 
 // AddBreakpointRule adds a breakpoint rule to the proxy engine
@@ -248,4 +253,29 @@ func (p *ProxyServer) notifyBreakpointResolved(id string, reason string) {
 	if cb != nil {
 		go cb(id, reason)
 	}
+}
+
+// SetBreakpointCapacityCallback sets the callback invoked when a request matching
+// a breakpoint rule is passed through because maxPendingBreakpoints is reached.
+func (p *ProxyServer) SetBreakpointCapacityCallback(cb func(ruleID, url, phase string)) {
+	p.bp.mu.Lock()
+	defer p.bp.mu.Unlock()
+	p.bp.onCapacity = cb
+}
+
+// notifyBreakpointCapacity records a capacity pass-through and fires the callback
+func (p *ProxyServer) notifyBreakpointCapacity(ruleID, url, phase string) {
+	p.bp.capacitySkips.Add(1)
+	p.bp.mu.Lock()
+	cb := p.bp.onCapacity
+	p.bp.mu.Unlock()
+
+	if cb != nil {
+		go cb(ruleID, url, phase)
+	}
+}
+
+// BreakpointStats returns counters for capacity pass-throughs and timeout auto-forwards
+func (p *ProxyServer) BreakpointStats() (capacitySkips, timeoutForwards int64) {
+	return p.bp.capacitySkips.Load(), p.bp.timeoutForwards.Load()
 }

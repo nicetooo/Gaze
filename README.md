@@ -16,7 +16,7 @@ A powerful, modern, and self-contained Android device management and automation 
 - **Multi-Device Power**: Supports independent, simultaneous background recording for multiple devices.
 - **Session-Event Architecture**: Unified tracking of all device activities (logs, network, touch, app lifecycle) on a single timeline.
 - **Visual Workflow Automation**: Build complex test flows with a drag-and-drop node editor — no code required.
-- **AI-Ready via MCP**: 50+ tools exposed through the Model Context Protocol for seamless integration with AI clients like Claude Desktop and Cursor.
+- **AI-Ready via MCP**: 140+ tools exposed through the Model Context Protocol for seamless integration with AI clients like Claude Desktop and Cursor.
 - **Developer First**: Integrated Logcat, Shell, MITM Proxy, and UI Inspector designed by developers, for developers.
 
 ## App Screenshots
@@ -132,26 +132,27 @@ A powerful, modern, and self-contained Android device management and automation 
 
 ## MCP Integration (Model Context Protocol)
 
-Gaze includes a built-in **MCP server** that exposes 50+ tools and 5 resources, enabling AI clients to fully control Android devices through natural language. This makes Gaze the bridge between AI and Android.
+Gaze includes a built-in **MCP server** that exposes 140+ tools and 5 resources, enabling AI clients to fully control Android devices through natural language. This makes Gaze the bridge between AI and Android.
 
 ### Supported AI Clients
 
 | Client | Transport | Configuration |
 |--------|-----------|---------------|
-| **Claude Desktop** | SSE | `claude_desktop_config.json` |
-| **Claude Code (CLI)** | SSE | `.claude/settings.json` |
-| **Cursor** | SSE | Cursor MCP settings |
+| **Claude Desktop** | stdio | `claude_desktop_config.json` |
+| **Claude Code (CLI)** | stdio | `claude mcp add` |
+| **Cursor** | stdio | Cursor MCP settings |
 
 ### Quick Setup
 
-The MCP server starts automatically with Gaze on `http://localhost:23816/mcp/sse`.
+The MCP server runs over **stdio**: the AI client launches the Gaze binary with the `--mcp` flag as a subprocess. Adjust the binary path for your platform (the examples below use the macOS app bundle path).
 
 **Claude Desktop** (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
     "gaze": {
-      "url": "http://localhost:23816/mcp/sse"
+      "command": "/Applications/Gaze.app/Contents/MacOS/Gaze",
+      "args": ["--mcp"]
     }
   }
 }
@@ -159,23 +160,29 @@ The MCP server starts automatically with Gaze on `http://localhost:23816/mcp/sse
 
 **Claude Code**:
 ```bash
-claude mcp add gaze --transport sse http://localhost:23816/mcp/sse
+claude mcp add gaze -- /Applications/Gaze.app/Contents/MacOS/Gaze --mcp
 ```
 
-**Cursor**: Add MCP server URL `http://localhost:23816/mcp/sse` in Cursor's MCP settings.
+**Cursor**: Add a stdio MCP server with command `/Applications/Gaze.app/Contents/MacOS/Gaze` and argument `--mcp` in Cursor's MCP settings.
 
-### MCP Tools (50+)
+### MCP Tools (140+)
 
-| Category | Tools | Description |
-|----------|-------|-------------|
+| Category | Example Tools | Description |
+|----------|---------------|-------------|
 | **Device** | `device_list`, `device_info`, `device_connect`, `device_disconnect`, `device_pair`, `device_wireless`, `device_ip` | Device discovery, connection, and information |
 | **CLI Tools** | `adb_execute`, `aapt_execute`, `ffmpeg_execute`, `ffprobe_execute` | Execute bundled CLI tools (ADB, AAPT, FFmpeg, FFprobe) |
+| **Files** | `file_upload`, `file_list` | Upload files to the device and browse device directories |
 | **Apps** | `app_list`, `app_info`, `app_start`, `app_stop`, `app_running`, `app_install`, `app_uninstall`, `app_clear_data` | Full application lifecycle management |
 | **Screen** | `screen_screenshot`, `screen_record_start`, `screen_record_stop`, `screen_recording_status` | Screenshots (base64) and recording control |
-| **UI Automation** | `ui_hierarchy`, `ui_search`, `ui_tap`, `ui_swipe`, `ui_input`, `ui_resolution` | UI inspection, element interaction, and input |
-| **Sessions** | `session_create`, `session_end`, `session_active`, `session_list`, `session_events`, `session_stats` | Session lifecycle and event querying |
+| **UI Automation** | `ui_hierarchy`, `ui_search`, `ui_tap`, `ui_swipe`, `ui_input`, `ui_wait_for`, `ui_resolution`, `keyboard_setup` | UI inspection, element interaction, waiting, and input |
+| **Sessions** | `session_create`, `session_end`, `session_active`, `session_list`, `session_events`, `session_stats`, `session_export`, `session_import` | Session lifecycle and event querying |
 | **Workflows** | `workflow_list`, `workflow_get`, `workflow_create`, `workflow_update`, `workflow_delete`, `workflow_run`, `workflow_stop`, `workflow_pause`, `workflow_resume`, `workflow_step_next`, `workflow_status`, `workflow_execute_step` | Full workflow CRUD, execution, and debugging |
-| **Proxy** | `proxy_start`, `proxy_stop`, `proxy_status` | Network proxy control |
+| **Proxy & Network** | `proxy_start`, `proxy_stop`, `proxy_status`, `proxy_configure`, `proxy_device_setup`, `proxy_cert_install`, `mock_rule_*`, `rewrite_rule_*`, `breakpoint_*`, `map_remote_*`, `resend_request` | MITM proxy control, mocking, rewriting, breakpoints, and request replay |
+| **Protobuf** | `proto_file_*`, `proto_mapping_*`, `proto_message_types`, `proto_load_url` | Protobuf definitions for decoding proxied traffic |
+| **Touch Recording** | `touch_record_start`, `touch_record_stop`, `touch_script_list`, `touch_script_play`, `touch_script_save`, `touch_script_delete` | Record and replay touch interaction scripts |
+| **Performance** | `perf_start`, `perf_stop`, `perf_snapshot`, `perf_process_detail` | CPU/memory/FPS/network/battery monitoring |
+| **Assertions** | `assertion_*`, `assertion_set_*`, `assertion_quick_no_errors`, `assertion_quick_no_crashes` | Define and evaluate assertions against session events |
+| **Plugins** | `plugin_list`, `plugin_create`, `plugin_update`, `plugin_delete`, `plugin_toggle`, `plugin_test*`, `plugin_sample_events` | JavaScript event-processing plugin management and testing |
 | **Video** | `video_frame`, `video_metadata`, `session_video_frame`, `session_video_info` | Video frame extraction and metadata |
 
 ### MCP Resources
@@ -281,7 +288,7 @@ The GitHub Action will automatically build for macOS, Windows, and Linux, and up
                          |                 |                 |
                 +--------v------+  +-------v-------+  +-----v-------+
                 | Event Pipeline|  |  MCP Server   |  |   Proxy     |
-                | (Session,     |  |  (50+ tools,  |  |  (MITM,     |
+                | (Session,     |  |  (140+ tools, |  |  (MITM,     |
                 |  SQLite,      |  |   5 resources)|  |   goproxy)  |
                 |  FTS5)        |  +---------------+  +-------------+
                 +---------------+

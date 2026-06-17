@@ -1385,6 +1385,7 @@ export namespace main {
 	    compiledCode: string;
 	    filters: PluginFilters;
 	    config: Record<string, any>;
+	    enabled?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new PluginSaveRequest(source);
@@ -1402,6 +1403,7 @@ export namespace main {
 	        this.compiledCode = source["compiledCode"];
 	        this.filters = this.convertValues(source["filters"], PluginFilters);
 	        this.config = source["config"];
+	        this.enabled = source["enabled"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from "react";
 import Editor, { OnMount } from "@monaco-editor/react";
 import { useTheme } from "../ThemeContext";
 import * as monaco from "monaco-editor";
+import "../monacoSetup";
 
 // 全局标记：completion providers 只需注册一次
 let completionProvidersRegistered = false;

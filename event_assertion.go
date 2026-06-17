@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -260,7 +261,7 @@ func (e *AssertionEngine) queryMatchingEvents(assertion *Assertion) ([]UnifiedEv
 		query.Categories = assertion.Criteria.Categories
 	}
 	if len(assertion.Criteria.Types) > 0 {
-		query.Types = assertion.Criteria.Types
+		query.Types = expandAggregatedTypes(assertion.Criteria.Types)
 	}
 	if len(assertion.Criteria.Levels) > 0 {
 		query.Levels = assertion.Criteria.Levels
@@ -422,27 +423,47 @@ func (e *AssertionEngine) evaluateSequence(assertion *Assertion, events []Unifie
 	// 按时间排序
 	sortedEvents := make([]UnifiedEvent, len(events))
 	copy(sortedEvents, events)
-	for i := 0; i < len(sortedEvents)-1; i++ {
-		for j := i + 1; j < len(sortedEvents); j++ {
-			if sortedEvents[j].Timestamp < sortedEvents[i].Timestamp {
-				sortedEvents[i], sortedEvents[j] = sortedEvents[j], sortedEvents[i]
-			}
-		}
-	}
+	sort.Slice(sortedEvents, func(i, j int) bool {
+		return sortedEvents[i].Timestamp < sortedEvents[j].Timestamp
+	})
 
 	// 查找序列
 	seqIndex := 0
 	matchedIDs := make([]string, 0)
 
-	for _, event := range sortedEvents {
-		if seqIndex >= len(assertion.Expected.Sequence) {
-			break
-		}
+	if assertion.Expected.Ordered {
+		// 严格顺序匹配: 每个 criteria 必须在前一个之后出现
+		for _, event := range sortedEvents {
+			if seqIndex >= len(assertion.Expected.Sequence) {
+				break
+			}
 
-		criteria := assertion.Expected.Sequence[seqIndex]
-		if e.eventMatchesCriteria(event, criteria) {
-			matchedIDs = append(matchedIDs, event.ID)
-			seqIndex++
+			criteria := assertion.Expected.Sequence[seqIndex]
+			if e.eventMatchesCriteria(event, criteria) {
+				matchedIDs = append(matchedIDs, event.ID)
+				seqIndex++
+			}
+		}
+	} else {
+		// 乱序匹配: 只要求每个 criteria 都能找到事件，不要求出现顺序
+		// 已匹配的事件 ID 去重，避免同一事件满足多个 criteria。
+		// 已知局限（有意保留的简化实现）：按 criteria 顺序贪心 first-fit，
+		// 当多个 criteria 的匹配集重叠时，宽泛 criteria 先抢走唯一事件
+		// 可能导致存在合法分配却判失败；完整解需要二分图匹配，当前场景
+		// 不值得该复杂度
+		used := make(map[string]bool, len(assertion.Expected.Sequence))
+		for _, criteria := range assertion.Expected.Sequence {
+			for _, event := range sortedEvents {
+				if used[event.ID] {
+					continue
+				}
+				if e.eventMatchesCriteria(event, criteria) {
+					used[event.ID] = true
+					matchedIDs = append(matchedIDs, event.ID)
+					seqIndex++
+					break
+				}
+			}
 		}
 	}
 
@@ -468,13 +489,9 @@ func (e *AssertionEngine) evaluateTiming(assertion *Assertion, events []UnifiedE
 	// 按时间排序
 	sortedEvents := make([]UnifiedEvent, len(events))
 	copy(sortedEvents, events)
-	for i := 0; i < len(sortedEvents)-1; i++ {
-		for j := i + 1; j < len(sortedEvents); j++ {
-			if sortedEvents[j].Timestamp < sortedEvents[i].Timestamp {
-				sortedEvents[i], sortedEvents[j] = sortedEvents[j], sortedEvents[i]
-			}
-		}
-	}
+	sort.Slice(sortedEvents, func(i, j int) bool {
+		return sortedEvents[i].Timestamp < sortedEvents[j].Timestamp
+	})
 
 	// 计算相邻事件间隔
 	intervals := make([]int64, 0)
@@ -567,6 +584,30 @@ func (e *AssertionEngine) evaluateCondition(assertion *Assertion, events []Unifi
 // 辅助函数
 // ========================================
 
+// typeMatchesCriteria reports whether an event type satisfies a criteria type.
+// "logcat" also matches "logcat_aggregated": bucketed aggregation (logcat.go)
+// merges log bursts into aggregated events, and per-type filters written as
+// ["logcat"] would otherwise silently miss most log lines.
+func typeMatchesCriteria(criteriaType, eventType string) bool {
+	if criteriaType == eventType {
+		return true
+	}
+	return criteriaType == "logcat" && eventType == "logcat_aggregated"
+}
+
+// expandAggregatedTypes widens a type filter list for SQL-level filtering so
+// aggregated variants are not excluded before typeMatchesCriteria runs.
+func expandAggregatedTypes(types []string) []string {
+	out := append([]string(nil), types...)
+	for _, t := range types {
+		if t == "logcat" {
+			out = append(out, "logcat_aggregated")
+			break
+		}
+	}
+	return out
+}
+
 func (e *AssertionEngine) eventMatchesCriteria(event UnifiedEvent, criteria EventCriteria) bool {
 	if len(criteria.Sources) > 0 {
 		found := false
@@ -597,7 +638,7 @@ func (e *AssertionEngine) eventMatchesCriteria(event UnifiedEvent, criteria Even
 	if len(criteria.Types) > 0 {
 		found := false
 		for _, t := range criteria.Types {
-			if event.Type == t {
+			if typeMatchesCriteria(t, event.Type) {
 				found = true
 				break
 			}

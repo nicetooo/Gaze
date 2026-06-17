@@ -2,6 +2,7 @@ import { memo, useCallback, useRef, useState, useEffect } from 'react';
 import Editor, { type OnMount, type OnChange } from '@monaco-editor/react';
 import { Spin } from 'antd';
 import { useTheme } from '../ThemeContext';
+import '../monacoSetup';
 
 interface JsonEditorProps {
   /** Current value as string */

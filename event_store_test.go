@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -396,7 +398,7 @@ func TestDeleteSession(t *testing.T) {
 }
 
 // TestTimeIndex tests time index operations
-// Note: GetTimeIndex generates time index from events table, not from time_index table
+// Note: GetTimeIndex generates the time index by aggregating the events table on the fly
 func TestTimeIndex(t *testing.T) {
 	store, cleanup := setupTestStore(t)
 	defer cleanup()
@@ -770,4 +772,138 @@ func TestSearchSpecialCharacters(t *testing.T) {
 	if result.Total != 1 {
 		t.Errorf("Expected URL search to match 1 event, got %d", result.Total)
 	}
+}
+
+// TestQueryEventsFullLoadTotal verifies that limit==0 full loads skip the
+// standalone COUNT query and report Total as the number of returned rows.
+func TestQueryEventsFullLoadTotal(t *testing.T) {
+	store, cleanup := setupTestStore(t)
+	defer cleanup()
+
+	session := &DeviceSession{
+		ID:        uuid.New().String(),
+		DeviceID:  "test-device-fullload",
+		Type:      "manual",
+		Name:      "Full Load Session",
+		StartTime: time.Now().UnixMilli(),
+		Status:    "active",
+	}
+	if err := store.CreateSession(session); err != nil {
+		t.Fatalf("Failed to create session: %v", err)
+	}
+
+	for i := 0; i < 25; i++ {
+		title := "regular event"
+		if i%5 == 0 {
+			title = "needle event"
+		}
+		store.WriteEvent(UnifiedEvent{
+			ID: uuid.New().String(), SessionID: session.ID, DeviceID: session.DeviceID,
+			Timestamp: time.Now().UnixMilli(), RelativeTime: int64(i * 100),
+			Source: SourceLogcat, Category: CategoryLog, Type: "logcat",
+			Level: LevelInfo, Title: title,
+		})
+	}
+	store.Flush()
+	time.Sleep(200 * time.Millisecond)
+
+	// limit==0 without search: Total equals returned rows, no pagination
+	result, err := store.QueryEvents(EventQuery{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("Full load query failed: %v", err)
+	}
+	if len(result.Events) != 25 {
+		t.Fatalf("Expected 25 events, got %d", len(result.Events))
+	}
+	if result.Total != 25 {
+		t.Errorf("Expected Total 25, got %d", result.Total)
+	}
+	if result.HasMore {
+		t.Error("Expected HasMore=false for full load")
+	}
+
+	// limit==0 with search: Total equals matched rows
+	result, err = store.QueryEvents(EventQuery{SessionID: session.ID, SearchText: "needle"})
+	if err != nil {
+		t.Fatalf("Full load search query failed: %v", err)
+	}
+	if result.Total != len(result.Events) {
+		t.Errorf("Expected Total == len(Events), got Total=%d len=%d", result.Total, len(result.Events))
+	}
+	if result.Total != 5 {
+		t.Errorf("Expected 5 matches, got %d", result.Total)
+	}
+	if result.HasMore {
+		t.Error("Expected HasMore=false for full load search")
+	}
+
+	// Paged query keeps the real COUNT-based Total semantics
+	result, err = store.QueryEvents(EventQuery{SessionID: session.ID, Limit: 10})
+	if err != nil {
+		t.Fatalf("Paged query failed: %v", err)
+	}
+	if result.Total != 25 {
+		t.Errorf("Expected paged Total 25, got %d", result.Total)
+	}
+	if !result.HasMore {
+		t.Error("Expected HasMore=true for paged query")
+	}
+}
+
+// TestCompressDataRoundTrip verifies gzip compression survives pooled-writer
+// reuse, including concurrent callers sharing the sync.Pool.
+func TestCompressDataRoundTrip(t *testing.T) {
+	// Small payloads (<1KB) bypass compression
+	small := []byte("tiny payload")
+	got, err := compressData(small)
+	if err != nil {
+		t.Fatalf("compressData failed on small payload: %v", err)
+	}
+	if !bytes.Equal(got, small) {
+		t.Error("Expected small payload to pass through uncompressed")
+	}
+
+	// Large compressible payload round-trips
+	large := bytes.Repeat([]byte("abcdefgh"), 1024) // 8KB
+	compressed, err := compressData(large)
+	if err != nil {
+		t.Fatalf("compressData failed: %v", err)
+	}
+	if len(compressed) >= len(large) {
+		t.Error("Expected compressible payload to shrink")
+	}
+	restored, err := decompressData(compressed)
+	if err != nil {
+		t.Fatalf("decompressData failed: %v", err)
+	}
+	if !bytes.Equal(restored, large) {
+		t.Error("Round-trip mismatch for compressed payload")
+	}
+
+	// Concurrent compression exercises gzip writer pool reuse
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(seed byte) {
+			defer wg.Done()
+			payload := bytes.Repeat([]byte{seed, seed + 1, seed + 2, seed + 3}, 1024)
+			for j := 0; j < 50; j++ {
+				c, err := compressData(payload)
+				if err != nil {
+					t.Errorf("Concurrent compressData failed: %v", err)
+					return
+				}
+				d, err := decompressData(c)
+				if err != nil {
+					t.Errorf("Concurrent decompressData failed: %v", err)
+					return
+				}
+				if !bytes.Equal(d, payload) {
+					t.Error("Concurrent round-trip mismatch")
+					return
+				}
+			}
+		}(byte('a' + i))
+	}
+	wg.Wait()
 }

@@ -298,6 +298,8 @@ interface ProxyState {
   // 过滤
   filterType: "ALL" | "HTTP" | "WS";
   searchText: string;
+  // Debounced copy of searchText (200ms) — use this for expensive log filtering
+  debouncedSearchText: string;
   
   // UI 状态
   selectedLog: RequestLog | null;
@@ -467,6 +469,9 @@ interface ProxyState {
   openBreakpointWithPrefill: (data: PendingBreakpointData) => void;
 }
 
+// Debounce timer for search text (module-level: store is a singleton)
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const useProxyStore = create<ProxyState>()(
   immer((set) => ({
     // 初始状态
@@ -485,6 +490,7 @@ export const useProxyStore = create<ProxyState>()(
     
     filterType: "ALL",
     searchText: "",
+    debouncedSearchText: "",
     
     selectedLog: null,
     detailsDrawerOpen: false,
@@ -593,7 +599,17 @@ export const useProxyStore = create<ProxyState>()(
     
     setFilterType: (type: "ALL" | "HTTP" | "WS") => set({ filterType: type }),
     
-    setSearchText: (text: string) => set({ searchText: text }),
+    setSearchText: (text: string) => {
+      set({ searchText: text });
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      if (!text) {
+        // Clearing the search should take effect immediately
+        searchDebounceTimer = null;
+        set({ debouncedSearchText: "" });
+      } else {
+        searchDebounceTimer = setTimeout(() => set({ debouncedSearchText: text }), 200);
+      }
+    },
     
     setLatency: (ms: number | null) => set({ latency: ms }),
     

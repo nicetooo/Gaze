@@ -1,12 +1,41 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
+
+// batchOperationTimeout 返回批量操作的单设备超时:
+// install/push 涉及大文件传输给 5 分钟, 其余操作 60 秒。
+// 无超时时一台无响应设备会让整批操作永久挂起。
+func batchOperationTimeout(opType string) time.Duration {
+	switch opType {
+	case "install", "push":
+		return 5 * time.Minute
+	default:
+		return 60 * time.Second
+	}
+}
+
+// emitBatchEvent 将单设备的批量操作结果发到该设备的 Session 时间线
+func (a *App) emitBatchEvent(opType string, br BatchResult) {
+	if a.eventPipeline == nil {
+		return
+	}
+	level := LevelInfo
+	status := "success"
+	if !br.Success {
+		level = LevelError
+		status = "failed"
+	}
+	a.eventPipeline.EmitRaw(br.DeviceID, SourceSystem, "batch_operation", level,
+		fmt.Sprintf("Batch %s: %s", opType, status), br)
+}
 
 // ExecuteBatchOperation executes an operation on multiple devices in parallel
 func (a *App) ExecuteBatchOperation(op BatchOperation) BatchOperationResult {
@@ -20,7 +49,6 @@ func (a *App) ExecuteBatchOperation(op BatchOperation) BatchOperationResult {
 	}
 
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	resultsChan := make(chan BatchResult, len(op.DeviceIDs))
 
 	for _, deviceID := range op.DeviceIDs {
@@ -31,26 +59,33 @@ func (a *App) ExecuteBatchOperation(op BatchOperation) BatchOperationResult {
 			var br BatchResult
 			br.DeviceID = devID
 
-			switch op.Type {
-			case "install":
-				br = a.batchInstall(devID, op.APKPath)
-			case "uninstall":
-				br = a.batchUninstall(devID, op.PackageName)
-			case "clear":
-				br = a.batchClearData(devID, op.PackageName)
-			case "stop":
-				br = a.batchForceStop(devID, op.PackageName)
-			case "shell":
-				br = a.batchShellCommand(devID, op.Command)
-			case "push":
-				br = a.batchPushFile(devID, op.LocalPath, op.RemotePath)
-			case "reboot":
-				br = a.batchReboot(devID)
-			default:
-				br.Error = fmt.Sprintf("unknown operation type: %s", op.Type)
+			if err := ValidateDeviceID(devID); err != nil {
+				br.Error = fmt.Sprintf("invalid device ID: %v", err)
+			} else {
+				ctx, cancel := context.WithTimeout(a.ctx, batchOperationTimeout(op.Type))
+				switch op.Type {
+				case "install":
+					br = a.batchInstall(ctx, devID, op.APKPath)
+				case "uninstall":
+					br = a.batchUninstall(ctx, devID, op.PackageName)
+				case "clear":
+					br = a.batchClearData(ctx, devID, op.PackageName)
+				case "stop":
+					br = a.batchForceStop(ctx, devID, op.PackageName)
+				case "shell":
+					br = a.batchShellCommand(ctx, devID, op.Command)
+				case "push":
+					br = a.batchPushFile(ctx, devID, op.LocalPath, op.RemotePath)
+				case "reboot":
+					br = a.batchReboot(ctx, devID)
+				default:
+					br.Error = fmt.Sprintf("unknown operation type: %s", op.Type)
+				}
+				cancel()
 			}
 
 			br.DeviceID = devID
+			a.emitBatchEvent(op.Type, br)
 			resultsChan <- br
 
 			// Emit progress event
@@ -66,22 +101,20 @@ func (a *App) ExecuteBatchOperation(op BatchOperation) BatchOperationResult {
 		close(resultsChan)
 	}()
 
-	// Collect results
+	// Collect results (单 goroutine 消费, 无需加锁)
 	for br := range resultsChan {
-		mu.Lock()
 		result.Results = append(result.Results, br)
 		if br.Success {
 			result.SuccessCount++
 		} else {
 			result.FailureCount++
 		}
-		mu.Unlock()
 	}
 
 	return result
 }
 
-func (a *App) batchInstall(deviceID, apkPath string) BatchResult {
+func (a *App) batchInstall(ctx context.Context, deviceID, apkPath string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if apkPath == "" {
@@ -89,7 +122,7 @@ func (a *App) batchInstall(deviceID, apkPath string) BatchResult {
 		return br
 	}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "install", "-r", apkPath)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "install", "-r", apkPath)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -109,7 +142,7 @@ func (a *App) batchInstall(deviceID, apkPath string) BatchResult {
 	return br
 }
 
-func (a *App) batchUninstall(deviceID, packageName string) BatchResult {
+func (a *App) batchUninstall(ctx context.Context, deviceID, packageName string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if packageName == "" {
@@ -118,7 +151,7 @@ func (a *App) batchUninstall(deviceID, packageName string) BatchResult {
 	}
 
 	// Try standard uninstall first
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "uninstall", packageName)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "uninstall", packageName)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -128,7 +161,7 @@ func (a *App) batchUninstall(deviceID, packageName string) BatchResult {
 	}
 
 	// Try pm uninstall for system apps
-	cmd2 := a.newAdbCommand(nil, "-s", deviceID, "shell", "pm", "uninstall", "-k", "--user", "0", packageName)
+	cmd2 := a.newAdbCommand(ctx, "-s", deviceID, "shell", "pm", "uninstall", "-k", "--user", "0", packageName)
 	output2, err2 := cmd2.CombinedOutput()
 	br.Output = string(output2)
 
@@ -141,7 +174,7 @@ func (a *App) batchUninstall(deviceID, packageName string) BatchResult {
 	return br
 }
 
-func (a *App) batchClearData(deviceID, packageName string) BatchResult {
+func (a *App) batchClearData(ctx context.Context, deviceID, packageName string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if packageName == "" {
@@ -149,7 +182,7 @@ func (a *App) batchClearData(deviceID, packageName string) BatchResult {
 		return br
 	}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "shell", "pm", "clear", packageName)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell", "pm", "clear", packageName)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -167,7 +200,7 @@ func (a *App) batchClearData(deviceID, packageName string) BatchResult {
 	return br
 }
 
-func (a *App) batchForceStop(deviceID, packageName string) BatchResult {
+func (a *App) batchForceStop(ctx context.Context, deviceID, packageName string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if packageName == "" {
@@ -175,7 +208,7 @@ func (a *App) batchForceStop(deviceID, packageName string) BatchResult {
 		return br
 	}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "shell", "am", "force-stop", packageName)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell", "am", "force-stop", packageName)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -188,7 +221,7 @@ func (a *App) batchForceStop(deviceID, packageName string) BatchResult {
 	return br
 }
 
-func (a *App) batchShellCommand(deviceID, command string) BatchResult {
+func (a *App) batchShellCommand(ctx context.Context, deviceID, command string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if command == "" {
@@ -196,7 +229,7 @@ func (a *App) batchShellCommand(deviceID, command string) BatchResult {
 		return br
 	}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "shell", command)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "shell", command)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -209,7 +242,7 @@ func (a *App) batchShellCommand(deviceID, command string) BatchResult {
 	return br
 }
 
-func (a *App) batchPushFile(deviceID, localPath, remotePath string) BatchResult {
+func (a *App) batchPushFile(ctx context.Context, deviceID, localPath, remotePath string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
 	if localPath == "" || remotePath == "" {
@@ -217,7 +250,7 @@ func (a *App) batchPushFile(deviceID, localPath, remotePath string) BatchResult 
 		return br
 	}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "push", localPath, remotePath)
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "push", localPath, remotePath)
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 
@@ -230,10 +263,10 @@ func (a *App) batchPushFile(deviceID, localPath, remotePath string) BatchResult 
 	return br
 }
 
-func (a *App) batchReboot(deviceID string) BatchResult {
+func (a *App) batchReboot(ctx context.Context, deviceID string) BatchResult {
 	br := BatchResult{DeviceID: deviceID}
 
-	cmd := a.newAdbCommand(nil, "-s", deviceID, "reboot")
+	cmd := a.newAdbCommand(ctx, "-s", deviceID, "reboot")
 	output, err := cmd.CombinedOutput()
 	br.Output = string(output)
 

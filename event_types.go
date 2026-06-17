@@ -345,6 +345,14 @@ var EventRegistry = map[string]EventTypeInfo{
 		Type: "recording_end", Source: SourceSystem, Category: CategoryState,
 		Description: "Screen recording ended",
 	},
+	"batch_operation": {
+		Type: "batch_operation", Source: SourceSystem, Category: CategoryState,
+		Description: "Batch operation result on a device",
+	},
+	"plugin_error": {
+		Type: "plugin_error", Source: SourceSystem, Category: CategoryLog,
+		Description: "Plugin execution error",
+	},
 }
 
 // ParseEventLevel converts a string level (e.g. from old SessionEvent) to EventLevel.

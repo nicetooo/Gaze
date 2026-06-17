@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode"
 
+	"Gaze/pkg/fileutil"
+
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -74,7 +76,9 @@ func (a *App) SaveWorkflow(workflow Workflow) error {
 		a.workflowWatcher.MarkSelfWrite(safeName)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	// Atomic write: the watcher only sees the final rename (a Create event for
+	// the .json name, suppressed by MarkSelfWrite); temp names never end in .json
+	if err := fileutil.WriteFileAtomic(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write workflow file: %w", err)
 	}
 

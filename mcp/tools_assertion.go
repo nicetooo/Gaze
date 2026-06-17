@@ -19,6 +19,8 @@ func (s *MCPServer) registerAssertionTools() {
 	// assertion_list - List stored assertions
 	s.server.AddTool(
 		mcp.NewTool("assertion_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List stored assertions.
 
 Returns an array of assertions with their IDs, names, types, and timestamps.
@@ -55,6 +57,7 @@ RETURNS: Array of stored assertions with metadata.`),
 	// assertion_create - Create a new assertion
 	s.server.AddTool(
 		mcp.NewTool("assertion_create",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Create a new assertion for validating session events.
 
 An assertion defines criteria to match events and expected results.
@@ -64,7 +67,7 @@ PARAMETERS:
     {
       "id": "unique_id",
       "name": "Display name",
-      "type": "exists|not_exists|count",
+      "type": "exists|not_exists|count|sequence",
       "criteria": {
         "types": ["event_type1", "event_type2"],  // event types to match
         "titleMatch": "regex pattern"               // regex to match event titles
@@ -72,7 +75,9 @@ PARAMETERS:
       "expected": {
         "exists": true,              // for exists/not_exists type
         "minCount": 1,               // for count type
-        "maxCount": 10               // for count type
+        "maxCount": 10,              // for count type
+        "sequence": [{...criteria}], // for sequence type: list of per-step criteria
+        "ordered": true              // for sequence type: true=strict order, false=all present in any order
       }
     }
   save_as_template: Save as a reusable template (default: false)
@@ -81,8 +86,11 @@ EXAMPLES:
   Check API calls exist:
     assertion_json: '{"id":"api-check","name":"API calls exist","type":"exists","criteria":{"types":["network_request"]},"expected":{"exists":true}}'
 
-  No errors occurred:
-    assertion_json: '{"id":"no-err","name":"No errors","type":"not_exists","criteria":{"types":["logcat"],"titleMatch":".*ERROR.*"},"expected":{"exists":false}}'
+  No error logs occurred (prefer levels over titleMatch for logcat: bursts are
+  merged into 'logcat_aggregated' events whose title is a summary like
+  "Logcat Output (N entries) - <tag>", not the message text; a criteria type
+  of "logcat" automatically also matches "logcat_aggregated"):
+    assertion_json: '{"id":"no-err","name":"No error logs","type":"not_exists","criteria":{"types":["logcat"],"levels":["error","fatal"]},"expected":{"exists":false}}'
 
   Event count in range:
     assertion_json: '{"id":"count-check","name":"3-10 network requests","type":"count","criteria":{"types":["network_request"]},"expected":{"minCount":3,"maxCount":10}}'`),
@@ -100,6 +108,8 @@ EXAMPLES:
 	// assertion_get - Get assertion details
 	s.server.AddTool(
 		mcp.NewTool("assertion_get",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get detailed information about a specific stored assertion including its
 name, type, criteria, expected values, and timestamps.`),
 			mcp.WithString("assertion_id",
@@ -113,6 +123,7 @@ name, type, criteria, expected values, and timestamps.`),
 	// assertion_update - Update an existing assertion
 	s.server.AddTool(
 		mcp.NewTool("assertion_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Update an existing stored assertion. The assertion JSON replaces all fields.
 
 PARAMETERS:
@@ -133,6 +144,7 @@ PARAMETERS:
 	// assertion_delete - Delete an assertion
 	s.server.AddTool(
 		mcp.NewTool("assertion_delete",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Delete a stored assertion by ID. If this assertion is part of assertion sets,
 it will be removed from those sets as well.`),
 			mcp.WithString("assertion_id",
@@ -146,6 +158,7 @@ it will be removed from those sets as well.`),
 	// assertion_execute - Execute an assertion against a session
 	s.server.AddTool(
 		mcp.NewTool("assertion_execute",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Execute a stored assertion against an active session.
 
 Evaluates the assertion's criteria against all events in the session and returns
@@ -176,6 +189,7 @@ RETURNS: Assertion result with pass/fail status, message, matched event count, a
 	// assertion_quick_no_errors - Quick assertion: no errors in session
 	s.server.AddTool(
 		mcp.NewTool("assertion_quick_no_errors",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Quick assertion that verifies no error or fatal events occurred in the session.
 
 This is a convenience shortcut that creates and executes an assertion checking
@@ -201,6 +215,7 @@ RETURNS: Assertion result - PASS if no errors found, FAIL if errors exist.`),
 	// assertion_quick_no_crashes - Quick assertion: no crashes in session
 	s.server.AddTool(
 		mcp.NewTool("assertion_quick_no_crashes",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Quick assertion that verifies no app crashes or ANRs occurred in the session.
 
 This is a convenience shortcut that creates and executes an assertion checking
@@ -230,6 +245,7 @@ RETURNS: Assertion result - PASS if no crashes found, FAIL if crashes exist.`),
 	// assertion_set_create - Create a new assertion set
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_create",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Create a new assertion set (a collection of assertions to execute together).
 
 An assertion set groups multiple existing assertions by their IDs. When executed,
@@ -269,6 +285,7 @@ RETURNS: The ID of the newly created assertion set.`),
 	// assertion_set_update - Update an existing assertion set
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Update an existing assertion set. All fields are replaced with the new values.
 
 PARAMETERS:
@@ -303,6 +320,7 @@ EXAMPLE:
 	// assertion_set_delete - Delete an assertion set
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_delete",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Delete an assertion set by ID. This does not delete the individual assertions.`),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -315,6 +333,8 @@ EXAMPLE:
 	// assertion_set_get - Get an assertion set by ID
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_get",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get detailed information about a specific assertion set including its name,
 description, and the list of assertion IDs it contains.`),
 			mcp.WithString("id",
@@ -328,6 +348,8 @@ description, and the list of assertion IDs it contains.`),
 	// assertion_set_list - List all assertion sets
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all saved assertion sets.
 
 Returns an array of assertion sets with their IDs, names, descriptions,
@@ -339,6 +361,7 @@ assertion counts, and timestamps. Sets are sorted by creation time.`),
 	// assertion_set_execute - Execute an assertion set
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_execute",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Execute all assertions in an assertion set against a session.
 
 All assertions run in parallel. The result includes:
@@ -376,6 +399,8 @@ RETURNS: Full execution result with summary and individual assertion results.`),
 	// assertion_set_results - Get execution history for an assertion set
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_results",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get execution history for an assertion set.
 
 Returns a list of past execution results, sorted by most recent first.
@@ -398,6 +423,8 @@ PARAMETERS:
 	// assertion_set_result - Get a specific execution result by execution ID
 	s.server.AddTool(
 		mcp.NewTool("assertion_set_result",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get a specific assertion set execution result by its execution ID.
 
 Returns the full execution result including status, summary, and all individual

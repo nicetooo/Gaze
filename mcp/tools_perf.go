@@ -13,6 +13,7 @@ func (s *MCPServer) registerPerfTools() {
 	// perf_start - Start performance monitoring
 	s.server.AddTool(
 		mcp.NewTool("perf_start",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Start real-time performance monitoring on a device.
 
 Monitors CPU usage, memory usage, FPS, network I/O, and battery stats.
@@ -49,6 +50,7 @@ METRICS COLLECTED:
 	// perf_stop - Stop performance monitoring
 	s.server.AddTool(
 		mcp.NewTool("perf_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Stop performance monitoring on a device."),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -61,6 +63,8 @@ METRICS COLLECTED:
 	// perf_process_detail - Get detailed info about a specific process
 	s.server.AddTool(
 		mcp.NewTool("perf_process_detail",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get detailed information about a specific process by PID.
 
 Runs 'dumpsys meminfo <pid>' and reads /proc/<pid>/status to provide:
@@ -86,6 +90,8 @@ Use perf_start/perf_snapshot for continuous monitoring.`),
 	// perf_snapshot - Get a one-time performance snapshot
 	s.server.AddTool(
 		mcp.NewTool("perf_snapshot",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Get a one-time performance snapshot without starting continuous monitoring.
 
 Returns current CPU, memory, network, and battery stats.

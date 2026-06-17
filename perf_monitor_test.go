@@ -562,11 +562,10 @@ func TestParseNetDevLine(t *testing.T) {
 }
 
 // ========================================
-// Test: collectBattery parsing (via parseBattery helper)
+// Test: parseBatteryOutput (collectBattery / collectCombined 共用的解析逻辑)
 // ========================================
 
 func TestParseBattery(t *testing.T) {
-	// We test the battery parsing logic extracted from collectBattery
 	sample := &PerfSampleData{}
 	parseBatteryOutput(realDumpsysBattery, sample)
 
@@ -582,24 +581,6 @@ func TestParseBattery(t *testing.T) {
 	// CPUTempC should be set to battery temp as fallback
 	if sample.CPUTempC != 37.8 {
 		t.Errorf("CPUTempC = %.1f, want 37.8 (fallback from battery)", sample.CPUTempC)
-	}
-}
-
-// parseBatteryOutput is a test helper that mirrors collectBattery's parsing logic
-func parseBatteryOutput(output string, sample *PerfSampleData) {
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "level:") {
-			fmt.Sscanf(line, "level: %d", &sample.BatteryLevel)
-		} else if strings.HasPrefix(line, "temperature:") {
-			var temp int
-			fmt.Sscanf(line, "temperature: %d", &temp)
-			sample.BatteryTemp = float64(temp) / 10.0
-			if sample.CPUTempC == 0 {
-				sample.CPUTempC = sample.BatteryTemp
-			}
-		}
 	}
 }
 
@@ -806,6 +787,26 @@ func TestBuildProcessListEmpty(t *testing.T) {
 	processes := buildProcessList("", "")
 	if processes != nil && len(processes) != 0 {
 		t.Errorf("expected empty, got %d", len(processes))
+	}
+}
+
+func TestBuildProcessListTruncation(t *testing.T) {
+	// 构造超过 maxProcessListEntries 个应用进程的 ps -A 输出
+	var sb strings.Builder
+	sb.WriteString("USER           PID  PPID     VSZ    RSS WCHAN            ADDR S NAME\n")
+	for i := 0; i < maxProcessListEntries+20; i++ {
+		sb.WriteString(fmt.Sprintf("u0_a%d %d 1234 100000 %d do_epoll_+ 0 S com.example.app%d\n",
+			i, 1000+i, 10000+i, i))
+	}
+
+	processes := buildProcessList("", sb.String())
+	if len(processes) != maxProcessListEntries {
+		t.Fatalf("process list length = %d, want %d (truncated)", len(processes), maxProcessListEntries)
+	}
+	// 截断保留的应是排序后内存最高的条目 (无 CPU 数据时按内存降序)
+	if processes[0].MemoryKB < processes[len(processes)-1].MemoryKB {
+		t.Errorf("truncated list not sorted: first MemoryKB=%d < last MemoryKB=%d",
+			processes[0].MemoryKB, processes[len(processes)-1].MemoryKB)
 	}
 }
 

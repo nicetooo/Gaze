@@ -13,6 +13,7 @@ func (s *MCPServer) registerProxyTools() {
 	// proxy_start - Start the proxy
 	s.server.AddTool(
 		mcp.NewTool("proxy_start",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Start the HTTP/HTTPS proxy for network interception"),
 			mcp.WithNumber("port",
 				mcp.Description("Port to listen on (default: 8080)"),
@@ -24,6 +25,7 @@ func (s *MCPServer) registerProxyTools() {
 	// proxy_stop - Stop the proxy
 	s.server.AddTool(
 		mcp.NewTool("proxy_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Stop the HTTP/HTTPS proxy"),
 		),
 		s.handleProxyStop,
@@ -32,6 +34,8 @@ func (s *MCPServer) registerProxyTools() {
 	// proxy_status - Get proxy status
 	s.server.AddTool(
 		mcp.NewTool("proxy_status",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get the current proxy status"),
 		),
 		s.handleProxyStatus,
@@ -40,6 +44,8 @@ func (s *MCPServer) registerProxyTools() {
 	// mock_rule_list - List all mock rules
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all HTTP mock response rules.
 
 Returns all configured mock rules with their URL patterns, methods, status codes,
@@ -51,6 +57,7 @@ response bodies, delays, and enabled states. Rules are sorted by creation time.`
 	// mock_rule_add - Add a mock rule
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a new HTTP mock response rule.
 
 When the proxy intercepts a request matching the URL pattern (and optional method),
@@ -103,6 +110,7 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// mock_rule_update - Update a mock rule
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Update an existing mock rule. All fields are replaced with the new values.`),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -147,6 +155,7 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// mock_rule_remove - Remove a mock rule
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a mock rule by ID."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -159,6 +168,7 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// mock_rule_toggle - Enable/disable a mock rule
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_toggle",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Enable or disable a mock rule without removing it."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -175,6 +185,8 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// mock_rule_export - Export all mock rules as JSON
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_export",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Export all mock rules as a JSON string. Useful for sharing rules across teams or backing up configurations."),
 		),
 		s.handleMockRuleExport,
@@ -183,6 +195,7 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// mock_rule_import - Import mock rules from JSON
 	s.server.AddTool(
 		mcp.NewTool("mock_rule_import",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Import mock rules from a JSON string. Rules are merged with existing rules (new IDs are generated to avoid conflicts). Invalid rules (missing urlPattern or statusCode) are skipped."),
 			mcp.WithString("json",
 				mcp.Required(),
@@ -195,6 +208,7 @@ Example: '[{"type":"header","key":"Authorization","operator":"exists"},{"type":"
 	// proxy_configure - Configure proxy settings
 	s.server.AddTool(
 		mcp.NewTool("proxy_configure",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Configure proxy settings. All parameters are optional — only provided settings will be changed.
 
 Settings:
@@ -235,6 +249,8 @@ Examples:
 	// proxy_settings - Get current proxy settings
 	s.server.AddTool(
 		mcp.NewTool("proxy_settings",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get current proxy settings including MITM state, WebSocket state, bypass patterns, and connected device."),
 		),
 		s.handleProxySettings,
@@ -243,6 +259,7 @@ Examples:
 	// proxy_device_setup - Set up proxy on a device
 	s.server.AddTool(
 		mcp.NewTool("proxy_device_setup",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Set up the proxy on a connected Android device.
 
 This performs:
@@ -265,6 +282,7 @@ The device will route HTTP/HTTPS traffic through the proxy after setup.`),
 	// proxy_device_cleanup - Remove proxy from device
 	s.server.AddTool(
 		mcp.NewTool("proxy_device_cleanup",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Remove proxy configuration from an Android device.
 
 This performs:
@@ -285,6 +303,7 @@ This performs:
 	// proxy_cert_install - Push CA certificate to device
 	s.server.AddTool(
 		mcp.NewTool("proxy_cert_install",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Push the proxy CA certificate to an Android device for HTTPS interception.
 
 Pushes the CA certificate to /sdcard/Download/Gaze-CA.crt.
@@ -301,6 +320,8 @@ After pushing, the user must install it on the device:
 	// proxy_cert_trust_check - Check certificate trust status
 	s.server.AddTool(
 		mcp.NewTool("proxy_cert_trust_check",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`Check if a device trusts the proxy CA certificate.
 
 Returns "trusted", "untrusted", or "unknown" based on whether
@@ -316,6 +337,7 @@ recent HTTPS traffic has been successfully decrypted.`),
 	// breakpoint_rule_add - Add a breakpoint rule
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_rule_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a new breakpoint rule for intercepting HTTP requests/responses.
 
 When the proxy intercepts a request or response matching the rule, it pauses execution
@@ -357,6 +379,7 @@ Examples:
 	// breakpoint_rule_remove - Remove a breakpoint rule
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_rule_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a breakpoint rule by ID. Any pending breakpoints from this rule will continue to wait for resolution."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -369,6 +392,8 @@ Examples:
 	// breakpoint_rule_list - List all breakpoint rules
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_rule_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all breakpoint rules.
 
 Returns all configured breakpoint rules with their URL patterns, methods, phases,
@@ -380,6 +405,7 @@ enabled states, and descriptions. Rules are sorted by creation time.`),
 	// breakpoint_rule_toggle - Enable/disable a breakpoint rule
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_rule_toggle",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Enable or disable a breakpoint rule without removing it. Disabled rules will not intercept any requests."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -396,6 +422,7 @@ enabled states, and descriptions. Rules are sorted by creation time.`),
 	// breakpoint_resolve - Resolve a pending breakpoint
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_resolve",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Resolve a pending (paused) breakpoint with an action.
 
 Actions:
@@ -429,6 +456,8 @@ Response phase keys: "statusCode" (number), "respHeaders" (object), "respBody"`)
 	// breakpoint_pending_list - List pending breakpoints
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_pending_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all pending (paused) breakpoints waiting for resolution.
 
 Returns details about each paused request/response including the method, URL, headers,
@@ -444,6 +473,7 @@ Maximum 20 concurrent pending breakpoints are allowed.`),
 	// breakpoint_rule_update - Update an existing breakpoint rule
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_rule_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Update an existing breakpoint rule. All fields are replaced with the new values."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -473,6 +503,7 @@ Maximum 20 concurrent pending breakpoints are allowed.`),
 	// breakpoint_forward_all - Forward all pending breakpoints
 	s.server.AddTool(
 		mcp.NewTool("breakpoint_forward_all",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Forward all pending (paused) breakpoints immediately.
 
 Resolves every currently pending breakpoint with the "forward" action,
@@ -487,6 +518,7 @@ This is equivalent to clicking "Forward All" in the UI.`),
 	// map_remote_add - Add a map remote rule
 	s.server.AddTool(
 		mcp.NewTool("map_remote_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a new URL redirect (Map Remote) rule.
 
 When the proxy intercepts a request matching the source URL pattern, it rewrites
@@ -524,6 +556,7 @@ Examples:
 	// map_remote_update - Update a map remote rule
 	s.server.AddTool(
 		mcp.NewTool("map_remote_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Update an existing map remote rule. All fields are replaced with the new values."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -553,6 +586,7 @@ Examples:
 	// map_remote_remove - Remove a map remote rule
 	s.server.AddTool(
 		mcp.NewTool("map_remote_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a map remote rule by ID."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -565,6 +599,8 @@ Examples:
 	// map_remote_list - List all map remote rules
 	s.server.AddTool(
 		mcp.NewTool("map_remote_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all URL redirect (Map Remote) rules.
 
 Returns all configured map remote rules with their source patterns, target URLs,
@@ -576,6 +612,7 @@ methods, enabled states, and descriptions. Rules are sorted by creation time.`),
 	// map_remote_toggle - Enable/disable a map remote rule
 	s.server.AddTool(
 		mcp.NewTool("map_remote_toggle",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Enable or disable a map remote rule without removing it."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -594,6 +631,7 @@ methods, enabled states, and descriptions. Rules are sorted by creation time.`),
 	// rewrite_rule_add - Add a rewrite rule
 	s.server.AddTool(
 		mcp.NewTool("rewrite_rule_add",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription(`Add a new auto-rewrite rule for modifying request/response headers or body.
 
 When the proxy intercepts a request/response matching the URL pattern,
@@ -651,6 +689,7 @@ Examples:
 	// rewrite_rule_update - Update a rewrite rule
 	s.server.AddTool(
 		mcp.NewTool("rewrite_rule_update",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Update an existing rewrite rule. All fields are replaced with the new values."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -695,6 +734,7 @@ Examples:
 	// rewrite_rule_remove - Remove a rewrite rule
 	s.server.AddTool(
 		mcp.NewTool("rewrite_rule_remove",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("Remove a rewrite rule by ID."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -707,6 +747,8 @@ Examples:
 	// rewrite_rule_list - List all rewrite rules
 	s.server.AddTool(
 		mcp.NewTool("rewrite_rule_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription(`List all auto-rewrite rules.
 
 Returns all configured rewrite rules with their URL patterns, phases, targets,
@@ -718,6 +760,7 @@ match/replace patterns, enabled states, and descriptions.`),
 	// rewrite_rule_toggle - Enable/disable a rewrite rule
 	s.server.AddTool(
 		mcp.NewTool("rewrite_rule_toggle",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Enable or disable a rewrite rule without removing it."),
 			mcp.WithString("id",
 				mcp.Required(),
@@ -734,6 +777,7 @@ match/replace patterns, enabled states, and descriptions.`),
 	// resend_request - Resend an HTTP request
 	s.server.AddTool(
 		mcp.NewTool("resend_request",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription(`Send an HTTP request with optional modifications. Useful for testing APIs.
 
 Mock rules are checked first — if a matching mock rule exists, the mock response

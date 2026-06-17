@@ -3,10 +3,14 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 )
+
+// ErrPluginNotFound 标识插件不存在（区别于数据库瞬时错误），供调用方 errors.Is 判定
+var ErrPluginNotFound = errors.New("plugin not found")
 
 // PluginStore 插件数据库存储
 type PluginStore struct {
@@ -160,7 +164,7 @@ func (ps *PluginStore) SavePlugin(plugin *Plugin) error {
 			}
 
 			// 自动清理旧版本：保留最近 maxVersions 个
-			ps.pruneVersions(plugin.Metadata.ID, 20)
+			ps.pruneVersions(tx, plugin.Metadata.ID, 20)
 		}
 
 		// 更新
@@ -258,7 +262,7 @@ func (ps *PluginStore) GetPlugin(id string) (*Plugin, error) {
 	)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("插件不存在: %s", id)
+		return nil, fmt.Errorf("插件不存在: %s: %w", id, ErrPluginNotFound)
 	}
 	if err != nil {
 		return nil, err
@@ -383,9 +387,11 @@ func (ps *PluginStore) DeletePlugin(id string) error {
 	return err
 }
 
-// pruneVersions 清理旧版本，保留最近 maxVersions 个
-func (ps *PluginStore) pruneVersions(pluginID string, maxVersions int) {
-	_, err := ps.db.Exec(`
+// pruneVersions 清理旧版本，保留最近 maxVersions 个。
+// 必须在调用方的写事务内执行：SQLite 单写者模型下，若改用连接池中
+// 另一条连接执行 DELETE，会被未提交事务持有的写锁阻塞到 busy_timeout 才失败。
+func (ps *PluginStore) pruneVersions(tx *sql.Tx, pluginID string, maxVersions int) {
+	_, err := tx.Exec(`
 		DELETE FROM plugin_versions
 		WHERE plugin_id = ? AND id NOT IN (
 			SELECT id FROM plugin_versions
@@ -444,7 +450,14 @@ func (ps *PluginStore) GetPluginVersions(pluginID string, limit int) ([]PluginVe
 }
 
 // RollbackPlugin 回滚到指定版本
+// "备份当前版本 + 更新为历史版本" 在同一事务内执行，避免只完成一半
 func (ps *PluginStore) RollbackPlugin(versionID int) error {
+	tx, err := ps.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %w", err)
+	}
+	defer tx.Rollback() // Commit 成功后为 no-op
+
 	// 获取历史版本数据
 	var (
 		pluginID     string
@@ -459,7 +472,7 @@ func (ps *PluginStore) RollbackPlugin(versionID int) error {
 		configJSON   string
 	)
 
-	err := ps.db.QueryRow(`
+	err = tx.QueryRow(`
 		SELECT plugin_id, version, name, author, description,
 			   source_code, source_language, compiled_code,
 			   filters, config
@@ -480,7 +493,7 @@ func (ps *PluginStore) RollbackPlugin(versionID int) error {
 	var currentFiltersJSON, currentConfigJSON string
 	var currentEnabled int
 
-	err = ps.db.QueryRow(`
+	err = tx.QueryRow(`
 		SELECT name, version, author, description,
 			   source_code, source_language, compiled_code,
 			   filters, config, enabled
@@ -500,7 +513,7 @@ func (ps *PluginStore) RollbackPlugin(versionID int) error {
 
 	if err == nil {
 		// 保存当前版本到历史
-		_, _ = ps.db.Exec(`
+		_, _ = tx.Exec(`
 			INSERT INTO plugin_versions (
 				plugin_id, version, name, author, description,
 				source_code, source_language, compiled_code,
@@ -522,7 +535,7 @@ func (ps *PluginStore) RollbackPlugin(versionID int) error {
 	}
 
 	// 更新插件为历史版本
-	_, err = ps.db.Exec(`
+	_, err = tx.Exec(`
 		UPDATE plugins SET
 			name = ?,
 			version = ?,
@@ -541,6 +554,9 @@ func (ps *PluginStore) RollbackPlugin(versionID int) error {
 		filtersJSON, configJSON,
 		now, pluginID,
 	)
+	if err != nil {
+		return err
+	}
 
-	return err
+	return tx.Commit()
 }

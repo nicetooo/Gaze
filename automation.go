@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"Gaze/pkg/fileutil"
+
 	wailsRuntime "github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -41,6 +43,10 @@ var (
 	uiHierarchyCacheTTL    = 2 * time.Second        // Cache valid for 2 seconds
 	uiHierarchyMinInterval = 500 * time.Millisecond // Min time between dumps
 )
+
+// reHexValue matches the trailing 8-digit hex value in getevent output lines.
+// Package-level so per-line scan loops don't recompile it.
+var reHexValue = regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
 
 // IsTouchRecordingActive returns true if touch recording is active for the given device.
 // Used by DeviceMonitor to avoid emitting duplicate touch events.
@@ -365,14 +371,12 @@ func (a *App) StartTouchRecording(deviceId string, recordingMode string) error {
 
 				// Parse coordinates in real-time for element capture
 				if strings.Contains(line, "ABS_MT_POSITION_X") {
-					re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
-					if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+					if matches := reHexValue.FindStringSubmatch(line); len(matches) >= 2 {
 						val, _ := strconv.ParseInt(matches[1], 16, 32)
 						currentTouchX = int(val)
 					}
 				} else if strings.Contains(line, "ABS_MT_POSITION_Y") {
-					re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
-					if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+					if matches := reHexValue.FindStringSubmatch(line); len(matches) >= 2 {
 						val, _ := strconv.ParseInt(matches[1], 16, 32)
 						currentTouchY = int(val)
 					}
@@ -734,8 +738,7 @@ func (a *App) PickPointOnScreen(deviceId string, timeoutSeconds int) (map[string
 
 			// Parse X coordinate
 			if strings.Contains(line, "ABS_MT_POSITION_X") {
-				re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
-				if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+				if matches := reHexValue.FindStringSubmatch(line); len(matches) >= 2 {
 					val, _ := strconv.ParseInt(matches[1], 16, 32)
 					currentX = int(val)
 					hasX = true
@@ -744,8 +747,7 @@ func (a *App) PickPointOnScreen(deviceId string, timeoutSeconds int) (map[string
 
 			// Parse Y coordinate
 			if strings.Contains(line, "ABS_MT_POSITION_Y") {
-				re := regexp.MustCompile(`([0-9a-fA-F]{8})\s*$`)
-				if matches := re.FindStringSubmatch(line); len(matches) >= 2 {
+				if matches := reHexValue.FindStringSubmatch(line); len(matches) >= 2 {
 					val, _ := strconv.ParseInt(matches[1], 16, 32)
 					currentY = int(val)
 					hasY = true
@@ -1293,36 +1295,25 @@ func (a *App) resolveSmartTapCoords(deviceId string, selector *ElementSelector, 
 				minDist := -1.0
 
 				for _, node := range matches {
-					re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-					m := re.FindStringSubmatch(node.Bounds)
-					if len(m) >= 5 {
-						x1, _ := strconv.Atoi(m[1])
-						y1, _ := strconv.Atoi(m[2])
-						x2, _ := strconv.Atoi(m[3])
-						y2, _ := strconv.Atoi(m[4])
-						cx, cy := (x1+x2)/2, (y1+y2)/2
+					rect, err := ParseBounds(node.Bounds)
+					if err != nil {
+						continue
+					}
+					cx, cy := rect.Center()
 
-						dx := float64(cx - origX)
-						dy := float64(cy - origY)
-						dist := dx*dx + dy*dy
+					dx := float64(cx - origX)
+					dy := float64(cy - origY)
+					dist := dx*dx + dy*dy
 
-						if bestNode == nil || dist < minDist {
-							bestNode = node
-							minDist = dist
-						}
+					if bestNode == nil || dist < minDist {
+						bestNode = node
+						minDist = dist
 					}
 				}
 
 				if bestNode != nil {
-					re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-					m := re.FindStringSubmatch(bestNode.Bounds)
-					if len(m) >= 5 {
-						x1, _ := strconv.Atoi(m[1])
-						y1, _ := strconv.Atoi(m[2])
-						x2, _ := strconv.Atoi(m[3])
-						y2, _ := strconv.Atoi(m[4])
-						centerX := (x1 + x2) / 2
-						centerY := (y1 + y2) / 2
+					if rect, err := ParseBounds(bestNode.Bounds); err == nil {
+						centerX, centerY := rect.Center()
 						LogDebug("automation").Float64("dist", minDist).Int("x", centerX).Int("y", centerY).Msg("Smart Tap: Found best match")
 						return centerX, centerY, true
 					}
@@ -1729,7 +1720,7 @@ func (a *App) SaveTouchScript(script TouchScript) error {
 		return fmt.Errorf("failed to marshal script: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write script file: %w", err)
 	}
 
@@ -1852,7 +1843,7 @@ func (a *App) SaveScriptTask(task ScriptTask) error {
 		return fmt.Errorf("failed to marshal task: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := fileutil.WriteFileAtomic(filePath, data, 0644); err != nil {
 		return fmt.Errorf("failed to write task file: %w", err)
 	}
 
@@ -2664,19 +2655,13 @@ func (a *App) SearchUIElements(deviceId string, query string) ([]map[string]inte
 // PerformNodeAction executes a node-based action (click, long click, swipe, keys)
 func (a *App) PerformNodeAction(deviceId string, bounds string, actionType string) error {
 	// Bounds format: "[x1,y1][x2,y2]"
-	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-	matches := re.FindStringSubmatch(bounds)
-	if len(matches) < 5 {
-		return fmt.Errorf("invalid bounds format: %s", bounds)
+	rect, err := ParseBounds(bounds)
+	if err != nil {
+		return err
 	}
 
-	x1, _ := strconv.Atoi(matches[1])
-	y1, _ := strconv.Atoi(matches[2])
-	x2, _ := strconv.Atoi(matches[3])
-	y2, _ := strconv.Atoi(matches[4])
-
-	centerX := (x1 + x2) / 2
-	centerY := (y1 + y2) / 2
+	x1, y1, x2, y2 := rect.X1, rect.Y1, rect.X2, rect.Y2
+	centerX, centerY := rect.Center()
 	width := x2 - x1
 	height := y2 - y1
 
@@ -2706,7 +2691,7 @@ func (a *App) PerformNodeAction(deviceId string, bounds string, actionType strin
 		cmd = fmt.Sprintf("shell input tap %d %d", centerX, centerY)
 	}
 
-	_, err := a.RunAdbCommand(deviceId, cmd)
+	_, err = a.RunAdbCommand(deviceId, cmd)
 	return err
 }
 
@@ -2718,9 +2703,8 @@ func (a *App) FindElementAtPoint(node *UINode, x, y int) *UINode {
 	}
 
 	// Parse bounds "[x1,y1][x2,y2]"
-	re := regexp.MustCompile(`\[(\d+),(\d+)\]\[(\d+),(\d+)\]`)
-	matches := re.FindStringSubmatch(node.Bounds)
-	if len(matches) < 5 {
+	rect, err := ParseBounds(node.Bounds)
+	if err != nil {
 		// No valid bounds, check children
 		for i := range node.Nodes {
 			if found := a.FindElementAtPoint(&node.Nodes[i], x, y); found != nil {
@@ -2730,13 +2714,8 @@ func (a *App) FindElementAtPoint(node *UINode, x, y int) *UINode {
 		return nil
 	}
 
-	x1, _ := strconv.Atoi(matches[1])
-	y1, _ := strconv.Atoi(matches[2])
-	x2, _ := strconv.Atoi(matches[3])
-	y2, _ := strconv.Atoi(matches[4])
-
 	// Check if point is within bounds
-	if x < x1 || x > x2 || y < y1 || y > y2 {
+	if !rect.Contains(x, y) {
 		return nil
 	}
 

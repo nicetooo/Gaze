@@ -13,6 +13,8 @@ func (s *MCPServer) registerAppTools() {
 	// app_list - List installed apps
 	s.server.AddTool(
 		mcp.NewTool("app_list",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("List installed applications on a device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -28,6 +30,8 @@ func (s *MCPServer) registerAppTools() {
 	// app_info - Get app information
 	s.server.AddTool(
 		mcp.NewTool("app_info",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Get detailed information about an installed app"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -44,6 +48,7 @@ func (s *MCPServer) registerAppTools() {
 	// app_start - Start an app
 	s.server.AddTool(
 		mcp.NewTool("app_start",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Launch an application on the device"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -60,6 +65,7 @@ func (s *MCPServer) registerAppTools() {
 	// app_stop - Force stop an app
 	s.server.AddTool(
 		mcp.NewTool("app_stop",
+			mcp.WithDestructiveHintAnnotation(false),
 			mcp.WithDescription("Force stop an application"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -76,6 +82,8 @@ func (s *MCPServer) registerAppTools() {
 	// app_running - Check if app is running
 	s.server.AddTool(
 		mcp.NewTool("app_running",
+			mcp.WithReadOnlyHintAnnotation(true),
+			mcp.WithIdempotentHintAnnotation(true),
 			mcp.WithDescription("Check if an application is currently running"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -92,6 +100,7 @@ func (s *MCPServer) registerAppTools() {
 	// app_install - Install APK (DANGEROUS)
 	s.server.AddTool(
 		mcp.NewTool("app_install",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("⚠️ Install an APK file on the device (requires confirmation)"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -108,6 +117,7 @@ func (s *MCPServer) registerAppTools() {
 	// app_uninstall - Uninstall app (DANGEROUS)
 	s.server.AddTool(
 		mcp.NewTool("app_uninstall",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("⚠️ Uninstall an application (requires confirmation)"),
 			mcp.WithString("device_id",
 				mcp.Required(),
@@ -124,6 +134,7 @@ func (s *MCPServer) registerAppTools() {
 	// app_clear_data - Clear app data (DANGEROUS)
 	s.server.AddTool(
 		mcp.NewTool("app_clear_data",
+			mcp.WithDestructiveHintAnnotation(true),
 			mcp.WithDescription("⚠️ Clear all data for an application (requires confirmation)"),
 			mcp.WithString("device_id",
 				mcp.Required(),
